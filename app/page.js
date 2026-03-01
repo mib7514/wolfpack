@@ -39,6 +39,17 @@ const MODULES = [
     status: 'active',
   },
   {
+    id: 'gold-monitor',
+    layer: 'MARKET',
+    title: 'Gold CB Monitor',
+    subtitle: '중앙은행 금 매입 추적',
+    description: '글로벌 CB 금 매입 · IB 전망 · 국가별 추적',
+    href: '/modules/gold-monitor',
+    icon: '🥇',
+    accentColor: '#D4A017',
+    status: 'active',
+  },
+  {
     id: 'sector-watch',
     layer: 'CREDIT',
     title: 'Sector Watch',
