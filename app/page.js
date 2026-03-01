@@ -17,17 +17,6 @@ const MODULES = [
     status: 'active',
   },
   {
-    id: 'market-monitor',
-    layer: 'MACRO',
-    title: 'Market Monitor',
-    subtitle: '글로벌 시장 모니터링',
-    description: '차트 스크린샷 AI 분석 · Chart Vision',
-    href: '/market',
-    icon: '📊',
-    accentColor: '#4FC3F7',
-    status: 'active',
-  },
-  {
     id: 'rates-scenario',
     layer: 'MACRO',
     title: '금리 시나리오',
@@ -37,6 +26,17 @@ const MODULES = [
     icon: '⊿',
     accentColor: '#38bdf8',
     status: 'planned',
+  },
+  {
+    id: 'market-monitor',
+    layer: 'MARKET',
+    title: 'Market Monitor',
+    subtitle: '글로벌 시장 모니터링',
+    description: '차트 스크린샷 AI 분석 · Chart Vision',
+    href: '/market',
+    icon: '📊',
+    accentColor: '#4FC3F7',
+    status: 'active',
   },
   {
     id: 'sector-watch',
@@ -73,10 +73,13 @@ const MODULES = [
   },
 ];
 
+const LAYER_ORDER = ['MACRO', 'MARKET', 'CREDIT', 'PORTFOLIO'];
+
 const LAYER_LABELS = {
   MACRO: { label: 'Layer 1 · MACRO', color: '#f97316' },
-  CREDIT: { label: 'Layer 2 · CREDIT', color: '#a78bfa' },
-  PORTFOLIO: { label: 'Layer 3 · PORTFOLIO', color: '#34d399' },
+  MARKET: { label: 'Layer 2 · MARKET', color: '#4FC3F7' },
+  CREDIT: { label: 'Layer 3 · CREDIT', color: '#a78bfa' },
+  PORTFOLIO: { label: 'Layer 4 · PORTFOLIO', color: '#34d399' },
 };
 
 function StatusBadge({ status }) {
@@ -174,6 +177,9 @@ export default function ControlTower() {
     groupedModules[m.layer].push(m);
   });
 
+  // Use LAYER_ORDER to maintain consistent ordering
+  const orderedLayers = LAYER_ORDER.filter(l => groupedModules[l]);
+
   return (
     <div className="min-h-screen">
       {/* Header */}
@@ -207,60 +213,63 @@ export default function ControlTower() {
 
       {/* Module Grid */}
       <main className="max-w-6xl mx-auto px-6 py-8">
-        {Object.entries(groupedModules).map(([layer, modules], layerIdx) => (
-          <div key={layer} className="mb-10 animate-fade-in" style={{ animationDelay: `${layerIdx * 0.1}s` }}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="h-px flex-1 bg-gradient-to-r from-transparent" style={{ backgroundImage: `linear-gradient(to right, ${LAYER_LABELS[layer].color}33, transparent)` }} />
-              <span className="text-[11px] font-bold tracking-widest" style={{ color: LAYER_LABELS[layer].color }}>
-                {LAYER_LABELS[layer].label}
-              </span>
-              <div className="h-px flex-1 bg-gradient-to-l from-transparent" style={{ backgroundImage: `linear-gradient(to left, ${LAYER_LABELS[layer].color}33, transparent)` }} />
-            </div>
+        {orderedLayers.map((layer, layerIdx) => {
+          const modules = groupedModules[layer];
+          return (
+            <div key={layer} className="mb-10 animate-fade-in" style={{ animationDelay: `${layerIdx * 0.1}s` }}>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="h-px flex-1 bg-gradient-to-r from-transparent" style={{ backgroundImage: `linear-gradient(to right, ${LAYER_LABELS[layer].color}33, transparent)` }} />
+                <span className="text-[11px] font-bold tracking-widest" style={{ color: LAYER_LABELS[layer].color }}>
+                  {LAYER_LABELS[layer].label}
+                </span>
+                <div className="h-px flex-1 bg-gradient-to-l from-transparent" style={{ backgroundImage: `linear-gradient(to left, ${LAYER_LABELS[layer].color}33, transparent)` }} />
+              </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {modules.map((mod, i) => {
-                const CardWrapper = mod.href ? Link : 'div';
-                const cardProps = mod.href ? { href: mod.href } : {};
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {modules.map((mod, i) => {
+                  const CardWrapper = mod.href ? Link : 'div';
+                  const cardProps = mod.href ? { href: mod.href } : {};
 
-                return (
-                  <CardWrapper
-                    key={mod.id}
-                    {...cardProps}
-                    className={`block rounded-xl border border-white/5 bg-[#1a2035] p-5 card-hover animate-fade-in ${mod.href ? 'cursor-pointer' : 'opacity-50 cursor-default'}`}
-                    style={{ animationDelay: `${(layerIdx * 0.1) + (i * 0.05)}s` }}
-                  >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className="w-9 h-9 rounded-lg flex items-center justify-center text-base font-bold"
-                          style={{ background: `${mod.accentColor}15`, color: mod.accentColor }}
-                        >
-                          {mod.icon}
+                  return (
+                    <CardWrapper
+                      key={mod.id}
+                      {...cardProps}
+                      className={`block rounded-xl border border-white/5 bg-[#1a2035] p-5 card-hover animate-fade-in ${mod.href ? 'cursor-pointer' : 'opacity-50 cursor-default'}`}
+                      style={{ animationDelay: `${(layerIdx * 0.1) + (i * 0.05)}s` }}
+                    >
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="w-9 h-9 rounded-lg flex items-center justify-center text-base font-bold"
+                            style={{ background: `${mod.accentColor}15`, color: mod.accentColor }}
+                          >
+                            {mod.icon}
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-bold text-gray-100">{mod.title}</h3>
+                            <p className="text-[10px] text-gray-500 tracking-wide">{mod.subtitle}</p>
+                          </div>
                         </div>
-                        <div>
-                          <h3 className="text-sm font-bold text-gray-100">{mod.title}</h3>
-                          <p className="text-[10px] text-gray-500 tracking-wide">{mod.subtitle}</p>
-                        </div>
+                        <StatusBadge status={mod.status} />
                       </div>
-                      <StatusBadge status={mod.status} />
-                    </div>
-                    <p className="text-xs text-gray-500 leading-relaxed">{mod.description}</p>
+                      <p className="text-xs text-gray-500 leading-relaxed">{mod.description}</p>
 
-                    {/* Show live data summary for active modules */}
-                    {mod.id === 'business-cycle' && <CycleSummary data={cycleData} />}
-                  </CardWrapper>
-                );
-              })}
+                      {/* Show live data summary for active modules */}
+                      {mod.id === 'business-cycle' && <CycleSummary data={cycleData} />}
+                    </CardWrapper>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </main>
 
       {/* Footer */}
       <footer className="border-t border-white/5 mt-auto">
         <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
           <span className="text-[10px] text-gray-600">늑대무리원정단 v1.1.0</span>
-          <span className="text-[10px] text-gray-600">Macro · Credit · Portfolio</span>
+          <span className="text-[10px] text-gray-600">Macro · Market · Credit · Portfolio</span>
         </div>
       </footer>
     </div>
