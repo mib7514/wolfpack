@@ -17,6 +17,17 @@ const MODULES = [
     status: 'active',
   },
   {
+    id: 'market-monitor',
+    layer: 'MACRO',
+    title: 'Market Monitor',
+    subtitle: '글로벌 시장 모니터링',
+    description: '차트 스크린샷 AI 분석 · Chart Vision',
+    href: '/market',
+    icon: '📊',
+    accentColor: '#4FC3F7',
+    status: 'active',
+  },
+  {
     id: 'rates-scenario',
     layer: 'MACRO',
     title: '금리 시나리오',
@@ -248,7 +259,7 @@ export default function ControlTower() {
       {/* Footer */}
       <footer className="border-t border-white/5 mt-auto">
         <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
-          <span className="text-[10px] text-gray-600">늑대무리원정단 v0.1.0</span>
+          <span className="text-[10px] text-gray-600">늑대무리원정단 v1.1.0</span>
           <span className="text-[10px] text-gray-600">Macro · Credit · Portfolio</span>
         </div>
       </footer>
