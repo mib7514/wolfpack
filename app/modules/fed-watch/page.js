@@ -440,7 +440,7 @@ export default function FedWatchPage() {
                 <ReferenceLine y={3.625} stroke="rgba(255,255,255,0.15)" strokeDasharray="4 4" label={{ value: "현재 3.625%", fill: T3, fontSize: 8 }} />
                 <Area type="monotone" dataKey="expected_rate" stroke="none" fill="url(#tsGrad)" />
                 <Line type="monotone" dataKey="expected_rate" stroke={FED} strokeWidth={2.5} dot={{ r: 4, fill: FED, stroke: "#fff", strokeWidth: 1 }} name="기대금리" />
-                <Line type="monotone" dataKey="cut_prob" stroke={GRN} strokeWidth={1.5} strokeDasharray="4 3" dot={{ r: 3, fill: GRN }} yAxisId="right" name="인하확률" hide />
+
               </ComposedChart>
             </ResponsiveContainer>
           ) : (
