@@ -17,6 +17,17 @@ const MODULES = [
     status: 'active',
   },
   {
+    id: 'fed-watch',
+    layer: 'MACRO',
+    title: 'Fed Watch',
+    subtitle: 'FOMC 금리 전망 모니터',
+    description: 'CME FedWatch 기반 금리 기대값 시계열 추적',
+    href: '/modules/fed-watch',
+    icon: '🏛️',
+    accentColor: '#4A9EFF',
+    status: 'active',
+  },
+  {
     id: 'rates-scenario',
     layer: 'MACRO',
     title: '금리 시나리오',
@@ -279,7 +290,7 @@ export default function ControlTower() {
       {/* Footer */}
       <footer className="border-t border-white/5 mt-auto">
         <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
-          <span className="text-[10px] text-gray-600">늑대무리원정단 v1.1.0</span>
+          <span className="text-[10px] text-gray-600">늑대무리원정단 v1.2.0</span>
           <span className="text-[10px] text-gray-600">Macro · Market · Credit · Portfolio</span>
         </div>
       </footer>
