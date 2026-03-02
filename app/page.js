@@ -50,6 +50,17 @@ const MODULES = [
     status: 'active',
   },
   {
+    id: 'consumer-monitor',
+    layer: 'MARKET',
+    title: '소비주 모니터링',
+    subtitle: 'Consumer Sector Tracker',
+    description: 'KOSPI vs KODEX 경기소비재 · 소비자심리지수 추적',
+    href: '/modules/market',
+    icon: '🛍️',
+    accentColor: '#f97316',
+    status: 'active',
+  },
+  {
     id: 'gold-monitor',
     layer: 'MARKET',
     title: 'Gold CB Monitor',
@@ -143,7 +154,7 @@ function CycleSummary({ data }) {
             57:'침체',58:'회복',59:'확장',60:'둔화',61:'침체',62:'회복',63:'확장',64:'둔화',
             65:'침체',66:'회복',67:'확장',68:'둔화',
           };
-          const latestIdx = 13; // 2026-02
+          const latestIdx = 13;
           for (let qn = 1; qn <= 68; qn++) {
             const phase = QUESTIONS_PHASES[qn];
             totals[phase] += (scores[qn]?.[latestIdx] || 0);
@@ -173,7 +184,6 @@ export default function ControlTower() {
     const now = new Date();
     setCurrentTime(now.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }));
 
-    // Load business cycle data from Supabase
     async function loadCycleData() {
       try {
         const { data, error } = await supabase
@@ -199,12 +209,10 @@ export default function ControlTower() {
     groupedModules[m.layer].push(m);
   });
 
-  // Use LAYER_ORDER to maintain consistent ordering
   const orderedLayers = LAYER_ORDER.filter(l => groupedModules[l]);
 
   return (
     <div className="min-h-screen">
-      {/* Header */}
       <header className="border-b border-white/5 bg-gradient-to-b from-[#111827] to-transparent">
         <div className="max-w-6xl mx-auto px-6 py-8">
           <div className="flex items-start justify-between">
@@ -233,7 +241,6 @@ export default function ControlTower() {
         </div>
       </header>
 
-      {/* Module Grid */}
       <main className="max-w-6xl mx-auto px-6 py-8">
         {orderedLayers.map((layer, layerIdx) => {
           const modules = groupedModules[layer];
@@ -276,7 +283,6 @@ export default function ControlTower() {
                       </div>
                       <p className="text-xs text-gray-500 leading-relaxed">{mod.description}</p>
 
-                      {/* Show live data summary for active modules */}
                       {mod.id === 'business-cycle' && <CycleSummary data={cycleData} />}
                     </CardWrapper>
                   );
@@ -287,7 +293,6 @@ export default function ControlTower() {
         })}
       </main>
 
-      {/* Footer */}
       <footer className="border-t border-white/5 mt-auto">
         <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
           <span className="text-[10px] text-gray-600">늑대무리원정단 v1.2.0</span>
