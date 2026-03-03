@@ -3,7 +3,8 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
 import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  LineChart, Line, BarChart, Bar, AreaChart, Area,
+  XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, ReferenceLine,
 } from "recharts";
 import {
@@ -16,6 +17,10 @@ import {
   getTopCountries, pivotInbound, pivotCurrency,
   formatDateLabel as fmtInbound,
 } from "@/lib/inbound-constants";
+import {
+  SEED_VALUATION, SEED_EVENTS, EVENT_CATEGORY,
+  indexValueup, formatDateLabel as fmtVal,
+} from "@/lib/valuation-constants";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -42,6 +47,28 @@ function LogPanel({ aiLog, showLog, logRef }) {
     <div ref={logRef} className="bg-black/40 border border-white/[.06] rounded-xl px-3.5 py-2.5 mb-4 max-h-40 overflow-y-auto text-[11px] font-mono text-gray-500 leading-relaxed whitespace-pre-wrap">
       {aiLog}
     </div>
+  );
+}
+
+function RangeButtons({ range, setRange }) {
+  return (
+    <div className="flex gap-1">
+      {RANGE_PRESETS.map((p) => (
+        <button key={p.label} onClick={() => setRange(p.months)}
+          className={`px-3.5 py-1 rounded-md text-xs font-semibold border transition-all ${range === p.months ? "border-red-600/50 bg-red-600/15 text-red-400" : "border-white/[.06] bg-white/[.02] text-gray-500 hover:text-gray-300"}`}>
+          {p.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function UpdateButton({ loading, onClick }) {
+  return (
+    <button onClick={onClick} disabled={loading}
+      className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[12px] font-bold text-white transition-all ${loading ? "bg-gray-600 cursor-wait opacity-60" : "bg-gradient-to-br from-red-600 to-red-800 border border-red-600/50 hover:shadow-[0_0_20px_rgba(220,38,38,0.3)]"}`}>
+      {loading ? <><span className="animate-spin inline-block">⟳</span> 분석 중...</> : <>⚡ AI 업데이트</>}
+    </button>
   );
 }
 
@@ -89,7 +116,6 @@ function ConsumerTab() {
   const [range, setRange] = useState(12);
   const [displayMode, setDisplayMode] = useState("index");
   const [loading, setLoading] = useState(false);
-  const [lastUpdate, setLastUpdate] = useState("시드 데이터");
   const [aiLog, setAiLog] = useState("");
   const [showLog, setShowLog] = useState(false);
   const logRef = useRef(null);
@@ -103,8 +129,6 @@ function ConsumerTab() {
         const { data: sentiment, error: e2 } = await supabase.from("consumer_sentiment").select("date, csi").order("date", { ascending: true });
         if (!e1 && prices?.length > 0) setMarketData(prices.map((r) => ({ date: r.date, kospi: Number(r.kospi), kodex: Number(r.kodex) })));
         if (!e2 && sentiment?.length > 0) setCSIData(sentiment.map((r) => ({ date: r.date, csi: Number(r.csi) })));
-        const { data: logs } = await supabase.from("market_update_log").select("created_at").eq("status", "success").order("created_at", { ascending: false }).limit(1);
-        if (logs?.[0]) setLastUpdate(`DB (${new Date(logs[0].created_at).toLocaleString("ko-KR")})`);
       } catch { console.log("[market] 시드 데이터 사용"); }
     }
     load();
@@ -138,7 +162,6 @@ function ConsumerTab() {
       if (body.parsed?.notes) log(`  💬 ${body.parsed.notes}`);
       if (body.market?.length) setMarketData(body.market.map((r) => ({ date: r.date, kospi: Number(r.kospi), kodex: Number(r.kodex) })));
       if (body.sentiment?.length) setCSIData(body.sentiment.map((r) => ({ date: r.date, csi: Number(r.csi) })));
-      setLastUpdate(`AI ${new Date().toLocaleString("ko-KR")}`);
       log("✅ 완료!");
     } catch (err) { log(`❌ ${err.message}`); } finally { setLoading(false); }
   }, []);
@@ -147,14 +170,7 @@ function ConsumerTab() {
     <>
       <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex gap-1">
-            {RANGE_PRESETS.map((p) => (
-              <button key={p.label} onClick={() => setRange(p.months)}
-                className={`px-3.5 py-1 rounded-md text-xs font-semibold border transition-all ${range === p.months ? "border-red-600/50 bg-red-600/15 text-red-400" : "border-white/[.06] bg-white/[.02] text-gray-500 hover:text-gray-300"}`}>
-                {p.label}
-              </button>
-            ))}
-          </div>
+          <RangeButtons range={range} setRange={setRange} />
           <div className="w-px h-5 bg-white/[.08] mx-1 hidden sm:block" />
           <div className="flex gap-1">
             {[{ key: "index", label: "수익률 비교" }, { key: "price", label: "절대가격" }].map((m) => (
@@ -165,10 +181,7 @@ function ConsumerTab() {
             ))}
           </div>
         </div>
-        <button onClick={handleUpdate} disabled={loading}
-          className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[12px] font-bold text-white transition-all ${loading ? "bg-gray-600 cursor-wait opacity-60" : "bg-gradient-to-br from-red-600 to-red-800 border border-red-600/50 hover:shadow-[0_0_20px_rgba(220,38,38,0.3)]"}`}>
-          {loading ? <><span className="animate-spin inline-block">⟳</span> 분석 중...</> : <>⚡ AI 업데이트</>}
-        </button>
+        <UpdateButton loading={loading} onClick={handleUpdate} />
       </div>
 
       <LogPanel aiLog={aiLog} showLog={showLog} logRef={logRef} />
@@ -249,7 +262,7 @@ function InboundTooltip({ active, payload, label }) {
   );
 }
 
-function SingleCurrencyTooltip({ active, payload, label, unit }) {
+function SingleCurrencyTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-[rgba(10,10,18,0.96)] border border-white/10 rounded-lg px-3 py-2 text-xs text-gray-400 backdrop-blur-md">
@@ -271,7 +284,6 @@ function CurrencyMiniChart({ data, currencyCode, info }) {
   const pad = (max - min) * 0.15 || 5;
   const domainMin = Math.floor(min - pad);
   const domainMax = Math.ceil(max + pad);
-
   const latest = values[values.length - 1];
   const prev = values[values.length - 2];
   const chg = latest && prev ? ((latest - prev) / prev * 100).toFixed(1) : "—";
@@ -364,18 +376,8 @@ function InboundTab() {
   return (
     <>
       <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
-        <div className="flex gap-1">
-          {RANGE_PRESETS.map((p) => (
-            <button key={p.label} onClick={() => setRange(p.months)}
-              className={`px-3.5 py-1 rounded-md text-xs font-semibold border transition-all ${range === p.months ? "border-red-600/50 bg-red-600/15 text-red-400" : "border-white/[.06] bg-white/[.02] text-gray-500 hover:text-gray-300"}`}>
-              {p.label}
-            </button>
-          ))}
-        </div>
-        <button onClick={handleUpdate} disabled={loading}
-          className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[12px] font-bold text-white transition-all ${loading ? "bg-gray-600 cursor-wait opacity-60" : "bg-gradient-to-br from-red-600 to-red-800 border border-red-600/50 hover:shadow-[0_0_20px_rgba(220,38,38,0.3)]"}`}>
-          {loading ? <><span className="animate-spin inline-block">⟳</span> 분석 중...</> : <>⚡ AI 업데이트</>}
-        </button>
+        <RangeButtons range={range} setRange={setRange} />
+        <UpdateButton loading={loading} onClick={handleUpdate} />
       </div>
 
       <LogPanel aiLog={aiLog} showLog={showLog} logRef={logRef} />
@@ -391,7 +393,6 @@ function InboundTab() {
         })}
       </div>
 
-      {/* 국가별 스택 바 차트 */}
       <div className="bg-white/[.015] border border-white/[.06] rounded-2xl pt-4 pr-1 pb-2 mb-4">
         <div className="flex items-center gap-2 px-5 mb-2 text-[13px] font-bold opacity-80">
           <span>✈️ 국가별 방한 관광객</span>
@@ -411,7 +412,6 @@ function InboundTab() {
         </ResponsiveContainer>
       </div>
 
-      {/* 환율 차트 — Top 국가별 개별 */}
       <div className="flex items-center gap-2 px-1 mb-3 text-[13px] font-bold opacity-80">
         <span>💱 Top 방한국 통화 vs 원화</span>
         <span className="text-[10px] opacity-40">원화 약세(상승) = 인바운드 구매력 ↑</span>
@@ -426,8 +426,271 @@ function InboundTab() {
         <div className="text-xs font-bold text-red-600 mb-2">🐺 읽는 법</div>
         <div className="text-xs leading-relaxed opacity-70">
           <strong>인바운드 증가 + 원화 약세</strong>가 동시에 진행되면 외국인 관광객의 한국 내 구매력이 극대화됨.
-          일본 사례에서 엔화 약세 + 방일 4,000만 명이 세이코 등 소비주 랠리의 핵심 드라이버였음.
           환율 차트가 <strong>우상향(원화 약세)</strong>이면서 바 차트가 성장하는 구간이 소비주 최대 수혜 구간.
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ════════════════════════════════
+// Tab 3: 밸류에이션 & 주주환원
+// ════════════════════════════════
+function ValTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-[rgba(10,10,18,0.96)] border border-white/10 rounded-lg px-3.5 py-2.5 text-xs text-gray-400 backdrop-blur-md min-w-[140px]">
+      <div className="font-bold text-white mb-1.5">{label}</div>
+      {payload.filter(p => p.value != null).map((p, i) => (
+        <div key={i} style={{ color: p.color }} className="flex justify-between gap-3 my-0.5">
+          <span>{p.name}</span>
+          <span className="font-semibold">{p.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EventTimeline({ events }) {
+  if (!events?.length) return null;
+  const sorted = [...events].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8);
+
+  return (
+    <div className="bg-white/[.015] border border-white/[.06] rounded-2xl px-5 py-4 mb-4">
+      <div className="text-[13px] font-bold opacity-80 mb-3">📋 밸류업 이벤트 타임라인</div>
+      <div className="space-y-3">
+        {sorted.map((ev, i) => {
+          const cat = EVENT_CATEGORY[ev.category] || EVENT_CATEGORY.policy;
+          const impactColor = ev.impact === "positive" ? "text-green-400" : ev.impact === "negative" ? "text-red-400" : "text-gray-500";
+          return (
+            <div key={i} className="flex gap-3 items-start">
+              <div className="flex flex-col items-center mt-0.5">
+                <span className="text-sm">{cat.icon}</span>
+                {i < sorted.length - 1 && <div className="w-px h-full bg-white/[.06] mt-1" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="text-[10px] text-gray-500">{ev.date}</span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full font-semibold" style={{ backgroundColor: `${cat.color}20`, color: cat.color }}>
+                    {cat.label}
+                  </span>
+                  <span className={`text-[9px] font-bold ${impactColor}`}>
+                    {ev.impact === "positive" ? "▲" : ev.impact === "negative" ? "▼" : "—"}
+                  </span>
+                </div>
+                <div className="text-[12px] font-semibold text-gray-200">{ev.title}</div>
+                {ev.description && <div className="text-[11px] text-gray-500 mt-0.5">{ev.description}</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ValuationTab() {
+  const [valData, setValData] = useState(SEED_VALUATION);
+  const [events, setEvents] = useState(SEED_EVENTS);
+  const [range, setRange] = useState(12);
+  const [loading, setLoading] = useState(false);
+  const [aiLog, setAiLog] = useState("");
+  const [showLog, setShowLog] = useState(false);
+  const logRef = useRef(null);
+
+  useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [aiLog]);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const { data: m, error: e1 } = await supabase.from("valuation_metrics").select("*").order("date", { ascending: true });
+        const { data: ev, error: e2 } = await supabase.from("valueup_events").select("*").order("date", { ascending: false });
+        if (!e1 && m?.length > 0) setValData(m.map((r) => ({
+          date: r.date, kospi_pbr: Number(r.kospi_pbr), kospi_div_yield: Number(r.kospi_div_yield),
+          valueup_index: r.valueup_index ? Number(r.valueup_index) : null,
+          kospi_close: Number(r.kospi_close), pbr_below1_pct: r.pbr_below1_pct ? Number(r.pbr_below1_pct) : null,
+          valueup_corps_count: r.valueup_corps_count ? Number(r.valueup_corps_count) : null,
+        })));
+        if (!e2 && ev?.length > 0) setEvents(ev);
+      } catch { console.log("[valuation] 시드 데이터 사용"); }
+    }
+    load();
+  }, []);
+
+  const filtered = range >= 999 ? valData : valData.slice(-range);
+  const indexed = indexValueup(filtered);
+  const chart = indexed.map((d) => ({ ...d, label: fmtVal(d.date) }));
+
+  const latest = valData[valData.length - 1] || {};
+  const prev = valData[valData.length - 2] || {};
+  const pbrChg = latest.kospi_pbr && prev.kospi_pbr ? (latest.kospi_pbr - prev.kospi_pbr).toFixed(2) : "—";
+  const vuChg = latest.valueup_index && prev.valueup_index ? ((latest.valueup_index - prev.valueup_index) / prev.valueup_index * 100).toFixed(1) : "—";
+
+  // PBR Y축 범위
+  const pbrValues = filtered.map(d => d.kospi_pbr).filter(Boolean);
+  const pbrMin = Math.floor((Math.min(...pbrValues) - 0.05) * 20) / 20;
+  const pbrMax = Math.ceil((Math.max(...pbrValues) + 0.05) * 20) / 20;
+
+  // 배당수익률 Y축 범위
+  const divValues = filtered.map(d => d.kospi_div_yield).filter(Boolean);
+  const divMin = Math.floor((Math.min(...divValues) - 0.1) * 10) / 10;
+  const divMax = Math.ceil((Math.max(...divValues) + 0.1) * 10) / 10;
+
+  // PBR 1배 미만 비율 Y축
+  const below1Values = filtered.map(d => d.pbr_below1_pct).filter(Boolean);
+  const below1Min = Math.floor(Math.min(...below1Values) - 2);
+  const below1Max = Math.ceil(Math.max(...below1Values) + 2);
+
+  const handleUpdate = useCallback(async () => {
+    setLoading(true); setAiLog(""); setShowLog(true);
+    const log = (m) => setAiLog((p) => p + m + "\n");
+    try {
+      log("🔍 /api/valuation-update 호출 중...");
+      const res = await fetch("/api/valuation-update", { method: "POST" });
+      const body = await res.json();
+      if (!body.ok) { log(`⚠️ 실패: ${body.error}`); return; }
+      log("✅ 수신 완료");
+      if (body.parsed?.metrics) {
+        const m = body.parsed.metrics;
+        log(`  PBR: ${m.kospi_pbr}x / 배당: ${m.kospi_div_yield}%`);
+        log(`  밸류업지수: ${m.valueup_index}`);
+      }
+      if (body.parsed?.events?.length) log(`  이벤트 ${body.parsed.events.length}건 추가`);
+      if (body.parsed?.notes) log(`  💬 ${body.parsed.notes}`);
+      if (body.metrics?.length) setValData(body.metrics.map((r) => ({
+        date: r.date, kospi_pbr: Number(r.kospi_pbr), kospi_div_yield: Number(r.kospi_div_yield),
+        valueup_index: r.valueup_index ? Number(r.valueup_index) : null,
+        kospi_close: Number(r.kospi_close), pbr_below1_pct: r.pbr_below1_pct ? Number(r.pbr_below1_pct) : null,
+        valueup_corps_count: r.valueup_corps_count ? Number(r.valueup_corps_count) : null,
+      })));
+      if (body.events?.length) setEvents(body.events);
+      log("✅ 완료!");
+    } catch (err) { log(`❌ ${err.message}`); } finally { setLoading(false); }
+  }, []);
+
+  return (
+    <>
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+        <RangeButtons range={range} setRange={setRange} />
+        <UpdateButton loading={loading} onClick={handleUpdate} />
+      </div>
+
+      <LogPanel aiLog={aiLog} showLog={showLog} logRef={logRef} />
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
+        <StatCard label="KOSPI PBR" value={`${latest.kospi_pbr?.toFixed(2)}x`} sub={`MoM ${Number(pbrChg) > 0 ? "+" : ""}${pbrChg}`} accent="#60a5fa" />
+        <StatCard label="배당수익률" value={`${latest.kospi_div_yield?.toFixed(1)}%`} sub="KOSPI 평균" accent="#22c55e" />
+        <StatCard label="밸류업지수" value={latest.valueup_index?.toLocaleString() || "—"} sub={`MoM ${Number(vuChg) > 0 ? "+" : ""}${vuChg}%`} accent="#f97316" />
+        <StatCard label="PBR<1 비율" value={`${latest.pbr_below1_pct || "—"}%`} sub={`공시 ${latest.valueup_corps_count || "—"}개사`} accent={latest.pbr_below1_pct < 60 ? "#4ade80" : "#f87171"} />
+      </div>
+
+      {/* 밸류업지수 vs KOSPI */}
+      <div className="bg-white/[.015] border border-white/[.06] rounded-2xl pt-4 pr-1 pb-2 mb-4">
+        <div className="flex items-center gap-2 px-5 mb-2 text-[13px] font-bold opacity-80">
+          <span className="w-1.5 h-1.5 rounded-full bg-orange-500 shadow-[0_0_6px_#f97316]" /><span>밸류업지수</span>
+          <span className="opacity-30 mx-0.5">vs</span>
+          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shadow-[0_0_6px_#60a5fa]" /><span>KOSPI</span>
+          <span className="text-[10px] opacity-40 ml-2">(밸류업지수 출범 = 100)</span>
+        </div>
+        <ResponsiveContainer width="100%" height={250}>
+          <LineChart data={chart} margin={{ top: 10, right: 24, left: 8, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+            <XAxis dataKey="label" tick={{ fill: "#666", fontSize: 10 }} tickLine={false} axisLine={{ stroke: "rgba(255,255,255,0.08)" }} />
+            <YAxis tick={{ fill: "#666", fontSize: 10 }} tickLine={false} axisLine={false} />
+            <Tooltip content={<ValTooltip />} />
+            <ReferenceLine y={100} stroke="rgba(255,255,255,0.1)" strokeDasharray="4 4" />
+            <Line type="monotone" dataKey="kospiIdx" name="KOSPI" stroke="#60a5fa" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
+            <Line type="monotone" dataKey="valueupIdx" name="밸류업지수" stroke="#f97316" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} connectNulls={false} />
+            <Legend wrapperStyle={{ fontSize: 11, paddingTop: 4 }} iconType="line" />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* PBR + 배당수익률 + PBR<1 비율 — 3개 미니차트 */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        {/* PBR */}
+        <div className="bg-white/[.015] border border-white/[.06] rounded-2xl pt-3 pr-1 pb-2">
+          <div className="flex items-center justify-between px-4 mb-1">
+            <div className="text-[12px] font-bold opacity-80">KOSPI PBR</div>
+            <span className="text-[11px] font-bold text-blue-400">{latest.kospi_pbr?.toFixed(2)}x</span>
+          </div>
+          <ResponsiveContainer width="100%" height={120}>
+            <AreaChart data={chart} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
+              <defs>
+                <linearGradient id="pbrGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#60a5fa" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#60a5fa" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+              <XAxis dataKey="label" tick={{ fill: "#555", fontSize: 9 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+              <YAxis domain={[pbrMin, pbrMax]} tick={{ fill: "#555", fontSize: 9 }} tickLine={false} axisLine={false} width={35} />
+              <Tooltip content={<ValTooltip />} />
+              <ReferenceLine y={1} stroke="rgba(239,68,68,0.4)" strokeDasharray="3 3" />
+              <Area type="monotone" dataKey="kospi_pbr" name="PBR" stroke="#60a5fa" strokeWidth={2} fill="url(#pbrGrad)" dot={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* 배당수익률 */}
+        <div className="bg-white/[.015] border border-white/[.06] rounded-2xl pt-3 pr-1 pb-2">
+          <div className="flex items-center justify-between px-4 mb-1">
+            <div className="text-[12px] font-bold opacity-80">배당수익률</div>
+            <span className="text-[11px] font-bold text-green-400">{latest.kospi_div_yield?.toFixed(1)}%</span>
+          </div>
+          <ResponsiveContainer width="100%" height={120}>
+            <AreaChart data={chart} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
+              <defs>
+                <linearGradient id="divGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+              <XAxis dataKey="label" tick={{ fill: "#555", fontSize: 9 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+              <YAxis domain={[divMin, divMax]} tick={{ fill: "#555", fontSize: 9 }} tickLine={false} axisLine={false} width={35} />
+              <Tooltip content={<ValTooltip />} />
+              <Area type="monotone" dataKey="kospi_div_yield" name="배당수익률(%)" stroke="#22c55e" strokeWidth={2} fill="url(#divGrad)" dot={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* PBR 1배 미만 비율 */}
+        <div className="bg-white/[.015] border border-white/[.06] rounded-2xl pt-3 pr-1 pb-2">
+          <div className="flex items-center justify-between px-4 mb-1">
+            <div className="text-[12px] font-bold opacity-80">PBR{'<'}1 비율</div>
+            <span className={`text-[11px] font-bold ${latest.pbr_below1_pct < 60 ? "text-green-400" : "text-red-400"}`}>
+              {latest.pbr_below1_pct}%
+            </span>
+          </div>
+          <ResponsiveContainer width="100%" height={120}>
+            <AreaChart data={chart} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
+              <defs>
+                <linearGradient id="belowGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#f87171" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#f87171" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+              <XAxis dataKey="label" tick={{ fill: "#555", fontSize: 9 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+              <YAxis domain={[below1Min, below1Max]} tick={{ fill: "#555", fontSize: 9 }} tickLine={false} axisLine={false} width={35} />
+              <Tooltip content={<ValTooltip />} />
+              <ReferenceLine y={50} stroke="rgba(74,222,128,0.3)" strokeDasharray="3 3" />
+              <Area type="monotone" dataKey="pbr_below1_pct" name="PBR<1 비율(%)" stroke="#f87171" strokeWidth={2} fill="url(#belowGrad)" dot={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* 이벤트 타임라인 */}
+      <EventTimeline events={events} />
+
+      <div className="bg-red-600/[.04] border border-red-600/15 rounded-xl px-4 py-3.5">
+        <div className="text-xs font-bold text-red-600 mb-2">🐺 읽는 법</div>
+        <div className="text-xs leading-relaxed opacity-70">
+          <strong>밸류업지수가 KOSPI를 아웃퍼폼</strong>하면 주주환원 기업이 시장에서 프리미엄을 받기 시작했다는 신호.
+          <strong> PBR 상승 + 배당수익률 유지/상승</strong>이 동시에 진행되면 일본형 선순환(리레이팅) 진입.
+          <strong> PBR{'<'}1 비율 하락</strong>은 밸류업 정책이 실제로 작동하고 있다는 증거. 50% 아래로 내려가면 구조적 전환 확인.
         </div>
       </div>
     </>
@@ -440,6 +703,7 @@ function InboundTab() {
 const TABS = [
   { key: "consumer", label: "소비주", icon: "📈" },
   { key: "inbound", label: "인바운드 & 환율", icon: "✈️" },
+  { key: "valuation", label: "밸류업 & 주주환원", icon: "💎" },
 ];
 
 export default function MarketDashboard() {
@@ -462,10 +726,10 @@ export default function MarketDashboard() {
         <h1 className="text-[22px] font-black text-gray-100 leading-tight">한국 소비주 모니터링</h1>
         <p className="text-xs opacity-40 mt-0.5 mb-4">탑다운으로 가보자고 #4 — 한국의 명품 소비주 찾기</p>
 
-        <div className="flex gap-1 mb-5 border-b border-white/[.06] pb-0">
+        <div className="flex gap-1 mb-5 border-b border-white/[.06] pb-0 overflow-x-auto">
           {TABS.map((t) => (
             <button key={t.key} onClick={() => setTab(t.key)}
-              className={`px-4 py-2 text-[13px] font-semibold transition-all border-b-2 -mb-px ${tab === t.key ? "border-red-600 text-red-400" : "border-transparent text-gray-600 hover:text-gray-400"}`}>
+              className={`px-4 py-2 text-[13px] font-semibold transition-all border-b-2 -mb-px whitespace-nowrap ${tab === t.key ? "border-red-600 text-red-400" : "border-transparent text-gray-600 hover:text-gray-400"}`}>
               {t.icon} {t.label}
             </button>
           ))}
@@ -473,6 +737,7 @@ export default function MarketDashboard() {
 
         {tab === "consumer" && <ConsumerTab />}
         {tab === "inbound" && <InboundTab />}
+        {tab === "valuation" && <ValuationTab />}
 
         <div className="text-center text-[10px] opacity-30 py-3 mt-4">
           탑다운으로 가보자고 #4 — 한국의 명품 소비주 찾기
