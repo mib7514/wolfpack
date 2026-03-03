@@ -249,17 +249,56 @@ function InboundTooltip({ active, payload, label }) {
   );
 }
 
-function CurrencyTooltip({ active, payload, label }) {
+function SingleCurrencyTooltip({ active, payload, label, unit }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-[rgba(10,10,18,0.96)] border border-white/10 rounded-lg px-3.5 py-2.5 text-xs text-gray-400 backdrop-blur-md">
-      <div className="font-bold text-white mb-1.5">{label}</div>
+    <div className="bg-[rgba(10,10,18,0.96)] border border-white/10 rounded-lg px-3 py-2 text-xs text-gray-400 backdrop-blur-md">
+      <div className="font-bold text-white mb-1">{label}</div>
       {payload.map((p, i) => (
         <div key={i} style={{ color: p.color }} className="flex justify-between gap-3 my-0.5">
           <span>{p.name}</span>
-          <span className="font-semibold">{Number(p.value).toLocaleString()}</span>
+          <span className="font-semibold">{Number(p.value).toLocaleString()} 원</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+function CurrencyMiniChart({ data, currencyCode, info }) {
+  const values = data.map((d) => d[currencyCode]).filter(Boolean);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const pad = (max - min) * 0.15 || 5;
+  const domainMin = Math.floor(min - pad);
+  const domainMax = Math.ceil(max + pad);
+
+  const latest = values[values.length - 1];
+  const prev = values[values.length - 2];
+  const chg = latest && prev ? ((latest - prev) / prev * 100).toFixed(1) : "—";
+
+  return (
+    <div className="bg-white/[.015] border border-white/[.06] rounded-2xl pt-3 pr-1 pb-2">
+      <div className="flex items-center justify-between px-4 mb-1">
+        <div className="flex items-center gap-2 text-[12px] font-bold opacity-80">
+          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: info.color, boxShadow: `0 0 6px ${info.color}` }} />
+          <span>{info.symbol}</span>
+        </div>
+        <div className="flex items-center gap-2 text-[11px]">
+          <span className="font-bold" style={{ color: info.color }}>{latest?.toLocaleString()}</span>
+          <span className={`${Number(chg) > 0 ? "text-red-400" : "text-blue-400"} font-semibold`}>
+            {Number(chg) > 0 ? "▲" : "▼"} {Math.abs(Number(chg))}%
+          </span>
+        </div>
+      </div>
+      <ResponsiveContainer width="100%" height={120}>
+        <LineChart data={data} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+          <XAxis dataKey="label" tick={{ fill: "#555", fontSize: 9 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+          <YAxis domain={[domainMin, domainMax]} tick={{ fill: "#555", fontSize: 9 }} tickLine={false} axisLine={false} width={45} />
+          <Tooltip content={<SingleCurrencyTooltip />} />
+          <Line type="monotone" dataKey={currencyCode} name={info.symbol} stroke={info.color} strokeWidth={2} dot={false} activeDot={{ r: 3, fill: info.color }} />
+        </LineChart>
+      </ResponsiveContainer>
     </div>
   );
 }
@@ -295,14 +334,12 @@ function InboundTab() {
   const chartInbound = filtered.map((d) => ({ ...d, label: fmtInbound(d.date) }));
   const chartCurrency = filteredCurr.map((d) => ({ ...d, label: fmtInbound(d.date) }));
 
-  // Top 3 국가에 매핑되는 통화
   const countryToCurrency = { CN: "CNY", JP: "JPY", US: "USD", TW: "TWD" };
   const topCurrencies = [...new Set(topCountries.map((c) => countryToCurrency[c]).filter(Boolean))];
 
   const latest = pivoted[pivoted.length - 1] || {};
   const prev = pivoted[pivoted.length - 2] || {};
   const totalChg = latest.total && prev.total ? ((latest.total - prev.total) / prev.total * 100).toFixed(1) : "—";
-  const latestCurr = currPivoted[currPivoted.length - 1] || {};
 
   const handleUpdate = useCallback(async () => {
     setLoading(true); setAiLog(""); setShowLog(true);
@@ -374,27 +411,15 @@ function InboundTab() {
         </ResponsiveContainer>
       </div>
 
-      {/* Top 국가 대응 환율 */}
-      <div className="bg-white/[.015] border border-white/[.06] rounded-2xl pt-4 pr-1 pb-2 mb-4">
-        <div className="flex items-center gap-2 px-5 mb-2 text-[13px] font-bold opacity-80">
-          <span>💱 Top 방한국 통화 vs 원화</span>
-          <span className="text-[10px] opacity-40 ml-2">
-            {topCurrencies.map((c) => CURRENCY_LABELS[c]?.symbol).join(" · ")}
-          </span>
-        </div>
-        <ResponsiveContainer width="100%" height={250}>
-          <LineChart data={chartCurrency} margin={{ top: 10, right: 24, left: 8, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-            <XAxis dataKey="label" tick={{ fill: "#666", fontSize: 10 }} tickLine={false} axisLine={{ stroke: "rgba(255,255,255,0.08)" }} />
-            <YAxis yAxisId="left" tick={{ fill: "#666", fontSize: 10 }} tickLine={false} axisLine={false} />
-            {topCurrencies.length > 1 && <YAxis yAxisId="right" orientation="right" tick={{ fill: "#666", fontSize: 10 }} tickLine={false} axisLine={false} />}
-            <Tooltip content={<CurrencyTooltip />} />
-            {topCurrencies.map((c, i) => (
-              <Line key={c} type="monotone" dataKey={c} name={CURRENCY_LABELS[c]?.symbol || c} stroke={CURRENCY_LABELS[c]?.color || "#888"} strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} yAxisId={i === 0 ? "left" : "right"} />
-            ))}
-            <Legend wrapperStyle={{ fontSize: 11, paddingTop: 4 }} iconType="line" />
-          </LineChart>
-        </ResponsiveContainer>
+      {/* 환율 차트 — Top 국가별 개별 */}
+      <div className="flex items-center gap-2 px-1 mb-3 text-[13px] font-bold opacity-80">
+        <span>💱 Top 방한국 통화 vs 원화</span>
+        <span className="text-[10px] opacity-40">원화 약세(상승) = 인바운드 구매력 ↑</span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        {topCurrencies.map((c) => (
+          <CurrencyMiniChart key={c} data={chartCurrency} currencyCode={c} info={CURRENCY_LABELS[c]} />
+        ))}
       </div>
 
       <div className="bg-red-600/[.04] border border-red-600/15 rounded-xl px-4 py-3.5">
@@ -402,7 +427,7 @@ function InboundTab() {
         <div className="text-xs leading-relaxed opacity-70">
           <strong>인바운드 증가 + 원화 약세</strong>가 동시에 진행되면 외국인 관광객의 한국 내 구매력이 극대화됨.
           일본 사례에서 엔화 약세 + 방일 4,000만 명이 세이코 등 소비주 랠리의 핵심 드라이버였음.
-          Top 3 국가의 통화가 원화 대비 강세(환율 상승)일수록 인바운드 소비 수혜 확대.
+          환율 차트가 <strong>우상향(원화 약세)</strong>이면서 바 차트가 성장하는 구간이 소비주 최대 수혜 구간.
         </div>
       </div>
     </>
@@ -437,7 +462,6 @@ export default function MarketDashboard() {
         <h1 className="text-[22px] font-black text-gray-100 leading-tight">한국 소비주 모니터링</h1>
         <p className="text-xs opacity-40 mt-0.5 mb-4">탑다운으로 가보자고 #4 — 한국의 명품 소비주 찾기</p>
 
-        {/* 탭 */}
         <div className="flex gap-1 mb-5 border-b border-white/[.06] pb-0">
           {TABS.map((t) => (
             <button key={t.key} onClick={() => setTab(t.key)}
