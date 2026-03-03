@@ -52,7 +52,6 @@ export async function POST() {
       );
     }
 
-    // metrics upsert
     if (parsed.metrics?.date) {
       const m = parsed.metrics;
       await supabase.from("valuation_metrics").upsert(
@@ -60,6 +59,7 @@ export async function POST() {
           date: m.date,
           kospi_pbr: m.kospi_pbr,
           kospi_div_yield: m.kospi_div_yield,
+          total_dividend: m.total_dividend,
           valueup_index: m.valueup_index,
           kospi_close: m.kospi_close,
           pbr_below1_pct: m.pbr_below1_pct,
@@ -71,7 +71,6 @@ export async function POST() {
       );
     }
 
-    // events insert (중복 방지: 같은 날짜+제목 스킵)
     if (parsed.events?.length) {
       for (const ev of parsed.events) {
         const { data: existing } = await supabase
