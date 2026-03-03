@@ -17,6 +17,17 @@ const MODULES = [
     status: 'active',
   },
   {
+  id: 'taylor-rule',
+  layer: 'MACRO',
+  title: '테일러 룰 모니터',
+  subtitle: 'Modified Taylor Rule Monitor',
+  description: '수정 테일러 룰 기반 적정금리 vs 기준금리 괴리 분석 · 국고3년 GAP 비교',
+  href: '/taylor-rule',
+  icon: '📐',
+  accentColor: '#f97316',
+  status: 'active',
+  },
+  {
     id: 'fed-watch',
     layer: 'MACRO',
     title: 'Fed Watch',
