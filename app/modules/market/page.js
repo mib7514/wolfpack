@@ -183,16 +183,13 @@ function ConsumerTab() {
         </div>
         <UpdateButton loading={loading} onClick={handleUpdate} />
       </div>
-
       <LogPanel aiLog={aiLog} showLog={showLog} logRef={logRef} />
-
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
         <StatCard label="KOSPI" value={latest.kospi?.toLocaleString()} sub={`MoM ${kospiChg > 0 ? "+" : ""}${kospiChg}%`} accent="#60a5fa" />
         <StatCard label="KODEX 경기소비재" value={latest.kodex?.toLocaleString()} sub={`MoM ${kodexChg > 0 ? "+" : ""}${kodexChg}%`} accent="#f97316" />
         <StatCard label="스프레드" value={`${Number(spread) > 0 ? "+" : ""}${spread}%p`} sub="초과수익" accent={Number(spread) >= 0 ? "#4ade80" : "#f87171"} />
         <StatCard label="소비자심리" value={latestCSI.csi} sub={latestCSI.csi >= 100 ? "낙관" : "비관"} accent={latestCSI.csi >= 100 ? "#4ade80" : "#facc15"} />
       </div>
-
       <div className="bg-white/[.015] border border-white/[.06] rounded-2xl pt-4 pr-1 pb-2 mb-4">
         <div className="flex items-center gap-2 px-5 mb-2 text-[13px] font-bold opacity-80">
           <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shadow-[0_0_6px_#60a5fa]" /><span>KOSPI</span>
@@ -214,7 +211,6 @@ function ConsumerTab() {
           </LineChart>
         </ResponsiveContainer>
       </div>
-
       <div className="bg-white/[.015] border border-white/[.06] rounded-2xl pt-4 pr-1 pb-2 mb-4">
         <div className="flex items-center gap-2 px-5 mb-2 text-[13px] font-bold opacity-80">
           <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 shadow-[0_0_6px_#facc15]" />
@@ -232,7 +228,6 @@ function ConsumerTab() {
           </LineChart>
         </ResponsiveContainer>
       </div>
-
       <div className="bg-red-600/[.04] border border-red-600/15 rounded-xl px-4 py-3.5">
         <div className="text-xs font-bold text-red-600 mb-2">🐺 읽는 법</div>
         <div className="text-xs leading-relaxed opacity-70">
@@ -287,7 +282,6 @@ function CurrencyMiniChart({ data, currencyCode, info }) {
   const latest = values[values.length - 1];
   const prev = values[values.length - 2];
   const chg = latest && prev ? ((latest - prev) / prev * 100).toFixed(1) : "—";
-
   return (
     <div className="bg-white/[.015] border border-white/[.06] rounded-2xl pt-3 pr-1 pb-2">
       <div className="flex items-center justify-between px-4 mb-1">
@@ -345,10 +339,8 @@ function InboundTab() {
   const filteredCurr = range >= 999 ? currPivoted : currPivoted.slice(-range);
   const chartInbound = filtered.map((d) => ({ ...d, label: fmtInbound(d.date) }));
   const chartCurrency = filteredCurr.map((d) => ({ ...d, label: fmtInbound(d.date) }));
-
   const countryToCurrency = { CN: "CNY", JP: "JPY", US: "USD", TW: "TWD" };
   const topCurrencies = [...new Set(topCountries.map((c) => countryToCurrency[c]).filter(Boolean))];
-
   const latest = pivoted[pivoted.length - 1] || {};
   const prev = pivoted[pivoted.length - 2] || {};
   const totalChg = latest.total && prev.total ? ((latest.total - prev.total) / prev.total * 100).toFixed(1) : "—";
@@ -379,9 +371,7 @@ function InboundTab() {
         <RangeButtons range={range} setRange={setRange} />
         <UpdateButton loading={loading} onClick={handleUpdate} />
       </div>
-
       <LogPanel aiLog={aiLog} showLog={showLog} logRef={logRef} />
-
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
         <StatCard label="월간 총 방한" value={`${latest.total?.toLocaleString() || "—"}천`} sub={`MoM ${totalChg > 0 ? "+" : ""}${totalChg}%`} accent="#4FC3F7" />
         {topCountries.slice(0, 3).map((c) => {
@@ -392,7 +382,6 @@ function InboundTab() {
           return <StatCard key={c} label={`${info.flag} ${info.name}`} value={`${val?.toLocaleString() || "—"}천`} sub={`MoM ${chg > 0 ? "+" : ""}${chg}%`} accent={info.color} />;
         })}
       </div>
-
       <div className="bg-white/[.015] border border-white/[.06] rounded-2xl pt-4 pr-1 pb-2 mb-4">
         <div className="flex items-center gap-2 px-5 mb-2 text-[13px] font-bold opacity-80">
           <span>✈️ 국가별 방한 관광객</span>
@@ -411,7 +400,6 @@ function InboundTab() {
           </BarChart>
         </ResponsiveContainer>
       </div>
-
       <div className="flex items-center gap-2 px-1 mb-3 text-[13px] font-bold opacity-80">
         <span>💱 Top 방한국 통화 vs 원화</span>
         <span className="text-[10px] opacity-40">원화 약세(상승) = 인바운드 구매력 ↑</span>
@@ -421,7 +409,6 @@ function InboundTab() {
           <CurrencyMiniChart key={c} data={chartCurrency} currencyCode={c} info={CURRENCY_LABELS[c]} />
         ))}
       </div>
-
       <div className="bg-red-600/[.04] border border-red-600/15 rounded-xl px-4 py-3.5">
         <div className="text-xs font-bold text-red-600 mb-2">🐺 읽는 법</div>
         <div className="text-xs leading-relaxed opacity-70">
@@ -454,7 +441,6 @@ function ValTooltip({ active, payload, label }) {
 function EventTimeline({ events }) {
   if (!events?.length) return null;
   const sorted = [...events].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8);
-
   return (
     <div className="bg-white/[.015] border border-white/[.06] rounded-2xl px-5 py-4 mb-4">
       <div className="text-[13px] font-bold opacity-80 mb-3">📋 밸류업 이벤트 타임라인</div>
@@ -471,12 +457,8 @@ function EventTimeline({ events }) {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
                   <span className="text-[10px] text-gray-500">{ev.date}</span>
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-full font-semibold" style={{ backgroundColor: `${cat.color}20`, color: cat.color }}>
-                    {cat.label}
-                  </span>
-                  <span className={`text-[9px] font-bold ${impactColor}`}>
-                    {ev.impact === "positive" ? "▲" : ev.impact === "negative" ? "▼" : "—"}
-                  </span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full font-semibold" style={{ backgroundColor: `${cat.color}20`, color: cat.color }}>{cat.label}</span>
+                  <span className={`text-[9px] font-bold ${impactColor}`}>{ev.impact === "positive" ? "▲" : ev.impact === "negative" ? "▼" : "—"}</span>
                 </div>
                 <div className="text-[12px] font-semibold text-gray-200">{ev.title}</div>
                 {ev.description && <div className="text-[11px] text-gray-500 mt-0.5">{ev.description}</div>}
@@ -507,6 +489,7 @@ function ValuationTab() {
         const { data: ev, error: e2 } = await supabase.from("valueup_events").select("*").order("date", { ascending: false });
         if (!e1 && m?.length > 0) setValData(m.map((r) => ({
           date: r.date, kospi_pbr: Number(r.kospi_pbr), kospi_div_yield: Number(r.kospi_div_yield),
+          total_dividend: r.total_dividend ? Number(r.total_dividend) : null,
           valueup_index: r.valueup_index ? Number(r.valueup_index) : null,
           kospi_close: Number(r.kospi_close), pbr_below1_pct: r.pbr_below1_pct ? Number(r.pbr_below1_pct) : null,
           valueup_corps_count: r.valueup_corps_count ? Number(r.valueup_corps_count) : null,
@@ -526,17 +509,15 @@ function ValuationTab() {
   const pbrChg = latest.kospi_pbr && prev.kospi_pbr ? (latest.kospi_pbr - prev.kospi_pbr).toFixed(2) : "—";
   const vuChg = latest.valueup_index && prev.valueup_index ? ((latest.valueup_index - prev.valueup_index) / prev.valueup_index * 100).toFixed(1) : "—";
 
-  // PBR Y축 범위
+  const latestDiv = [...valData].reverse().find(d => d.total_dividend != null);
+  const prevDiv = latestDiv ? [...valData].reverse().find(d => d.total_dividend != null && d.date < latestDiv.date) : null;
+  const divChg = latestDiv?.total_dividend && prevDiv?.total_dividend
+    ? ((latestDiv.total_dividend - prevDiv.total_dividend) / prevDiv.total_dividend * 100).toFixed(1) : "—";
+
   const pbrValues = filtered.map(d => d.kospi_pbr).filter(Boolean);
   const pbrMin = Math.floor((Math.min(...pbrValues) - 0.05) * 20) / 20;
   const pbrMax = Math.ceil((Math.max(...pbrValues) + 0.05) * 20) / 20;
 
-  // 배당수익률 Y축 범위
-  const divValues = filtered.map(d => d.kospi_div_yield).filter(Boolean);
-  const divMin = Math.floor((Math.min(...divValues) - 0.1) * 10) / 10;
-  const divMax = Math.ceil((Math.max(...divValues) + 0.1) * 10) / 10;
-
-  // PBR 1배 미만 비율 Y축
   const below1Values = filtered.map(d => d.pbr_below1_pct).filter(Boolean);
   const below1Min = Math.floor(Math.min(...below1Values) - 2);
   const below1Max = Math.ceil(Math.max(...below1Values) + 2);
@@ -552,13 +533,15 @@ function ValuationTab() {
       log("✅ 수신 완료");
       if (body.parsed?.metrics) {
         const m = body.parsed.metrics;
-        log(`  PBR: ${m.kospi_pbr}x / 배당: ${m.kospi_div_yield}%`);
+        log(`  PBR: ${m.kospi_pbr}x / 배당수익률: ${m.kospi_div_yield}%`);
         log(`  밸류업지수: ${m.valueup_index}`);
+        if (m.total_dividend) log(`  총 배당: ${m.total_dividend}조원`);
       }
       if (body.parsed?.events?.length) log(`  이벤트 ${body.parsed.events.length}건 추가`);
       if (body.parsed?.notes) log(`  💬 ${body.parsed.notes}`);
       if (body.metrics?.length) setValData(body.metrics.map((r) => ({
         date: r.date, kospi_pbr: Number(r.kospi_pbr), kospi_div_yield: Number(r.kospi_div_yield),
+        total_dividend: r.total_dividend ? Number(r.total_dividend) : null,
         valueup_index: r.valueup_index ? Number(r.valueup_index) : null,
         kospi_close: Number(r.kospi_close), pbr_below1_pct: r.pbr_below1_pct ? Number(r.pbr_below1_pct) : null,
         valueup_corps_count: r.valueup_corps_count ? Number(r.valueup_corps_count) : null,
@@ -574,12 +557,11 @@ function ValuationTab() {
         <RangeButtons range={range} setRange={setRange} />
         <UpdateButton loading={loading} onClick={handleUpdate} />
       </div>
-
       <LogPanel aiLog={aiLog} showLog={showLog} logRef={logRef} />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
         <StatCard label="KOSPI PBR" value={`${latest.kospi_pbr?.toFixed(2)}x`} sub={`MoM ${Number(pbrChg) > 0 ? "+" : ""}${pbrChg}`} accent="#60a5fa" />
-        <StatCard label="배당수익률" value={`${latest.kospi_div_yield?.toFixed(1)}%`} sub="KOSPI 평균" accent="#22c55e" />
+        <StatCard label="총 배당금액" value={`${latestDiv?.total_dividend || "—"}조`} sub={`YoY ${Number(divChg) > 0 ? "+" : ""}${divChg}%`} accent="#22c55e" />
         <StatCard label="밸류업지수" value={latest.valueup_index?.toLocaleString() || "—"} sub={`MoM ${Number(vuChg) > 0 ? "+" : ""}${vuChg}%`} accent="#f97316" />
         <StatCard label="PBR<1 비율" value={`${latest.pbr_below1_pct || "—"}%`} sub={`공시 ${latest.valueup_corps_count || "—"}개사`} accent={latest.pbr_below1_pct < 60 ? "#4ade80" : "#f87171"} />
       </div>
@@ -606,15 +588,43 @@ function ValuationTab() {
         </ResponsiveContainer>
       </div>
 
-      {/* PBR + 배당수익률 + PBR<1 비율 — 3개 미니차트 */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-        {/* PBR */}
+      {/* 주주환원 듀얼 차트 */}
+      <div className="bg-white/[.015] border border-white/[.06] rounded-2xl pt-4 pr-1 pb-2 mb-4">
+        <div className="flex items-center gap-2 px-5 mb-1 text-[13px] font-bold opacity-80">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-400 shadow-[0_0_6px_#22c55e]" /><span>배당수익률</span>
+          <span className="opacity-30 mx-0.5">+</span>
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_6px_#10b981]" /><span>총 배당금액</span>
+        </div>
+        <div className="px-5 mb-2 text-[10px] opacity-40">
+          배당수익률 ↓ + 총 배당금액 ↑ = 주가 리레이팅 진행 중 (좋은 신호) · 둘 다 ↓ = 위험 신호
+        </div>
+        <ResponsiveContainer width="100%" height={220}>
+          <LineChart data={chart} margin={{ top: 10, right: 24, left: 8, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+            <XAxis dataKey="label" tick={{ fill: "#666", fontSize: 10 }} tickLine={false} axisLine={{ stroke: "rgba(255,255,255,0.08)" }} />
+            <YAxis yAxisId="yield" tick={{ fill: "#22c55e", fontSize: 10 }} tickLine={false} axisLine={false}
+              domain={[0.8, 2.5]} tickFormatter={(v) => `${v}%`} />
+            <YAxis yAxisId="total" orientation="right" tick={{ fill: "#10b981", fontSize: 10 }} tickLine={false} axisLine={false}
+              domain={[20, 40]} tickFormatter={(v) => `${v}조`} />
+            <Tooltip content={<ValTooltip />} />
+            <Line type="monotone" dataKey="kospi_div_yield" name="배당수익률(%)" stroke="#22c55e" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} yAxisId="yield" />
+            <Line type="stepAfter" dataKey="total_dividend" name="총 배당금액(조원)" stroke="#10b981" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} yAxisId="total" connectNulls={false} strokeDasharray="6 3" />
+            <Legend wrapperStyle={{ fontSize: 11, paddingTop: 4 }} iconType="line" />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* PBR + PBR<1 비율 */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
         <div className="bg-white/[.015] border border-white/[.06] rounded-2xl pt-3 pr-1 pb-2">
           <div className="flex items-center justify-between px-4 mb-1">
             <div className="text-[12px] font-bold opacity-80">KOSPI PBR</div>
-            <span className="text-[11px] font-bold text-blue-400">{latest.kospi_pbr?.toFixed(2)}x</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold text-blue-400">{latest.kospi_pbr?.toFixed(2)}x</span>
+              {latest.kospi_pbr >= 1 && <span className="text-[9px] text-green-400 font-semibold">1배 돌파 ✓</span>}
+            </div>
           </div>
-          <ResponsiveContainer width="100%" height={120}>
+          <ResponsiveContainer width="100%" height={140}>
             <AreaChart data={chart} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
               <defs>
                 <linearGradient id="pbrGrad" x1="0" y1="0" x2="0" y2="1">
@@ -626,36 +636,12 @@ function ValuationTab() {
               <XAxis dataKey="label" tick={{ fill: "#555", fontSize: 9 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
               <YAxis domain={[pbrMin, pbrMax]} tick={{ fill: "#555", fontSize: 9 }} tickLine={false} axisLine={false} width={35} />
               <Tooltip content={<ValTooltip />} />
-              <ReferenceLine y={1} stroke="rgba(239,68,68,0.4)" strokeDasharray="3 3" />
+              <ReferenceLine y={1} stroke="rgba(239,68,68,0.4)" strokeDasharray="3 3" label={{ value: "1x", position: "left", fill: "#ef4444", fontSize: 9, opacity: 0.6 }} />
               <Area type="monotone" dataKey="kospi_pbr" name="PBR" stroke="#60a5fa" strokeWidth={2} fill="url(#pbrGrad)" dot={false} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
 
-        {/* 배당수익률 */}
-        <div className="bg-white/[.015] border border-white/[.06] rounded-2xl pt-3 pr-1 pb-2">
-          <div className="flex items-center justify-between px-4 mb-1">
-            <div className="text-[12px] font-bold opacity-80">배당수익률</div>
-            <span className="text-[11px] font-bold text-green-400">{latest.kospi_div_yield?.toFixed(1)}%</span>
-          </div>
-          <ResponsiveContainer width="100%" height={120}>
-            <AreaChart data={chart} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
-              <defs>
-                <linearGradient id="divGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-              <XAxis dataKey="label" tick={{ fill: "#555", fontSize: 9 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
-              <YAxis domain={[divMin, divMax]} tick={{ fill: "#555", fontSize: 9 }} tickLine={false} axisLine={false} width={35} />
-              <Tooltip content={<ValTooltip />} />
-              <Area type="monotone" dataKey="kospi_div_yield" name="배당수익률(%)" stroke="#22c55e" strokeWidth={2} fill="url(#divGrad)" dot={false} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* PBR 1배 미만 비율 */}
         <div className="bg-white/[.015] border border-white/[.06] rounded-2xl pt-3 pr-1 pb-2">
           <div className="flex items-center justify-between px-4 mb-1">
             <div className="text-[12px] font-bold opacity-80">PBR{'<'}1 비율</div>
@@ -663,7 +649,7 @@ function ValuationTab() {
               {latest.pbr_below1_pct}%
             </span>
           </div>
-          <ResponsiveContainer width="100%" height={120}>
+          <ResponsiveContainer width="100%" height={140}>
             <AreaChart data={chart} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
               <defs>
                 <linearGradient id="belowGrad" x1="0" y1="0" x2="0" y2="1">
@@ -675,22 +661,22 @@ function ValuationTab() {
               <XAxis dataKey="label" tick={{ fill: "#555", fontSize: 9 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
               <YAxis domain={[below1Min, below1Max]} tick={{ fill: "#555", fontSize: 9 }} tickLine={false} axisLine={false} width={35} />
               <Tooltip content={<ValTooltip />} />
-              <ReferenceLine y={50} stroke="rgba(74,222,128,0.3)" strokeDasharray="3 3" />
+              <ReferenceLine y={50} stroke="rgba(74,222,128,0.3)" strokeDasharray="3 3" label={{ value: "50%", position: "left", fill: "#4ade80", fontSize: 9, opacity: 0.6 }} />
               <Area type="monotone" dataKey="pbr_below1_pct" name="PBR<1 비율(%)" stroke="#f87171" strokeWidth={2} fill="url(#belowGrad)" dot={false} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      {/* 이벤트 타임라인 */}
       <EventTimeline events={events} />
 
       <div className="bg-red-600/[.04] border border-red-600/15 rounded-xl px-4 py-3.5">
         <div className="text-xs font-bold text-red-600 mb-2">🐺 읽는 법</div>
         <div className="text-xs leading-relaxed opacity-70">
-          <strong>밸류업지수가 KOSPI를 아웃퍼폼</strong>하면 주주환원 기업이 시장에서 프리미엄을 받기 시작했다는 신호.
-          <strong> PBR 상승 + 배당수익률 유지/상승</strong>이 동시에 진행되면 일본형 선순환(리레이팅) 진입.
-          <strong> PBR{'<'}1 비율 하락</strong>은 밸류업 정책이 실제로 작동하고 있다는 증거. 50% 아래로 내려가면 구조적 전환 확인.
+          <strong>밸류업지수가 KOSPI를 아웃퍼폼</strong>하면 주주환원 기업이 프리미엄 받기 시작했다는 신호.
+          배당 차트는 두 선을 같이 봐야 함: <strong>배당수익률이 하락하더라도 총 배당금액이 증가</strong>하면 주가 상승(리레이팅)이 배당 증가보다 빠른 것 — 이건 좋은 신호.
+          진짜 위험한 건 총 배당금액도 같이 줄어드는 경우.
+          <strong> PBR{'<'}1 비율 하락</strong>은 밸류업이 작동 중이라는 증거. 50% 아래 = 구조적 전환.
         </div>
       </div>
     </>
