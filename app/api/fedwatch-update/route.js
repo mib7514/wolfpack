@@ -1,160 +1,140 @@
-import { NextResponse } from 'next/server';
+import { createClient } from "@supabase/supabase-js";
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-
-async function callClaude(prompt) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
-      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  });
-  const data = await res.json();
-  return data.content
-    ?.filter((b) => b.type === 'text')
-    .map((b) => b.text)
-    .join('\n');
-}
-
-function safeJSON(raw, fallback) {
-  if (!raw) return fallback;
-  try {
-    const cleaned = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-    return JSON.parse(cleaned);
-  } catch {
-    return fallback;
-  }
-}
+const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
 
 export async function POST() {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return Response.json({ error: "ANTHROPIC_API_KEY not configured" }, { status: 500 });
+  }
+
   try {
-    if (!ANTHROPIC_API_KEY) {
-      return NextResponse.json({ error: 'ANTHROPIC_API_KEY not set' }, { status: 500 });
-    }
+    // ─── Call Claude with web search ───
+    const prompt = `Search CME FedWatch tool for the latest Fed Funds rate probabilities for all upcoming 2026 FOMC meetings.
 
-    // ── 1. Current rate + next meeting ──
-    const rateRaw = await callClaude(
-      `Search for the current US Federal Funds Rate target range and the next upcoming FOMC meeting date.
-Return ONLY valid JSON, no markdown, no backticks:
-{"current_rate_upper":number,"current_rate_lower":number,"next_meeting":"YYYY-MM-DD","last_decision":"hold or cut or hike","last_decision_date":"YYYY-MM-DD"}`
-    );
+I need the probability distribution for each meeting: Mar 18, Apr 29, Jun 17, Jul 29, Sep 17, Oct 29, Dec 10.
 
-    // ── 2. Probabilities for each upcoming FOMC meeting ──
-    const probRaw = await callClaude(
-      `Search for the latest CME FedWatch probabilities for ALL upcoming 2026 FOMC meetings.
-For each meeting, I need the probability distribution of the target rate ranges.
-The 2026 FOMC meeting dates are: Mar 18, Apr 29, Jun 17, Jul 29, Sep 17, Oct 29, Dec 10.
-For each meeting, provide the probability for each rate range (e.g., 375-400, 350-375, 325-350, 300-325, 275-300, 250-275, etc).
-Also calculate the probability-weighted expected rate (midpoint of each range * probability).
+Also find:
+- Current Fed Funds Rate target range
+- How many rate cuts are priced in for 2026
+- When the first cut is expected
+- Any recent notable Fed speaker comments (last 2-4 weeks)
 
-Return ONLY valid JSON, no markdown:
+Respond ONLY in JSON (no markdown, no backticks):
 {
-  "as_of":"YYYY-MM-DD",
-  "meetings":[
+  "current_rate": "425-450",
+  "meetings": [
     {
-      "date":"YYYY-MM-DD",
-      "label":"Mar",
-      "probs":[{"range":"350-375","pct":96},{"range":"325-350","pct":4}],
-      "expected_rate":3.61,
-      "most_likely":"350-375",
-      "most_likely_pct":96,
-      "cut_prob":4,
-      "hold_prob":96,
-      "hike_prob":0
+      "date": "2026-03-18",
+      "label": "Mar",
+      "probs": [
+        {"range": "425-450", "pct": 96.0},
+        {"range": "400-425", "pct": 4.0}
+      ],
+      "expected_rate": 4.355,
+      "cut_prob": 4.0
     }
+  ],
+  "cuts_priced_2026": 2,
+  "first_cut_expected": "Jun 2026",
+  "commentary": "한국어로 2-3문장 시장 코멘터리. 채권 PM 관점에서 핵심 내용.",
+  "risks": ["리스크1", "리스크2", "리스크3"],
+  "recent_fed_speakers": [
+    {"name": "이름", "date": "2026-MM-DD", "message": "한국어 요약"}
   ]
-}`
-    );
+}
 
-    // ── 3. Market commentary + dot plot context ──
-    const commentRaw = await callClaude(
-      `Search for the latest Fed commentary, dot plot expectations, and market consensus on 2026 rate path.
-Include: Fed's own projection for YE 2026, market pricing vs Fed dots, key risks (inflation, tariffs, labor).
-Return ONLY valid JSON, no markdown:
-{
-  "fed_ye2026_projection":"3.25-3.50",
-  "market_ye2026_expected":"3.00-3.25",
-  "cuts_priced_2026":2,
-  "first_cut_expected":"Jun 2026",
-  "commentary":"brief summary",
-  "risks":["risk1","risk2","risk3"],
-  "recent_fed_speakers":[{"name":"","date":"","message":""}]
-}`
-    );
+Use exact range format like "350-375", "325-350", "300-325" etc (basis points without decimal).
+Percentages should sum to ~100 for each meeting.
+Provide the MOST CURRENT data available from CME FedWatch.`;
 
-    const result = {
-      rate: safeJSON(rateRaw, null),
-      probabilities: safeJSON(probRaw, null),
-      commentary: safeJSON(commentRaw, null),
-      updated_at: new Date().toISOString(),
-    };
+    const res = await fetch(ANTHROPIC_API, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-5-20250514",
+        max_tokens: 4000,
+        tools: [{ type: "web_search_20250305", name: "web_search" }],
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
 
-    // ── Save snapshot to Supabase ──
-    const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!res.ok) {
+      const errText = await res.text();
+      return Response.json({ error: `Anthropic API error: ${res.status} - ${errText.slice(0, 300)}` }, { status: 500 });
+    }
 
-    if (SUPABASE_URL && SUPABASE_KEY) {
-      try {
-        // Save latest state
-        await fetch(`${SUPABASE_URL}/rest/v1/fedwatch_data`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: SUPABASE_KEY,
-            Authorization: `Bearer ${SUPABASE_KEY}`,
-            Prefer: 'resolution=merge-duplicates',
-          },
-          body: JSON.stringify({
-            id: 'latest',
-            data: result,
-            updated_at: result.updated_at,
-          }),
-        });
+    const data = await res.json();
+    const rawText = data.content
+      .filter((b) => b.type === "text")
+      .map((b) => b.text)
+      .join("\n");
 
-        // Save time-series snapshot (one per day)
-        const today = new Date().toISOString().split('T')[0];
-        if (result.probabilities?.meetings) {
-          const snapshot = {
-            date: today,
-            meetings: result.probabilities.meetings.map(m => ({
-              date: m.date,
-              label: m.label,
-              expected_rate: m.expected_rate,
-              cut_prob: m.cut_prob,
-              hold_prob: m.hold_prob,
-            })),
-          };
-          await fetch(`${SUPABASE_URL}/rest/v1/fedwatch_snapshots`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              apikey: SUPABASE_KEY,
-              Authorization: `Bearer ${SUPABASE_KEY}`,
-              Prefer: 'resolution=merge-duplicates',
-            },
-            body: JSON.stringify({
-              id: today,
-              data: snapshot,
-              created_at: result.updated_at,
-            }),
-          });
-        }
-      } catch (e) {
-        console.log('Supabase save failed:', e.message);
+    // Parse JSON from response
+    let parsed;
+    try {
+      const cleaned = rawText.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+      parsed = JSON.parse(cleaned);
+    } catch {
+      const match = rawText.match(/\{[\s\S]*\}/);
+      if (match) {
+        parsed = JSON.parse(match[0]);
+      } else {
+        return Response.json({ error: "Failed to parse AI response as JSON" }, { status: 500 });
       }
     }
 
-    return NextResponse.json(result);
+    // Build result
+    const now = new Date().toISOString();
+    const result = {
+      probabilities: { meetings: parsed.meetings || [] },
+      commentary: {
+        fed_ye2026_projection: "3.25-3.50",
+        market_ye2026_expected: parsed.current_rate || "350-375",
+        cuts_priced_2026: parsed.cuts_priced_2026 || 2,
+        first_cut_expected: parsed.first_cut_expected || "Jun 2026",
+        commentary: parsed.commentary || "",
+        risks: parsed.risks || [],
+        recent_fed_speakers: parsed.recent_fed_speakers || [],
+      },
+      rate: parsed.current_rate
+        ? {
+            current_rate_lower: parseInt(parsed.current_rate.split("-")[0]),
+            current_rate_upper: parseInt(parsed.current_rate.split("-")[1]),
+          }
+        : null,
+      updated_at: now,
+    };
+
+    // ─── Save to Supabase (best-effort) ───
+    try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (supabaseUrl && supabaseKey) {
+        const sb = createClient(supabaseUrl, supabaseKey);
+        await sb.from("fedwatch_data").upsert({ id: "latest", data: result, updated_at: now });
+        const today = now.split("T")[0];
+        const snap = {
+          date: today,
+          meetings: (parsed.meetings || []).map((m) => ({
+            date: m.date,
+            label: m.label,
+            expected_rate: m.expected_rate || 0,
+            cut_prob: m.cut_prob || 0,
+          })),
+        };
+        await sb.from("fedwatch_snapshots").insert({ data: snap });
+      }
+    } catch (e) {
+      console.log("Supabase save skipped:", e.message);
+    }
+
+    return Response.json(result);
   } catch (err) {
-    console.error('FedWatch update error:', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return Response.json({ error: err.message }, { status: 500 });
   }
 }
