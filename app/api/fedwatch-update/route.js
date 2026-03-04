@@ -1,15 +1,16 @@
-import { createClient } from "@supabase/supabase-js";
-
-const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
+import { NextResponse } from "next/server";
 
 export async function POST() {
   const apiKey = process.env.ANTHROPIC_API_KEY;
+
   if (!apiKey) {
-    return Response.json({ error: "ANTHROPIC_API_KEY not configured" }, { status: 500 });
+    return NextResponse.json(
+      { error: "ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다" },
+      { status: 500 }
+    );
   }
 
   try {
-    // ─── Call Claude with web search ───
     const prompt = `Search CME FedWatch tool for the latest Fed Funds rate probabilities for all upcoming 2026 FOMC meetings.
 
 I need the probability distribution for each meeting: Mar 18, Apr 29, Jun 17, Jul 29, Sep 17, Oct 29, Dec 10.
@@ -44,11 +45,10 @@ Respond ONLY in JSON (no markdown, no backticks):
   ]
 }
 
-Use exact range format like "350-375", "325-350", "300-325" etc (basis points without decimal).
-Percentages should sum to ~100 for each meeting.
-Provide the MOST CURRENT data available from CME FedWatch.`;
+Use exact range format like "350-375", "325-350", "300-325" etc.
+Percentages should sum to ~100 for each meeting.`;
 
-    const res = await fetch(ANTHROPIC_API, {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -56,7 +56,7 @@ Provide the MOST CURRENT data available from CME FedWatch.`;
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-5-20250514",
+        model: "claude-sonnet-4-5-20250929",
         max_tokens: 4000,
         tools: [{ type: "web_search_20250305", name: "web_search" }],
         messages: [{ role: "user", content: prompt }],
@@ -65,7 +65,11 @@ Provide the MOST CURRENT data available from CME FedWatch.`;
 
     if (!res.ok) {
       const errText = await res.text();
-      return Response.json({ error: `Anthropic API error: ${res.status} - ${errText.slice(0, 300)}` }, { status: 500 });
+      console.error("Anthropic API error:", res.status, errText);
+      return NextResponse.json(
+        { error: `Anthropic API ${res.status}: ${errText.slice(0, 200)}` },
+        { status: 500 }
+      );
     }
 
     const data = await res.json();
@@ -74,7 +78,7 @@ Provide the MOST CURRENT data available from CME FedWatch.`;
       .map((b) => b.text)
       .join("\n");
 
-    // Parse JSON from response
+    // Parse JSON
     let parsed;
     try {
       const cleaned = rawText.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
@@ -84,11 +88,14 @@ Provide the MOST CURRENT data available from CME FedWatch.`;
       if (match) {
         parsed = JSON.parse(match[0]);
       } else {
-        return Response.json({ error: "Failed to parse AI response as JSON" }, { status: 500 });
+        console.error("JSON parse failed. Raw:", rawText.slice(0, 500));
+        return NextResponse.json(
+          { error: "AI 응답을 JSON으로 파싱할 수 없습니다" },
+          { status: 500 }
+        );
       }
     }
 
-    // Build result
     const now = new Date().toISOString();
     const result = {
       probabilities: { meetings: parsed.meetings || [] },
@@ -110,31 +117,38 @@ Provide the MOST CURRENT data available from CME FedWatch.`;
       updated_at: now,
     };
 
-    // ─── Save to Supabase (best-effort) ───
+    // Supabase save (best-effort, won't break if tables don't exist)
     try {
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-      if (supabaseUrl && supabaseKey) {
-        const sb = createClient(supabaseUrl, supabaseKey);
-        await sb.from("fedwatch_data").upsert({ id: "latest", data: result, updated_at: now });
+      const sbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const sbKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (sbUrl && sbKey) {
+        const { createClient } = await import("@supabase/supabase-js");
+        const sb = createClient(sbUrl, sbKey);
+        await sb.from("fedwatch_data").upsert({
+          id: "latest",
+          data: result,
+          updated_at: now,
+        });
         const today = now.split("T")[0];
-        const snap = {
-          date: today,
-          meetings: (parsed.meetings || []).map((m) => ({
-            date: m.date,
-            label: m.label,
-            expected_rate: m.expected_rate || 0,
-            cut_prob: m.cut_prob || 0,
-          })),
-        };
-        await sb.from("fedwatch_snapshots").insert({ data: snap });
+        await sb.from("fedwatch_snapshots").insert({
+          data: {
+            date: today,
+            meetings: (parsed.meetings || []).map((m) => ({
+              date: m.date,
+              label: m.label,
+              expected_rate: m.expected_rate || 0,
+              cut_prob: m.cut_prob || 0,
+            })),
+          },
+        });
       }
     } catch (e) {
       console.log("Supabase save skipped:", e.message);
     }
 
-    return Response.json(result);
+    return NextResponse.json(result);
   } catch (err) {
-    return Response.json({ error: err.message }, { status: 500 });
+    console.error("FedWatch update error:", err);
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
