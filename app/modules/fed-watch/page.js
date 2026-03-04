@@ -34,7 +34,7 @@ const rangeToMid = (r) => {
   return ((lo + hi) / 2) / 100;
 };
 
-// ─── SEED DATA (initial probabilities as of ~Mar 1, 2026) ───
+// ─── SEED DATA ───
 const SEED_PROBS = {
   "2026-03-18": { "350-375": 96, "325-350": 4 },
   "2026-04-29": { "350-375": 82.1, "325-350": 17.3, "300-325": 0.6 },
@@ -45,7 +45,6 @@ const SEED_PROBS = {
   "2026-12-10": { "350-375": 5.4, "325-350": 21.1, "300-325": 32.5, "275-300": 25.9, "250-275": 11.7, "225-250": 3.0, "200-225": 0.4 },
 };
 
-// Seed time-series snapshots (simulated historical data for richer initial chart)
 const SEED_SNAPSHOTS = [
   { date: "2026-01-29", meetings: [
     { date: "2026-03-18", label: "Mar", expected_rate: 3.59, cut_prob: 6 },
@@ -92,7 +91,6 @@ function calcExpectedRate(probs) {
 
 function MeetingTab({ m, selected, onClick }) {
   const isPast = m.done;
-  const isNext = !m.done && !selected;
   const d = new Date(m.date);
   const dayStr = `${d.getMonth() + 1}/${d.getDate()}`;
   return (
@@ -153,7 +151,6 @@ export default function FedWatchPage() {
   const [updateLog, setUpdateLog] = useState([]);
   const [lastUpdate, setLastUpdate] = useState(null);
 
-  // Live data
   const [probs, setProbs] = useState(SEED_PROBS);
   const [snapshots, setSnapshots] = useState(SEED_SNAPSHOTS);
   const [commentary, setCommentary] = useState({
@@ -173,7 +170,6 @@ export default function FedWatchPage() {
   useEffect(() => {
     async function load() {
       try {
-        // Load latest
         const { data: latest } = await supabase
           .from("fedwatch_data")
           .select("data, updated_at")
@@ -183,14 +179,12 @@ export default function FedWatchPage() {
           applyUpdate(latest.data);
           setLastUpdate(latest.updated_at);
         }
-        // Load snapshots
         const { data: snaps } = await supabase
           .from("fedwatch_snapshots")
           .select("data")
           .order("id", { ascending: true });
         if (snaps?.length > 0) {
           const loaded = snaps.map(s => s.data).filter(Boolean);
-          // Merge with seeds (avoid duplicates)
           const existingDates = new Set(loaded.map(s => s.date));
           const merged = [...SEED_SNAPSHOTS.filter(s => !existingDates.has(s.date)), ...loaded];
           merged.sort((a, b) => a.date.localeCompare(b.date));
@@ -215,7 +209,6 @@ export default function FedWatchPage() {
       });
       setProbs(newProbs);
 
-      // Add to snapshots
       const today = new Date().toISOString().split("T")[0];
       const snap = {
         date: today,
@@ -237,15 +230,17 @@ export default function FedWatchPage() {
     }
   }
 
-  // AI Update
+  // AI Update — calls /api/fedwatch-update, shows detailed errors
   const handleUpdate = useCallback(async () => {
     setUpdating(true);
     setUpdateLog(["🔍 CME FedWatch 확률 데이터 검색 중..."]);
     try {
       const res = await fetch("/api/fedwatch-update", { method: "POST" });
-      if (!res.ok) throw new Error(`API error: ${res.status}`);
       const result = await res.json();
-      if (result.error) throw new Error(result.error);
+
+      if (!res.ok || result.error) {
+        throw new Error(result.error || `API error: ${res.status}`);
+      }
 
       setUpdateLog(prev => [...prev, "✅ 데이터 수신 완료"]);
       applyUpdate(result);
@@ -270,10 +265,9 @@ export default function FedWatchPage() {
   const upcomingMeetings = FOMC_2026.filter(m => !m.done);
   const currentMeetingProbs = probs[selectedMeeting] || {};
   const expectedRate = calcExpectedRate(currentMeetingProbs);
-  const currentRate = 3.625; // midpoint of 350-375
+  const currentRate = 3.625;
   const impliedCuts = Math.round((currentRate - expectedRate) / 0.25);
 
-  // Sort prob bars
   const probBars = RATE_RANGES
     .filter(r => (currentMeetingProbs[r] || 0) > 0.1)
     .map(r => ({ range: r, pct: currentMeetingProbs[r] || 0 }))
@@ -284,14 +278,13 @@ export default function FedWatchPage() {
     });
   const highestRange = probBars.reduce((max, b) => b.pct > (max?.pct || 0) ? b : max, null)?.range;
 
-  // Time series for selected meeting
   const tsData = snapshots
     .map(s => {
       const m = s.meetings?.find(m => m.date === timeSeriesMeeting);
       if (!m) return null;
       return {
         date: s.date,
-        dateLabel: s.date.slice(5), // MM-DD
+        dateLabel: s.date.slice(5),
         expected_rate: m.expected_rate,
         cut_prob: m.cut_prob,
       };
@@ -300,8 +293,6 @@ export default function FedWatchPage() {
 
   const selectedMeetingInfo = FOMC_2026.find(m => m.date === selectedMeeting);
   const tsMeetingInfo = FOMC_2026.find(m => m.date === timeSeriesMeeting);
-
-  // Next meeting
   const nextMeeting = upcomingMeetings[0];
   const daysToNext = nextMeeting ? Math.ceil((new Date(nextMeeting.date) - new Date()) / 86400000) : 0;
 
@@ -327,7 +318,6 @@ export default function FedWatchPage() {
           </div>
         </div>
 
-        {/* Update button */}
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
           <button
             onClick={handleUpdate}
@@ -346,7 +336,6 @@ export default function FedWatchPage() {
           </button>
         </div>
 
-        {/* Update log */}
         {updateLog.length > 0 && (
           <div style={{ marginTop: 8, background: "rgba(0,0,0,0.4)", borderRadius: 8, padding: "10px 12px", border: `1px solid ${BD}`, maxHeight: 140, overflowY: "auto" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
@@ -366,7 +355,7 @@ export default function FedWatchPage() {
       {/* ─── CONTENT ─── */}
       <div style={{ padding: "14px 18px", maxWidth: 1100, margin: "0 auto" }}>
 
-        {/* ══ KEY METRICS ══ */}
+        {/* KEY METRICS */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 14 }}>
           {[
             { label: "YE 2026 기대금리", value: `${calcExpectedRate(probs["2026-12-10"] || SEED_PROBS["2026-12-10"]).toFixed(2)}%`, sub: "확률가중 평균", c: FED },
@@ -382,7 +371,7 @@ export default function FedWatchPage() {
           ))}
         </div>
 
-        {/* ══ TIME SERIES — EXPECTED RATE EVOLUTION ══ */}
+        {/* TIME SERIES */}
         <div style={{ background: BGC, borderRadius: 12, padding: 16, border: `1px solid ${BD}`, marginBottom: 12 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
             <div>
@@ -390,11 +379,8 @@ export default function FedWatchPage() {
               <p style={{ fontSize: 10, color: T3, margin: "2px 0 0" }}>각 FOMC 미팅별 확률가중 기대금리의 시간에 따른 변화</p>
             </div>
           </div>
-          {/* Meeting selector for time series */}
           <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
-            {upcomingMeetings.filter((_, i) => {
-              return true;
-            }).map(m => (
+            {upcomingMeetings.map(m => (
               <button
                 key={m.date}
                 onClick={() => setTimeSeriesMeeting(m.date)}
@@ -419,11 +405,7 @@ export default function FedWatchPage() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                 <XAxis dataKey="dateLabel" tick={{ fill: T2, fontSize: 9 }} />
-                <YAxis
-                  tick={{ fill: T2, fontSize: 9 }}
-                  domain={['auto', 'auto']}
-                  tickFormatter={v => `${v.toFixed(2)}%`}
-                />
+                <YAxis tick={{ fill: T2, fontSize: 9 }} domain={['auto', 'auto']} tickFormatter={v => `${v.toFixed(2)}%`} />
                 <Tooltip
                   content={({ active, payload, label }) =>
                     active && payload?.length ? (
@@ -438,7 +420,6 @@ export default function FedWatchPage() {
                 <ReferenceLine y={3.625} stroke="rgba(255,255,255,0.15)" strokeDasharray="4 4" label={{ value: "현재 3.625%", fill: T3, fontSize: 8 }} />
                 <Area type="monotone" dataKey="expected_rate" stroke="none" fill="url(#tsGrad)" />
                 <Line type="monotone" dataKey="expected_rate" stroke={FED} strokeWidth={2.5} dot={{ r: 4, fill: FED, stroke: "#fff", strokeWidth: 1 }} name="기대금리" />
-
               </ComposedChart>
             </ResponsiveContainer>
           ) : (
@@ -452,23 +433,14 @@ export default function FedWatchPage() {
           </div>
         </div>
 
-        {/* ══ PROBABILITY DISTRIBUTION ══ */}
+        {/* PROBABILITY DISTRIBUTION */}
         <div style={{ background: BGC, borderRadius: 12, padding: 16, border: `1px solid ${BD}`, marginBottom: 12 }}>
           <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 10px", color: FED }}>🎯 FOMC 미팅별 금리 확률 분포</h3>
-
-          {/* Meeting tabs */}
           <div style={{ display: "flex", gap: 4, overflowX: "auto", paddingBottom: 8, marginBottom: 12 }}>
             {FOMC_2026.map(m => (
-              <MeetingTab
-                key={m.date}
-                m={m}
-                selected={selectedMeeting === m.date}
-                onClick={() => !m.done && setSelectedMeeting(m.date)}
-              />
+              <MeetingTab key={m.date} m={m} selected={selectedMeeting === m.date} onClick={() => !m.done && setSelectedMeeting(m.date)} />
             ))}
           </div>
-
-          {/* Selected meeting info */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, padding: "10px 14px", background: BGC2, borderRadius: 8, border: `1px solid ${BD}` }}>
             <div>
               <span style={{ fontSize: 12, fontWeight: 700 }}>FOMC {selectedMeetingInfo?.label} · {selectedMeeting.slice(5)}</span>
@@ -481,15 +453,11 @@ export default function FedWatchPage() {
               {impliedCuts === 0 && <div style={{ fontSize: 9, color: T3 }}>동결</div>}
             </div>
           </div>
-
-          {/* Probability bars */}
           <div style={{ marginBottom: 8 }}>
             {probBars.map(b => (
               <ProbBar key={b.range} range={b.range} pct={b.pct} isHighest={b.range === highestRange} currentRange="350-375" />
             ))}
           </div>
-
-          {/* Summary badges */}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {[
               { label: "인하", pct: Object.entries(currentMeetingProbs).reduce((s, [r, p]) => parseInt(r.split("-")[0]) < 350 ? s + p : s, 0), color: GRN },
@@ -504,7 +472,7 @@ export default function FedWatchPage() {
           </div>
         </div>
 
-        {/* ══ RATE PATH CHART ══ */}
+        {/* RATE PATH */}
         <div style={{ background: BGC, borderRadius: 12, padding: 16, border: `1px solid ${BD}`, marginBottom: 12 }}>
           <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 12px", color: FED }}>📉 예상 금리 경로 (현재 vs Fed Dot)</h3>
           <ResponsiveContainer width="100%" height={200}>
@@ -536,11 +504,10 @@ export default function FedWatchPage() {
           </div>
         </div>
 
-        {/* ══ COMMENTARY ══ */}
+        {/* COMMENTARY */}
         <div style={{ background: BGC, borderRadius: 12, padding: 16, border: `1px solid ${BD}`, marginBottom: 12 }}>
           <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 10px", color: FED }}>💬 시장 코멘터리</h3>
           <p style={{ fontSize: 11, color: T2, lineHeight: 1.7, margin: "0 0 12px" }}>{commentary.commentary}</p>
-
           <div style={{ fontSize: 11, fontWeight: 700, color: ORG, marginBottom: 6 }}>⚠️ 핵심 리스크</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
             {(commentary.risks || []).map((r, i) => (
@@ -549,7 +516,6 @@ export default function FedWatchPage() {
               </div>
             ))}
           </div>
-
           <div style={{ fontSize: 11, fontWeight: 700, color: PUR, marginBottom: 6 }}>🎤 최근 Fed 발언</div>
           {(commentary.recent_fed_speakers || []).map((s, i) => (
             <div key={i} style={{ display: "flex", gap: 8, padding: "6px 0", borderBottom: i < (commentary.recent_fed_speakers?.length || 0) - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}>
@@ -562,7 +528,7 @@ export default function FedWatchPage() {
           ))}
         </div>
 
-        {/* ══ FOMC CALENDAR ══ */}
+        {/* FOMC CALENDAR */}
         <div style={{ background: BGC, borderRadius: 12, padding: 16, border: `1px solid ${BD}`, marginBottom: 12 }}>
           <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 12px", color: FED }}>📅 2026 FOMC 미팅 캘린더</h3>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 6 }}>
@@ -597,7 +563,6 @@ export default function FedWatchPage() {
           </div>
         </div>
 
-        {/* FOOTER */}
         <div style={{ marginTop: 18, padding: "10px 0", borderTop: `1px solid ${BD}`, textAlign: "center" }}>
           <p style={{ fontSize: 8, color: "rgba(255,255,255,0.2)", margin: 0, lineHeight: 1.5 }}>
             🐺 늑대무리원정단 | Source: CME FedWatch, Federal Reserve, FOMC
