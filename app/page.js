@@ -128,14 +128,15 @@ const MODULES = [
     status: "planned",
   },
   {
-  id: "deficit-analysis",
-  title: "적자기업 투자분석",
-  description: "코스닥 Top50 적자유형 · 위험대비수익 Top10 · ETF 매칭",
-  icon: "🎯",
-  status: "active",
-  path: "/modules/deficit-analysis",
-  layer: "portfolio",
-}
+    id: "deficit-analysis",
+    title: "적자기업 투자분석",
+    description: "코스닥 Top50 적자유형 · 위험대비수익 Top10 · ETF 매칭",
+    icon: "🎯",
+    status: "active",
+    path: "/modules/deficit-analysis",
+    layer: "portfolio",
+    status: "active",
+  }  
 ];
 
 const LAYERS = [
