@@ -46,6 +46,47 @@ const BASE = {
     { country:"🇨🇳 중국",tonnes:1.2,reserves:2308,share:"~9.6%",note:"15개월 연속" },
     { country:"🇧🇬 불가리아",tonnes:-2,reserves:null,share:"-",note:"유로존 가입에 따른 매도" },
   ],
+  // ─── 900t THESIS DATA ───
+  thesis: {
+    target: 900,
+    ytdReported: 5, // Jan 2026 reported
+    monthsElapsed: 1,
+    monthsRemaining: 11,
+    // Country-level 2026 annual projections (reported + estimated)
+    projections: [
+      { id:"china",flag:"🇨🇳",name:"중국 (PBOC)",reported:15,estimated:250,note:"Goldman 추정 ~250t/yr, 공식 보고 대비 10배",confidence:"high",basis:"15개월 연속, 탈달러 구조적" },
+      { id:"poland",flag:"🇵🇱",name:"폴란드 (NBP)",reported:50,estimated:50,note:"700t 목표 공식화, 150t 잔여. 연 30~50t 페이스",confidence:"high",basis:"목표 명시적, 의회 승인" },
+      { id:"kazakhstan",flag:"🇰🇿",name:"카자흐스탄",reported:50,estimated:50,note:"2025 역대 최대 57t, 국내 생산 매입 지속",confidence:"mid",basis:"순매입국 유지 선언" },
+      { id:"uzbekistan",flag:"🇺🇿",name:"우즈베키스탄",reported:60,estimated:60,note:"1월 9t, Oct부터 연속. 보유 비중 86%",confidence:"mid",basis:"원자재국 금 비축" },
+      { id:"brazil",flag:"🇧🇷",name:"브라질 (BCB)",reported:30,estimated:30,note:"3개월 43t 매입 후 페이스 둔화 가능",confidence:"mid",basis:"BRICS 비축, 4년만 재진입" },
+      { id:"turkey",flag:"🇹🇷",name:"튀르키예 (CBRT)",reported:25,estimated:25,note:"23개월+ 연속, 월 ~2t",confidence:"high",basis:"리라화 헤지 구조적" },
+      { id:"czech",flag:"🇨🇿",name:"체코 (CNB)",reported:24,estimated:24,note:"34개월+ 연속, 100t 목표까지 28t 잔여",confidence:"high",basis:"목표 명시적 (2028)" },
+      { id:"india",flag:"🇮🇳",name:"인도 (RBI)",reported:15,estimated:40,note:"2024 대규모 매입 후 간헐적, 다변화 지속",confidence:"low",basis:"간헐적, 예측 어려움" },
+      { id:"serbia",flag:"🇷🇸",name:"세르비아 (NBS)",reported:10,estimated:10,note:"2030 100t 목표, 연 ~13t 필요",confidence:"low",basis:"목표 선언, 실적 미미" },
+      { id:"malaysia",flag:"🇲🇾",name:"말레이시아 ★NEW",reported:10,estimated:10,note:"2018년 이후 최초 복귀, 수요 기반 확대 시그널",confidence:"low",basis:"신규 진입, 지속성 미지수" },
+      { id:"korea",flag:"🇰🇷",name:"한국 (BOK) ★NEW",reported:5,estimated:5,note:"ETF 방식 편입, 2013년 이후 최초",confidence:"low",basis:"ETF 편입 예정, 규모 미정" },
+      { id:"others",flag:"🌍",name:"기타 + 비보고",reported:50,estimated:350,note:"WGC: 2025 전체의 57%가 비보고 매입",confidence:"mid",basis:"비보고 비중 구조적" },
+    ],
+    scenarios: [
+      { name:"Bear",total:750,prob:20,color:RED,
+        desc:"고금가에 가격 민감도 상승, PBOC 둔화, 신규 진입국 지속성 약화",
+        key:"$5,000+ 금가에 일부 CB 매입 보류, 중국 보고 감소" },
+      { name:"Base",total:870,prob:50,color:GOLD,
+        desc:"2025년과 유사한 페이스, 신규 진입국이 가격 민감도를 상쇄",
+        key:"폴란드·체코 구조적 매입 + 말레이시아·한국 소규모 추가" },
+      { name:"Bull",total:1050,prob:30,color:GRN,
+        desc:"지정학 악화로 CB 매입 가속, PBOC 실질 매입 확대, 수요 기반 급확대",
+        key:"이란 사태 에스컬레이션 + 비보고 매입 급증 + 신규 EM CB 진입" },
+    ],
+    watchSignals: [
+      { signal:"PBOC 실질 매입 페이스",direction:"↑",status:"monitoring",note:"Goldman 추정 ~250t/yr, 공식 보고의 10배. 이 수치가 핵심 변수",impact:"극대",color:RED },
+      { signal:"수요 기반 확대 (Broadening)",direction:"↑",status:"positive",note:"말레이시아·한국 복귀 = 2026 핵심 테마. 추가 EM CB 진입 여부",impact:"대",color:GRN },
+      { signal:"금가격 민감도",direction:"↓",status:"risk",note:"$5,000+ 고가에서 일부 CB 매입 보류 가능성 (1월 5t의 원인)",impact:"대",color:ORG },
+      { signal:"지정학 리스크",direction:"↑",status:"elevated",note:"미-이란, 미중 관세 → CB 안전자산 수요 유지·확대",impact:"중",color:RED },
+      { signal:"비보고 매입 비중",direction:"?",status:"structural",note:"2025: 전체의 57% 비보고. 실제 매입 >> 보고 매입",impact:"극대",color:PUR },
+      { signal:"BOK ETF 편입 규모",direction:"↑",status:"pending",note:"Q1 2026 시작, 104t 보유 대비 증분 규모가 관건",impact:"중",color:BLU },
+    ],
+  },
   goldPriceHistory: [
     { period:"24Q1",price:2150 },{ period:"24Q2",price:2350 },{ period:"24Q3",price:2550 },
     { period:"24Q4",price:2700 },{ period:"25Q1",price:3100 },{ period:"25Q2",price:3500 },
@@ -319,7 +360,7 @@ export default function GoldMonitorPage() {
   });
 
   const tabs = [
-    { id:"overview",label:"📊 Overview" },{ id:"purchases",label:"🏦 CB 매입" },
+    { id:"overview",label:"🎯 900t Thesis" },{ id:"purchases",label:"🏦 CB 매입" },
     { id:"countries",label:"🌍 국가별" },{ id:"forecasts",label:"🔮 IB 전망" },{ id:"news",label:"📰 뉴스" },
   ];
 
@@ -337,7 +378,7 @@ export default function GoldMonitorPage() {
               <span style={{ fontSize:26 }}>🐺</span>
               <h1 style={{ fontSize:18,fontWeight:800,margin:0,background:`linear-gradient(90deg,${GOLD},${GOLD_L})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent" }}>Gold Central Bank Monitor</h1>
             </div>
-            <p style={{ color:T2,fontSize:11,margin:0 }}>세계 중앙은행 금 매입 동향 & 글로벌 IB 전망</p>
+            <p style={{ color:T2,fontSize:11,margin:0 }}>2026 중앙은행 금 매입 900t 돌파 가능성 추적</p>
           </div>
           <div style={{ textAlign:"right" }}>
             <div style={{ display:"flex",alignItems:"center",gap:6 }}>
@@ -399,61 +440,217 @@ export default function GoldMonitorPage() {
       {/* ─── CONTENT ─── */}
       <div style={{ padding:"14px 18px",maxWidth:1100,margin:"0 auto" }}>
 
-        {/* ══ OVERVIEW ══ */}
+        {/* ══ OVERVIEW: 900t THESIS TRACKER ══ */}
         {tab === "overview" && (<div>
-          <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8,marginBottom:14 }}>
-            {[
-              { label:"2025 CB 순매입",value:"863t",sub:"YoY -17.4%",c:GOLD },
-              { label:"2026.01 CB 순매입",value:"5t",sub:"12개월 평균 27t 대비↓",c:GRN },
-              { label:"2026E CB 전망",value:"755~850t",sub:"JPM/WGC",c:BLU },
-              { label:"수요 확대 신호",value:"MY·KR",sub:"말레이시아·한국 복귀",c:ORG },
-            ].map((k,i) => (
-              <div key={i} style={{ background:BGC,borderRadius:10,padding:"12px 14px",border:`1px solid ${BD}` }}>
-                <p style={{ fontSize:9,color:T3,margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.5px" }}>{k.label}</p>
-                <p style={{ fontSize:18,fontWeight:800,color:k.c,margin:"0 0 2px" }}>{k.value}</p>
-                <p style={{ fontSize:10,color:T2,margin:0 }}>{k.sub}</p>
+          {/* ── HERO: 900t GAUGE ── */}
+          {(() => {
+            const T = BASE.thesis;
+            const projTotal = T.projections.reduce((s,p) => s + p.estimated, 0);
+            const reportedTotal = T.projections.reduce((s,p) => s + p.reported, 0);
+            const pctOfTarget = Math.min((projTotal / T.target) * 100, 150);
+            const ytdAnnualized = T.monthsElapsed > 0 ? Math.round(T.ytdReported / T.monthsElapsed * 12) : 0;
+            const requiredMonthlyPace = Math.round((T.target - T.ytdReported) / T.monthsRemaining);
+            const avg2025Monthly = Math.round(863 / 12);
+
+            return (<>
+            {/* Hero Card */}
+            <div style={{ background:`linear-gradient(135deg,${BGC} 0%,rgba(212,160,23,0.08) 100%)`,borderRadius:14,padding:"20px 18px",border:`1px solid ${GOLD}30`,marginBottom:14 }}>
+              <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12 }}>
+                <div>
+                  <div style={{ fontSize:10,color:T2,marginBottom:4,letterSpacing:"1px",textTransform:"uppercase" }}>Core Thesis</div>
+                  <h2 style={{ fontSize:20,fontWeight:800,margin:"0 0 6px",color:T1 }}>2026 CB 금 매입 <span style={{ color:GOLD }}>900t</span> 돌파 가능한가?</h2>
+                  <p style={{ fontSize:11,color:T2,margin:0,lineHeight:1.5 }}>비탄력적 수요인 중앙은행 매입량이 금 가격의 구조적 하방을 결정</p>
+                </div>
+                <div style={{ textAlign:"center",minWidth:110 }}>
+                  <div style={{ position:"relative",width:100,height:100,margin:"0 auto" }}>
+                    <svg viewBox="0 0 100 100" style={{ transform:"rotate(-90deg)" }}>
+                      <circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="8" />
+                      <circle cx="50" cy="50" r="42" fill="none" stroke={projTotal >= T.target ? GRN : GOLD} strokeWidth="8"
+                        strokeDasharray={`${Math.min(pctOfTarget, 100) * 2.64} 264`} strokeLinecap="round" />
+                    </svg>
+                    <div style={{ position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",textAlign:"center" }}>
+                      <div style={{ fontSize:22,fontWeight:900,color:projTotal >= T.target ? GRN : GOLD }}>{projTotal}</div>
+                      <div style={{ fontSize:8,color:T3 }}>/ {T.target}t</div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize:9,fontWeight:700,color:projTotal >= T.target ? GRN : ORG,marginTop:4 }}>
+                    {projTotal >= T.target ? "✅ 돌파 가능" : `⚠️ ${T.target - projTotal}t 부족`}
+                  </div>
+                </div>
               </div>
-            ))}
-          </div>
-          <div style={{ background:BGC,borderRadius:12,padding:16,border:`1px solid ${BD}`,marginBottom:12 }}>
-            <h3 style={{ fontSize:13,fontWeight:700,margin:"0 0 12px",color:GOLD }}>연간 글로벌 CB 금 순매입 (톤) & YoY</h3>
-            <ResponsiveContainer width="100%" height={200}>
-              <ComposedChart data={BASE.annualData} margin={{top:5,right:16,left:-4,bottom:0}}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="year" tick={{fill:T2,fontSize:10}} />
-                <YAxis yAxisId="l" tick={{fill:T2,fontSize:9}} />
-                <YAxis yAxisId="r" orientation="right" tick={{fill:T2,fontSize:9}} unit="%" />
-                <Tooltip content={({active,payload,label})=>active&&payload?.length?<div style={{background:BGC,border:`1px solid ${BD}`,borderRadius:6,padding:"8px 12px",fontSize:11}}><div style={{fontWeight:600}}>{label}</div>{payload[0]?.value!=null&&<div style={{color:GOLD}}>매입: {payload[0].value}t</div>}{payload[1]?.value!=null&&<div style={{color:payload[1].value>=0?GRN:RED}}>YoY: {payload[1].value>0?"+":""}{payload[1].value}%</div>}</div>:null} />
-                <Bar yAxisId="l" dataKey="total" radius={[3,3,0,0]}>{BASE.annualData.map((e,i)=><Cell key={i} fill={e.year==="2026E"?"rgba(212,160,23,0.35)":GOLD} stroke={e.year==="2026E"?GOLD:"none"} strokeDasharray={e.year==="2026E"?"4 2":"0"} />)}</Bar>
-                <Line yAxisId="r" type="monotone" dataKey="yoy" stroke={BLU} strokeWidth={2} dot={{r:3,fill:BLU}} connectNulls />
-                <ReferenceLine yAxisId="l" y={473} stroke="rgba(255,255,255,0.15)" strokeDasharray="4 4" label={{value:"2010-21 avg 473t",fill:T3,fontSize:8}} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-          <div style={{ background:BGC,borderRadius:12,padding:16,border:`1px solid ${BD}`,marginBottom:12 }}>
-            <h3 style={{ fontSize:13,fontWeight:700,margin:"0 0 12px",color:GOLD }}>금 가격 추이 ($/oz)</h3>
-            <ResponsiveContainer width="100%" height={180}>
-              <LineChart data={BASE.goldPriceHistory} margin={{top:5,right:16,left:-4,bottom:0}}>
-                <defs><linearGradient id="gg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={GOLD} stopOpacity={0.25} /><stop offset="100%" stopColor={GOLD} stopOpacity={0} /></linearGradient></defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="period" tick={{fill:T2,fontSize:9}} />
-                <YAxis tick={{fill:T2,fontSize:9}} domain={[1800,5800]} tickFormatter={v=>`$${(v/1000).toFixed(1)}k`} />
-                <Tooltip content={({active,payload,label})=>active&&payload?.length?<div style={{background:BGC,border:`1px solid ${BD}`,borderRadius:6,padding:"6px 10px",fontSize:11}}>{label}: <strong style={{color:GOLD}}>${payload[0].value?.toLocaleString()}</strong></div>:null} />
-                <Area type="monotone" dataKey="price" stroke="none" fill="url(#gg)" />
-                <Line type="monotone" dataKey="price" stroke={GOLD} strokeWidth={2.5} dot={{r:3.5,fill:GOLD}} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-          <div style={{ background:BGC,borderRadius:12,padding:16,border:`1px solid ${BD}` }}>
-            <h3 style={{ fontSize:13,fontWeight:700,margin:"0 0 10px",color:GOLD }}>📡 Latest</h3>
-            {liveNews.slice(0,5).map((n,i) => (
-              <div key={i} style={{ display:"flex",alignItems:"flex-start",gap:8,padding:"7px 0",borderBottom:i<4?"1px solid rgba(255,255,255,0.04)":"none" }}>
-                <span style={{ fontSize:8,fontWeight:700,color:n.color||T2,background:`${n.color||T2}18`,padding:"2px 6px",borderRadius:4,whiteSpace:"nowrap" }}>{n.tag}</span>
-                <div style={{ flex:1,fontSize:11,lineHeight:1.4 }}>{n.title}<div style={{ fontSize:9,color:T3,marginTop:1 }}>{n.date}</div></div>
-                <span style={{ fontSize:13,color:n.impact==="↑"?GRN:n.impact==="↓"?RED:T2 }}>{n.impact}</span>
+
+              {/* Pace Metrics */}
+              <div style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginTop:16 }}>
+                {[
+                  { l:"YTD 보고 (1월)",v:`${T.ytdReported}t`,sub:`${T.monthsElapsed}개월`,c:T.ytdReported >= requiredMonthlyPace ? GRN : ORG },
+                  { l:"900t 필요 페이스",v:`${requiredMonthlyPace}t/월`,sub:`잔여 ${T.monthsRemaining}개월`,c:BLU },
+                  { l:"2025 월평균",v:`${avg2025Monthly}t/월`,sub:"보고 기준",c:GOLD },
+                  { l:"보고 vs 실제",v:"×2.3",sub:"비보고 57% 감안",c:PUR },
+                ].map((m,i) => (
+                  <div key={i} style={{ background:"rgba(0,0,0,0.3)",borderRadius:8,padding:"10px 10px" }}>
+                    <div style={{ fontSize:8,color:T3,marginBottom:3 }}>{m.l}</div>
+                    <div style={{ fontSize:16,fontWeight:800,color:m.c }}>{m.v}</div>
+                    <div style={{ fontSize:9,color:T2 }}>{m.sub}</div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+              <div style={{ marginTop:12,padding:"8px 12px",background:"rgba(212,160,23,0.08)",borderRadius:8,borderLeft:`3px solid ${GOLD}` }}>
+                <div style={{ fontSize:10,color:T2,lineHeight:1.6 }}>
+                  <strong style={{ color:GOLD }}>Key Insight:</strong> 1월 보고 매입 5t은 휴일·고금가 영향으로 과소. 그러나 <strong style={{ color:GRN }}>비보고 매입(전체의 57%)</strong>을 감안하면 실제 페이스는 훨씬 높을 가능성. 말레이시아·한국 등 <strong style={{ color:ORG }}>수요 기반 확대</strong>가 2026 핵심 변수.
+                </div>
+              </div>
+            </div>
+
+            {/* ── COUNTRY CONTRIBUTION WATERFALL ── */}
+            <div style={{ background:BGC,borderRadius:12,padding:16,border:`1px solid ${BD}`,marginBottom:12 }}>
+              <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12 }}>
+                <h3 style={{ fontSize:13,fontWeight:700,margin:0,color:GOLD }}>🏦 국가별 기여도 적산 → 900t</h3>
+                <div style={{ fontSize:9,color:T3 }}>보고 + 비보고 추정 합산</div>
+              </div>
+              <div style={{ display:"flex",flexDirection:"column",gap:4 }}>
+                {T.projections.map((p,i) => {
+                  const maxBar = 260; // max tonnes for bar scale
+                  const barW = Math.max((p.estimated / maxBar) * 100, 2);
+                  const confColor = p.confidence === "high" ? GRN : p.confidence === "mid" ? GOLD : T3;
+                  return (
+                    <div key={p.id} style={{ display:"flex",alignItems:"center",gap:8 }}>
+                      <div style={{ minWidth:130,fontSize:10,display:"flex",alignItems:"center",gap:4 }}>
+                        <span>{p.flag}</span>
+                        <span style={{ fontWeight:600,fontSize:10 }}>{p.name}</span>
+                      </div>
+                      <div style={{ flex:1,position:"relative" }}>
+                        <div style={{ height:20,background:"rgba(255,255,255,0.04)",borderRadius:4,overflow:"hidden",position:"relative" }}>
+                          {/* Reported portion */}
+                          <div style={{ position:"absolute",left:0,top:0,height:"100%",width:`${(p.reported/maxBar)*100}%`,background:GOLD,borderRadius:"4px 0 0 4px" }} />
+                          {/* Unreported portion */}
+                          {p.estimated > p.reported && <div style={{ position:"absolute",left:`${(p.reported/maxBar)*100}%`,top:0,height:"100%",width:`${((p.estimated-p.reported)/maxBar)*100}%`,background:`${GOLD}40`,borderRight:`1px dashed ${GOLD}` }} />}
+                        </div>
+                      </div>
+                      <div style={{ minWidth:50,textAlign:"right" }}>
+                        <span style={{ fontSize:13,fontWeight:800,color:GOLD }}>{p.estimated}t</span>
+                      </div>
+                      <div style={{ minWidth:14,textAlign:"center" }}>
+                        <span style={{ fontSize:7,fontWeight:700,color:confColor }}>●</span>
+                      </div>
+                    </div>
+                  );
+                })}
+                {/* Total line */}
+                <div style={{ display:"flex",alignItems:"center",gap:8,borderTop:`2px solid ${BD}`,paddingTop:8,marginTop:4 }}>
+                  <div style={{ minWidth:130,fontSize:11,fontWeight:800,color:T1 }}>합계</div>
+                  <div style={{ flex:1 }}>
+                    <div style={{ height:4,background:"rgba(255,255,255,0.04)",borderRadius:2,position:"relative" }}>
+                      <div style={{ height:"100%",width:`${Math.min((projTotal/T.target)*100,100)}%`,background:projTotal>=T.target?GRN:ORG,borderRadius:2 }} />
+                      <div style={{ position:"absolute",left:`${(T.target/Math.max(projTotal,T.target+50))*100}%`,top:-6,height:16,width:1,background:RED }} />
+                    </div>
+                  </div>
+                  <div style={{ minWidth:50,textAlign:"right" }}>
+                    <span style={{ fontSize:15,fontWeight:900,color:projTotal>=T.target?GRN:ORG }}>{projTotal}t</span>
+                  </div>
+                  <div style={{ minWidth:14 }} />
+                </div>
+                <div style={{ display:"flex",justifyContent:"flex-end",gap:12,marginTop:2 }}>
+                  <span style={{ fontSize:8,color:T3 }}>● <span style={{ color:GOLD }}>■</span> 보고</span>
+                  <span style={{ fontSize:8,color:T3 }}>● <span style={{ color:`${GOLD}50` }}>■</span> 비보고 추정</span>
+                  <span style={{ fontSize:8,color:T3 }}>신뢰도: <span style={{color:GRN}}>●</span>높음 <span style={{color:GOLD}}>●</span>중 <span style={{color:T3}}>●</span>낮음</span>
+                </div>
+              </div>
+            </div>
+
+            {/* ── 3 SCENARIOS ── */}
+            <div style={{ background:BGC,borderRadius:12,padding:16,border:`1px solid ${BD}`,marginBottom:12 }}>
+              <h3 style={{ fontSize:13,fontWeight:700,margin:"0 0 12px",color:GOLD }}>📊 시나리오 분석: 2026 CB 금 매입</h3>
+              <div style={{ display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8 }}>
+                {T.scenarios.map((s,i) => (
+                  <div key={i} style={{ background:BGC2,borderRadius:10,padding:14,border:`1px solid ${s.color}30`,position:"relative",overflow:"hidden" }}>
+                    <div style={{ position:"absolute",top:0,left:0,right:0,height:3,background:s.color }} />
+                    <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8 }}>
+                      <span style={{ fontSize:12,fontWeight:800,color:s.color }}>{s.name}</span>
+                      <span style={{ fontSize:9,fontWeight:700,color:BG,background:s.color,padding:"2px 6px",borderRadius:4 }}>{s.prob}%</span>
+                    </div>
+                    <div style={{ fontSize:28,fontWeight:900,color:s.color,marginBottom:6 }}>{s.total}t</div>
+                    <div style={{ fontSize:9,color:T2,lineHeight:1.5,marginBottom:8 }}>{s.desc}</div>
+                    <div style={{ fontSize:9,color:T1,background:"rgba(0,0,0,0.3)",padding:"6px 8px",borderRadius:6,lineHeight:1.4 }}>
+                      <strong>핵심 조건:</strong> {s.key}
+                    </div>
+                    {s.total >= T.target && (
+                      <div style={{ marginTop:8,fontSize:9,fontWeight:700,color:GRN,textAlign:"center" }}>✅ 900t 돌파</div>
+                    )}
+                    {s.total < T.target && (
+                      <div style={{ marginTop:8,fontSize:9,fontWeight:700,color:RED,textAlign:"center" }}>❌ 900t 미달 ({T.target - s.total}t 부족)</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop:10,padding:"8px 12px",background:"rgba(62,207,142,0.06)",borderRadius:8,borderLeft:`3px solid ${GRN}` }}>
+                <div style={{ fontSize:10,color:T2,lineHeight:1.6 }}>
+                  <strong style={{ color:GRN }}>확률 가중 기대치:</strong>{" "}
+                  {(() => { const ev = T.scenarios.reduce((s,sc) => s + sc.total * sc.prob / 100, 0); return <><strong style={{ color:GOLD }}>{Math.round(ev)}t</strong> — 900t {ev >= 900 ? <span style={{color:GRN}}>돌파 가능성 우위</span> : <span style={{color:ORG}}>소폭 하회, Bull 시나리오 실현 여부가 관건</span>}</>; })()}
+                </div>
+              </div>
+            </div>
+
+            {/* ── WHAT TO WATCH ── */}
+            <div style={{ background:BGC,borderRadius:12,padding:16,border:`1px solid ${BD}`,marginBottom:12 }}>
+              <h3 style={{ fontSize:13,fontWeight:700,margin:"0 0 12px",color:GOLD }}>🔭 900t 돌파를 좌우할 핵심 시그널</h3>
+              <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
+                {T.watchSignals.map((w,i) => {
+                  const statusStyle = {
+                    positive: { bg:"rgba(62,207,142,0.08)",border:GRN,label:"긍정",labelColor:GRN },
+                    risk: { bg:"rgba(255,107,53,0.08)",border:ORG,label:"리스크",labelColor:ORG },
+                    monitoring: { bg:"rgba(74,158,255,0.08)",border:BLU,label:"모니터링",labelColor:BLU },
+                    elevated: { bg:"rgba(232,72,85,0.08)",border:RED,label:"경계",labelColor:RED },
+                    structural: { bg:"rgba(155,89,182,0.08)",border:PUR,label:"구조적",labelColor:PUR },
+                    pending: { bg:"rgba(74,158,255,0.08)",border:BLU,label:"대기",labelColor:BLU },
+                  }[w.status] || { bg:"rgba(255,255,255,0.04)",border:T3,label:"—",labelColor:T3 };
+                  return (
+                    <div key={i} style={{ display:"flex",gap:10,padding:"10px 12px",background:statusStyle.bg,borderRadius:8,borderLeft:`3px solid ${statusStyle.border}`,alignItems:"flex-start" }}>
+                      <div style={{ minWidth:24,textAlign:"center" }}>
+                        <span style={{ fontSize:16,fontWeight:800,color:w.color }}>{w.direction}</span>
+                      </div>
+                      <div style={{ flex:1 }}>
+                        <div style={{ display:"flex",alignItems:"center",gap:6,marginBottom:3 }}>
+                          <span style={{ fontSize:11,fontWeight:700,color:T1 }}>{w.signal}</span>
+                          <span style={{ fontSize:8,fontWeight:700,color:statusStyle.labelColor,background:`${statusStyle.labelColor}18`,padding:"1px 5px",borderRadius:3 }}>{statusStyle.label}</span>
+                          <span style={{ fontSize:8,fontWeight:700,color:w.impact==="극대"?RED:w.impact==="대"?ORG:BLU,background:"rgba(0,0,0,0.3)",padding:"1px 5px",borderRadius:3 }}>임팩트: {w.impact}</span>
+                        </div>
+                        <div style={{ fontSize:10,color:T2,lineHeight:1.5 }}>{w.note}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* ── ANNUAL CONTEXT + LATEST ── */}
+            <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12 }}>
+              <div style={{ background:BGC,borderRadius:12,padding:16,border:`1px solid ${BD}` }}>
+                <h3 style={{ fontSize:12,fontWeight:700,margin:"0 0 10px",color:GOLD }}>연간 CB 매입 추이</h3>
+                <ResponsiveContainer width="100%" height={180}>
+                  <ComposedChart data={BASE.annualData} margin={{top:5,right:8,left:-10,bottom:0}}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                    <XAxis dataKey="year" tick={{fill:T2,fontSize:8}} />
+                    <YAxis tick={{fill:T2,fontSize:8}} />
+                    <Tooltip content={({active,payload,label})=>active&&payload?.length?<div style={{background:BGC,border:`1px solid ${BD}`,borderRadius:6,padding:"6px 10px",fontSize:10}}><div style={{fontWeight:600}}>{label}</div><div style={{color:GOLD}}>매입: {payload[0]?.value}t</div></div>:null} />
+                    <Bar dataKey="total" radius={[3,3,0,0]}>{BASE.annualData.map((e,i)=><Cell key={i} fill={e.year==="2026E"?"rgba(212,160,23,0.35)":GOLD} stroke={e.year==="2026E"?GOLD:"none"} strokeDasharray={e.year==="2026E"?"4 2":"0"} />)}</Bar>
+                    <ReferenceLine y={900} stroke={RED} strokeDasharray="4 4" label={{value:"900t",fill:RED,fontSize:9,fontWeight:700}} />
+                    <ReferenceLine y={473} stroke="rgba(255,255,255,0.12)" strokeDasharray="4 4" label={{value:"'10-21 avg",fill:T3,fontSize:7}} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ background:BGC,borderRadius:12,padding:16,border:`1px solid ${BD}` }}>
+                <h3 style={{ fontSize:12,fontWeight:700,margin:"0 0 10px",color:GOLD }}>📡 Latest</h3>
+                {liveNews.slice(0,6).map((n,i) => (
+                  <div key={i} style={{ display:"flex",alignItems:"flex-start",gap:6,padding:"5px 0",borderBottom:i<5?"1px solid rgba(255,255,255,0.04)":"none" }}>
+                    <span style={{ fontSize:7,fontWeight:700,color:n.color||T2,background:`${n.color||T2}18`,padding:"1px 5px",borderRadius:3,whiteSpace:"nowrap" }}>{n.tag}</span>
+                    <div style={{ flex:1,fontSize:10,lineHeight:1.4 }}>{n.title}<div style={{ fontSize:8,color:T3,marginTop:1 }}>{n.date}</div></div>
+                    <span style={{ fontSize:11,color:n.impact==="↑"?GRN:n.impact==="↓"?RED:T2 }}>{n.impact}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            </>);
+          })()}
         </div>)}
 
         {/* ══ PURCHASES ══ */}
