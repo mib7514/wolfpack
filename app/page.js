@@ -61,6 +61,17 @@ const MODULES = [
     status: 'active',
   },
   {
+    id: 'employment-narrative',
+    layer: 'MACRO',
+    title: '고용 내러티브',
+    subtitle: 'Employment Narrative Monitor',
+    description: '미국 고용지표 내러티브 추적 · AI 자동 발견',
+    href: '/modules/employment-narrative',
+    icon: '🐺',
+    accentColor: '#bb86fc',
+    status: 'active',
+  },
+  {
     id: 'consumer-monitor',
     layer: 'MARKET',
     title: '소비주 모니터링',
