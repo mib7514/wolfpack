@@ -40,13 +40,16 @@ Return ONLY valid JSON, no markdown, no backticks:
 
     // ── 2. Central bank purchases latest ──
     const cbRaw = await callClaude(
-      `Search for the latest World Gold Council central bank gold purchase data for 2025 (full year) and any 2026 data available.
-I need monthly purchase data for these 8 countries: Poland, China, Czech Republic, Serbia, India, Kazakhstan, Turkey, Brazil.
-Also the total global CB net purchases for 2025 and any 2026 data.
+      `Search for the latest World Gold Council (WGC) monthly central bank gold statistics report. Also search "central bank gold purchases 2026" and "WGC central bank gold statistics".
+I need the latest monthly net purchases data for these 11 countries: Poland, China, Czech Republic, Serbia, India, Kazakhstan, Turkey, Brazil, Uzbekistan, Malaysia, South Korea (BOK).
+Also include: total global CB net purchases for 2025 full year, and any 2026 monthly data available (especially January 2026).
+Note: BOK announced plans to incorporate overseas-listed physical gold ETFs into reserves from Q1 2026.
 Return ONLY valid JSON, no markdown:
 {
   "year2025_total":number,
   "year2025_yoy":number,
+  "latest_month":"Jan 2026",
+  "latest_month_total":number,
   "countries":{
     "poland":{"current_reserves":number,"2025_total":number,"latest_month":"","latest_month_tonnes":number},
     "china":{"current_reserves":number,"2025_total":number,"latest_month":"","latest_month_tonnes":number},
@@ -55,7 +58,10 @@ Return ONLY valid JSON, no markdown:
     "india":{"current_reserves":number,"2025_total":number,"latest_month":"","latest_month_tonnes":number},
     "kazakhstan":{"current_reserves":number,"2025_total":number,"latest_month":"","latest_month_tonnes":number},
     "turkey":{"current_reserves":number,"2025_total":number,"latest_month":"","latest_month_tonnes":number},
-    "brazil":{"current_reserves":number,"2025_total":number,"latest_month":"","latest_month_tonnes":number}
+    "brazil":{"current_reserves":number,"2025_total":number,"latest_month":"","latest_month_tonnes":number},
+    "uzbekistan":{"current_reserves":number,"2025_total":number,"latest_month":"","latest_month_tonnes":number},
+    "malaysia":{"current_reserves":number,"2025_total":number,"latest_month":"","latest_month_tonnes":number},
+    "korea":{"current_reserves":number,"2025_total":number,"latest_month":"","latest_month_tonnes":number,"note":"ETF"}
   }
 }`
     );
