@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 
 /* ───────────────────────────────────────────
    데이터 정의
@@ -110,8 +110,8 @@ function calcMomentum(m) {
   return Math.round((s1 + s2 + s3 + s4) * 10) / 10;
 }
 
-// Top10을 총점 기준 정렬
-const TOP10_SCORED = TOP10_DEFICIT.map((c) => {
+// 초기 스코어 계산 (기본 모멘텀 데이터 기반)
+const INITIAL_TOP10 = TOP10_DEFICIT.map((c) => {
   const momScore = calcMomentum(c.momentum);
   return { ...c, momScore, totalScore: c.fundScore + momScore };
 }).sort((a, b) => b.totalScore - a.totalScore).map((c, i) => ({ ...c, rank: i + 1 }));
@@ -191,18 +191,19 @@ const ETF_DATA = [
   },
 ];
 
-// ETF 가중노출도 계산: 1억 투자 시 Top10 적자기업에 합산 얼마나 노출되는지
-const ETF_SCORED = ETF_DATA.map((etf) => {
-  const top10Names = new Set(TOP10_SCORED.map((c) => c.name));
-  const matchedHoldings = etf.holdings.filter((h) => top10Names.has(h.name));
-  const totalExposure = matchedHoldings.reduce((sum, h) => sum + h.weight, 0);
-  // 가중점수: 각 종목 비중 × 해당 종목의 총점(normalized)으로도 가중
-  const qualityExposure = matchedHoldings.reduce((sum, h) => {
-    const comp = TOP10_SCORED.find((c) => c.name === h.name);
-    return sum + h.weight * (comp ? comp.totalScore / 100 : 0);
-  }, 0);
-  return { ...etf, matchedHoldings, totalExposure: Math.round(totalExposure * 10) / 10, qualityExposure: Math.round(qualityExposure * 10) / 10, matchCount: matchedHoldings.length };
-}).sort((a, b) => b.totalExposure - a.totalExposure);
+// ETF 가중노출도 계산 (top10 리스트를 파라미터로 받아 동적 계산)
+function calcETFScores(top10Scored) {
+  return ETF_DATA.map((etf) => {
+    const top10Names = new Set(top10Scored.map((c) => c.name));
+    const matchedHoldings = etf.holdings.filter((h) => top10Names.has(h.name));
+    const totalExposure = matchedHoldings.reduce((sum, h) => sum + h.weight, 0);
+    const qualityExposure = matchedHoldings.reduce((sum, h) => {
+      const comp = top10Scored.find((c) => c.name === h.name);
+      return sum + h.weight * (comp ? comp.totalScore / 100 : 0);
+    }, 0);
+    return { ...etf, matchedHoldings, totalExposure: Math.round(totalExposure * 10) / 10, qualityExposure: Math.round(qualityExposure * 10) / 10, matchCount: matchedHoldings.length };
+  }).sort((a, b) => b.totalExposure - a.totalExposure);
+}
 
 /* ───────────────────────────────────────────
    유틸 컴포넌트
@@ -266,6 +267,11 @@ export default function DeficitAnalysisPage() {
   const [filterType, setFilterType] = useState("ALL");
   const [expandedRow, setExpandedRow] = useState(null);
   const [sortBy, setSortBy] = useState("rank");
+  const [top10Data, setTop10Data] = useState(INITIAL_TOP10);
+  const [lastUpdate, setLastUpdate] = useState("2026.03.06 (초기 수동 데이터)");
+
+  // ETF 스코어를 top10 변경 시 자동 재계산
+  const etfScored = useMemo(() => calcETFScores(top10Data), [top10Data]);
 
   const handleAiUpdate = useCallback(async () => {
     setAiLoading(true);
@@ -273,7 +279,47 @@ export default function DeficitAnalysisPage() {
     try {
       const res = await fetch("/api/deficit-update", { method: "POST" });
       const data = await res.json();
-      setAiResult(data.result || data.error || "업데이트 완료");
+
+      // 뉴스 결과
+      const newsText = data.news || data.error || "업데이트 완료";
+
+      // 모멘텀 데이터가 있으면 Top10 스코어 재계산
+      if (data.momentum && Array.isArray(data.momentum)) {
+        const updatedTop10 = TOP10_DEFICIT.map((c) => {
+          const apiData = data.momentum.find((m) => m.name === c.name);
+          let momentum = c.momentum; // 기본값 유지
+          if (apiData && !apiData.error) {
+            momentum = {
+              pct52wHigh: apiData.pct52wHigh / 100, // API는 %로 반환
+              maAlign: apiData.maAlign,
+              ma120dir: apiData.ma120dir,
+              volRatio: apiData.volRatio,
+              // 원본 데이터도 보관
+              currentPrice: apiData.currentPrice,
+              high52w: apiData.high52w,
+              ma20: apiData.ma20,
+              ma60: apiData.ma60,
+              ma120: apiData.ma120,
+            };
+          }
+          const momScore = calcMomentum(momentum);
+          return { ...c, momentum, momScore, totalScore: c.fundScore + momScore };
+        }).sort((a, b) => b.totalScore - a.totalScore).map((c, i) => ({ ...c, rank: i + 1 }));
+
+        setTop10Data(updatedTop10);
+        setLastUpdate(data.dataDate || new Date().toISOString().split("T")[0]);
+
+        // 모멘텀 변동 요약 생성
+        const momSummary = updatedTop10.slice(0, 5).map((c) =>
+          `${c.rank}위 ${c.name}: 총점 ${c.totalScore} (펀더${c.fundScore} + 모멘${c.momScore})`
+        ).join("\n");
+
+        setAiResult(`📊 모멘텀 데이터 업데이트 완료 (${data.dataDate || "today"})\n\n` +
+          `[Top 5 순위 변동]\n${momSummary}\n\n` +
+          `[최신 뉴스]\n${newsText}`);
+      } else {
+        setAiResult(newsText);
+      }
     } catch (e) {
       setAiResult("API 호출 오류: " + e.message);
     }
@@ -306,7 +352,7 @@ export default function DeficitAnalysisPage() {
             <h1 className="text-xl font-black bg-gradient-to-r from-[#4EA8FF] to-[#FFB800] bg-clip-text text-transparent">
               🐺 적자기업 투자분석
             </h1>
-            <p className="text-xs text-[#5A6478] mt-1">적자유형 분류 → 펀더멘탈(80) + 모멘텀(20) 스코어링 → 가중 ETF 매칭</p>
+            <p className="text-xs text-[#5A6478] mt-1">적자유형 분류 → 펀더멘탈(80) + 모멘텀(20) 스코어링 → 가중 ETF 매칭 · <span className="text-[#4EA8FF] font-mono">최종 업데이트: {lastUpdate}</span></p>
           </div>
           <button onClick={handleAiUpdate} disabled={aiLoading}
             className="px-5 py-2.5 rounded-lg border border-[#4EA8FF50] font-bold text-sm text-[#4EA8FF] transition
@@ -383,7 +429,7 @@ export default function DeficitAnalysisPage() {
 
             {/* 리스트 */}
             <div className="bg-[#111827] border border-[#1E2636] rounded-lg overflow-hidden">
-              {TOP10_SCORED.map((c, i) => (
+              {top10Data.map((c, i) => (
                 <div key={c.name} className="px-5 py-4 border-b border-[#1E2636] hover:bg-[#151D2C] transition">
                   <div className="flex items-center gap-3 mb-2 flex-wrap">
                     <span className={`font-mono text-lg font-black min-w-[30px] ${i < 3 ? "text-[#FFB800]" : "text-[#5A6478]"}`}>
@@ -405,11 +451,17 @@ export default function DeficitAnalysisPage() {
                     </div>
                   </div>
                   {/* 점수 내역 */}
-                  <div className="ml-[42px] flex gap-4 text-[10px] text-[#5A6478] mb-1 font-mono">
+                  <div className="ml-[42px] flex gap-4 text-[10px] text-[#5A6478] mb-1 font-mono flex-wrap">
                     <span>펀더: <span className="text-[#4EA8FF]">{c.fundScore}</span></span>
                     <span>모멘: <span className="text-[#FFB800]">{c.momScore > 0 ? "+" : ""}{c.momScore}</span></span>
                     <span>52w: <span className="text-[#8892A4]">{Math.round(c.momentum.pct52wHigh * 100)}%</span></span>
                     <span>Vol: <span className="text-[#8892A4]">{c.momentum.volRatio}x</span></span>
+                    {c.momentum.currentPrice && (
+                      <>
+                        <span>현재가: <span className="text-[#E0E4EC]">{Number(c.momentum.currentPrice).toLocaleString()}원</span></span>
+                        <span>MA20/60/120: <span className="text-[#8892A4]">{Number(c.momentum.ma20||0).toLocaleString()}/{Number(c.momentum.ma60||0).toLocaleString()}/{Number(c.momentum.ma120||0).toLocaleString()}</span></span>
+                      </>
+                    )}
                   </div>
                   <div className="text-[11px] text-[#8892A4] ml-[42px] leading-relaxed">{c.reason}</div>
                   <div className="text-[10px] text-[#4EA8FF] ml-[42px] mt-1">📌 촉매: {c.catalyst}</div>
@@ -504,7 +556,7 @@ export default function DeficitAnalysisPage() {
                 <span className="text-center">보수</span>
                 <span>편입 종목 (비중%)</span>
               </div>
-              {ETF_SCORED.map((etf) => (
+              {etfScored.map((etf) => (
                 <div key={etf.code} className="grid gap-3 px-4 py-3.5 border-b border-[#1E2636] items-center text-xs hover:bg-[#1A2030] transition"
                   style={{ gridTemplateColumns: "2fr 80px 80px 70px 60px 3fr" }}>
                   <div>
@@ -524,7 +576,7 @@ export default function DeficitAnalysisPage() {
                   <div>
                     <div className="flex flex-wrap gap-1 mb-1">
                       {etf.matchedHoldings.sort((a, b) => b.weight - a.weight).map((h) => {
-                        const comp = TOP10_SCORED.find((c) => c.name === h.name);
+                        const comp = top10Data.find((c) => c.name === h.name);
                         const dt = comp ? DEFICIT_TYPES[comp.type] : DEFICIT_TYPES["흑자"];
                         return (
                           <span key={h.name} className="text-[10px] px-1.5 py-0.5 rounded font-mono"
@@ -585,7 +637,7 @@ export default function DeficitAnalysisPage() {
       {/* ── 푸터 ── */}
       <div className="px-7 py-4 border-t border-[#1E2636] text-center">
         <div className="text-[10px] text-[#3A4458]">
-          늑대무리원정단 · 적자기업 투자분석 모듈 · 데이터 기준: 2026.03.06 · 모멘텀 데이터는 수동 입력 (향후 API 자동화 예정) · 투자 판단은 본인 책임
+          늑대무리원정단 · 적자기업 투자분석 모듈 · 모멘텀 데이터: {lastUpdate} · ⚡ AI 업데이트로 실시간 갱신 가능 · 투자 판단은 본인 책임
         </div>
       </div>
     </div>
