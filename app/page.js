@@ -72,6 +72,15 @@ const MODULES = [
     status: 'active',
   },
   {
+  id: "oil-cpi",
+  name: "Oil → CPI Monitor",
+  icon: "🛢️",
+  description: "국제유가 시나리오별 한미 CPI 영향 분석",
+  path: "/modules/oil-cpi",
+  layer: "macro",
+  status: "active",
+},
+  {
     id: 'consumer-monitor',
     layer: 'MARKET',
     title: '소비주 모니터링',
