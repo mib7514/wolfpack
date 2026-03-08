@@ -8,7 +8,7 @@ import {
 
 // ─── Default macro data (verified Mar 2026) ───
 // US rate = Fed Funds upper bound, KR rate = BOK base rate
-// Brent oil ~$93 (Iran-US war, Hormuz disruption)
+// Brent ~$93, WTI ~$91 (Iran-US war, Hormuz disruption)
 const DEFAULT_DATA = {
   us: {
     currentCPI: 2.4,
@@ -18,23 +18,19 @@ const DEFAULT_DATA = {
     oilPassThrough: { "1y": 0.038, "3y": 0.035, "5y": 0.032, "10y": 0.028 },
     indirectMultiplier: { "1y": 1.55, "3y": 1.65, "5y": 1.70, "10y": 1.80 },
     history: [
-      // Fed: 4.25-4.50 → 4.50-4.75(Feb) → 4.75-5.00(Mar) → 5.00-5.25(May) → 5.25-5.50(Jul)
-      { date: "2023-01", cpi: 6.4, rate: 4.50, oil: 84 },
-      { date: "2023-04", cpi: 4.9, rate: 5.00, oil: 80 },
-      { date: "2023-07", cpi: 3.2, rate: 5.50, oil: 80 },
-      { date: "2023-10", cpi: 3.2, rate: 5.50, oil: 90 },
-      // Fed held 5.25-5.50 through Sep 2024
-      { date: "2024-01", cpi: 3.1, rate: 5.50, oil: 80 },
-      { date: "2024-04", cpi: 3.4, rate: 5.50, oil: 88 },
-      { date: "2024-07", cpi: 2.9, rate: 5.50, oil: 82 },
-      // Sep -50bp(5.00), Nov -25bp(4.75), Dec -25bp(4.50)
-      { date: "2024-10", cpi: 2.6, rate: 5.00, oil: 73 },
-      // 2025: Mar -25bp(4.25), Sep -25bp(4.00), Dec -25bp(3.75)
-      { date: "2025-01", cpi: 3.0, rate: 4.50, oil: 76 },
-      { date: "2025-04", cpi: 2.3, rate: 4.25, oil: 66 },
-      { date: "2025-07", cpi: 2.5, rate: 4.25, oil: 65 },
-      { date: "2025-10", cpi: 2.7, rate: 4.00, oil: 72 },
-      { date: "2026-01", cpi: 2.4, rate: 3.75, oil: 67 },
+      { date: "2023-01", cpi: 6.4, rate: 4.50, brent: 84, wti: 79 },
+      { date: "2023-04", cpi: 4.9, rate: 5.00, brent: 80, wti: 76 },
+      { date: "2023-07", cpi: 3.2, rate: 5.50, brent: 80, wti: 77 },
+      { date: "2023-10", cpi: 3.2, rate: 5.50, brent: 90, wti: 85 },
+      { date: "2024-01", cpi: 3.1, rate: 5.50, brent: 80, wti: 75 },
+      { date: "2024-04", cpi: 3.4, rate: 5.50, brent: 88, wti: 83 },
+      { date: "2024-07", cpi: 2.9, rate: 5.50, brent: 82, wti: 78 },
+      { date: "2024-10", cpi: 2.6, rate: 5.00, brent: 73, wti: 69 },
+      { date: "2025-01", cpi: 3.0, rate: 4.50, brent: 76, wti: 73 },
+      { date: "2025-04", cpi: 2.3, rate: 4.25, brent: 66, wti: 62 },
+      { date: "2025-07", cpi: 2.5, rate: 4.25, brent: 65, wti: 62 },
+      { date: "2025-10", cpi: 2.7, rate: 4.00, brent: 72, wti: 69 },
+      { date: "2026-01", cpi: 2.4, rate: 3.75, brent: 67, wti: 64 },
     ],
   },
   kr: {
@@ -45,25 +41,23 @@ const DEFAULT_DATA = {
     oilPassThrough: { "1y": 0.045, "3y": 0.042, "5y": 0.038, "10y": 0.033 },
     indirectMultiplier: { "1y": 1.60, "3y": 1.70, "5y": 1.80, "10y": 1.90 },
     history: [
-      // BOK held 3.50 through Sep 2024
-      { date: "2023-01", cpi: 5.2, rate: 3.50, oil: 84 },
-      { date: "2023-04", cpi: 3.7, rate: 3.50, oil: 80 },
-      { date: "2023-07", cpi: 2.3, rate: 3.50, oil: 80 },
-      { date: "2023-10", cpi: 3.8, rate: 3.50, oil: 90 },
-      { date: "2024-01", cpi: 2.8, rate: 3.50, oil: 80 },
-      { date: "2024-04", cpi: 2.9, rate: 3.50, oil: 88 },
-      { date: "2024-07", cpi: 2.6, rate: 3.50, oil: 82 },
-      // Oct -25bp(3.25), Nov -25bp(3.00)
-      { date: "2024-10", cpi: 1.3, rate: 3.25, oil: 73 },
-      // Feb 2025 -25bp(2.75), May 2025 -25bp(2.50), held since
-      { date: "2025-01", cpi: 2.2, rate: 3.00, oil: 76 },
-      { date: "2025-04", cpi: 2.1, rate: 2.75, oil: 66 },
-      { date: "2025-07", cpi: 2.1, rate: 2.50, oil: 65 },
-      { date: "2025-10", cpi: 2.4, rate: 2.50, oil: 72 },
-      { date: "2026-01", cpi: 2.0, rate: 2.50, oil: 67 },
+      { date: "2023-01", cpi: 5.2, rate: 3.50, brent: 84, wti: 79 },
+      { date: "2023-04", cpi: 3.7, rate: 3.50, brent: 80, wti: 76 },
+      { date: "2023-07", cpi: 2.3, rate: 3.50, brent: 80, wti: 77 },
+      { date: "2023-10", cpi: 3.8, rate: 3.50, brent: 90, wti: 85 },
+      { date: "2024-01", cpi: 2.8, rate: 3.50, brent: 80, wti: 75 },
+      { date: "2024-04", cpi: 2.9, rate: 3.50, brent: 88, wti: 83 },
+      { date: "2024-07", cpi: 2.6, rate: 3.50, brent: 82, wti: 78 },
+      { date: "2024-10", cpi: 1.3, rate: 3.25, brent: 73, wti: 69 },
+      { date: "2025-01", cpi: 2.2, rate: 3.00, brent: 76, wti: 73 },
+      { date: "2025-04", cpi: 2.1, rate: 2.75, brent: 66, wti: 62 },
+      { date: "2025-07", cpi: 2.1, rate: 2.50, brent: 65, wti: 62 },
+      { date: "2025-10", cpi: 2.4, rate: 2.50, brent: 72, wti: 69 },
+      { date: "2026-01", cpi: 2.0, rate: 2.50, brent: 67, wti: 64 },
     ],
   },
-  currentOilPrice: 93,
+  currentBrent: 93,
+  currentWTI: 91,
 };
 
 // ─── Styling constants ───
@@ -89,16 +83,24 @@ const FONT = "'JetBrains Mono', 'SF Mono', 'Fira Code', monospace";
 export default function OilCPIMonitor() {
   const [data, setData] = useState(DEFAULT_DATA);
   const [timeframe, setTimeframe] = useState("3y");
-  const [oilScenario, setOilScenario] = useState(data.currentOilPrice);
+  const [benchmark, setBenchmark] = useState("brent"); // "brent" | "wti"
+  const currentOilPrice = benchmark === "brent" ? data.currentBrent : data.currentWTI;
+  const [oilScenario, setOilScenario] = useState(data.currentBrent);
   const [includeIndirect, setIncludeIndirect] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiStatus, setAiStatus] = useState(null);
+
+  // Sync scenario when benchmark changes
+  const handleBenchmarkChange = (b) => {
+    setBenchmark(b);
+    setOilScenario(b === "brent" ? data.currentBrent : data.currentWTI);
+  };
 
   // ─── CPI Impact Calculation ───
   const calculateCPIImpact = useCallback(
     (country, oilPrice, tf, indirect) => {
       const c = data[country];
-      const oilChange = ((oilPrice - data.currentOilPrice) / data.currentOilPrice) * 100;
+      const oilChange = ((oilPrice - currentOilPrice) / currentOilPrice) * 100;
       const passThrough = c.oilPassThrough[tf];
       let directImpact = (oilChange * passThrough);
       let totalImpact = directImpact;
@@ -115,7 +117,7 @@ export default function OilCPIMonitor() {
         oilChangePct: Math.round(oilChange * 10) / 10,
       };
     },
-    [data]
+    [data, currentOilPrice]
   );
 
   const usImpact = useMemo(
@@ -135,10 +137,11 @@ export default function OilCPIMonitor() {
         date: h.date,
         cpi: h.cpi,
         rate: h.rate,
+        oil: h[benchmark],
         realRate: Math.round((h.rate - h.cpi) * 100) / 100,
       }));
     },
-    [data]
+    [data, benchmark]
   );
 
   const usChartData = useMemo(() => buildHistoryData("us"), [buildHistoryData]);
@@ -165,9 +168,13 @@ export default function OilCPIMonitor() {
           currentCPI: parsed.kr_cpi ?? prev.kr.currentCPI,
           currentRate: parsed.kr_rate ?? prev.kr.currentRate,
         },
-        currentOilPrice: parsed.brent_oil ?? prev.currentOilPrice,
+        currentBrent: parsed.brent_oil ?? prev.currentBrent,
+        currentWTI: parsed.wti_oil ?? prev.currentWTI,
       }));
-      setOilScenario(parsed.brent_oil ?? data.currentOilPrice);
+      const newPrice = benchmark === "brent"
+        ? (parsed.brent_oil ?? data.currentBrent)
+        : (parsed.wti_oil ?? data.currentWTI);
+      setOilScenario(newPrice);
       setAiStatus({ ok: true, msg: `Updated: ${parsed.notes || parsed.data_date}` });
     } catch (e) {
       console.error(e);
@@ -407,7 +414,8 @@ export default function OilCPIMonitor() {
     );
   };
 
-  const oilChangePct = Math.round(((oilScenario - data.currentOilPrice) / data.currentOilPrice) * 1000) / 10;
+  const oilChangePct = Math.round(((oilScenario - currentOilPrice) / currentOilPrice) * 1000) / 10;
+  const benchmarkLabel = benchmark === "brent" ? "Brent" : "WTI";
 
   return (
     <div style={{
@@ -581,13 +589,48 @@ export default function OilCPIMonitor() {
             </button>
           </div>
 
+          {/* Benchmark selector */}
+          <div>
+            <div style={{ fontSize: 10, color: COLORS.textDim, letterSpacing: 1, marginBottom: 6, textTransform: "uppercase" }}>
+              유종 선택
+            </div>
+            <div style={{ display: "flex", gap: 4 }}>
+              {[
+                { id: "brent", label: "Brent", price: data.currentBrent },
+                { id: "wti", label: "WTI", price: data.currentWTI },
+              ].map((b) => (
+                <button
+                  key={b.id}
+                  onClick={() => handleBenchmarkChange(b.id)}
+                  style={{
+                    background: benchmark === b.id ? COLORS.accent : "rgba(255,255,255,0.05)",
+                    color: benchmark === b.id ? "#000" : COLORS.textDim,
+                    border: `1px solid ${benchmark === b.id ? COLORS.accent : COLORS.cardBorder}`,
+                    borderRadius: 6,
+                    padding: "6px 14px",
+                    fontSize: 12,
+                    fontWeight: benchmark === b.id ? 700 : 500,
+                    cursor: "pointer",
+                    fontFamily: FONT,
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {b.label} <span style={{ opacity: 0.6, fontSize: 10 }}>${b.price}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Current oil info */}
           <div style={{ marginLeft: "auto", textAlign: "right" }}>
             <div style={{ fontSize: 10, color: COLORS.textDim, letterSpacing: 1, textTransform: "uppercase" }}>
-              현재 브렌트유
+              현재 {benchmarkLabel}
             </div>
             <div style={{ fontSize: 22, fontWeight: 800, color: COLORS.accent }}>
-              ${data.currentOilPrice}<span style={{ fontSize: 11, color: COLORS.textDim }}>/bbl</span>
+              ${currentOilPrice}<span style={{ fontSize: 11, color: COLORS.textDim }}>/bbl</span>
+            </div>
+            <div style={{ fontSize: 9, color: COLORS.textMuted }}>
+              Brent ${data.currentBrent} · WTI ${data.currentWTI} · Spread ${data.currentBrent - data.currentWTI}
             </div>
           </div>
         </div>
@@ -601,7 +644,7 @@ export default function OilCPIMonitor() {
         }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.text }}>
-              🛢️ 국제유가 시나리오
+              🛢️ {benchmarkLabel} 유가 시나리오
             </div>
             <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
               <span style={{ fontSize: 32, fontWeight: 800, color: COLORS.accent }}>
@@ -798,4 +841,3 @@ const tdStyle = {
   fontFamily: FONT,
   fontSize: 11,
 };
-
