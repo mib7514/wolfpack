@@ -254,10 +254,8 @@ Rules: candidates must be exactly 5, probability desc, new angles only. narrativ
   const run=async()=>{
     onResult({type:"loading"});
     try{
-      const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4096,
-          system:"You output ONLY valid compact JSON. No markdown. No backticks. No explanation. Keep Korean text very concise.",
-          messages:[{role:"user",content:prompt()}]})});
+      const res=await fetch("/api/narrative-ai",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({prompt:prompt(),system:"You output ONLY valid compact JSON. No markdown. No backticks. No explanation. Keep Korean text very concise."})});
       const d=await res.json();
       const t=d.content?.map(i=>i.text||"").join("")||"";
       if(!t) throw new Error("Empty response from API");
