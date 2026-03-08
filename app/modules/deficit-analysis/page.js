@@ -67,27 +67,142 @@ const COMPANIES = [
   { rank: 50, name: "알지노믹스", cap: 22879, per: -16.46, roe: 19.81, type: "B", detail: "핵산치료제. 라이선싱 수익 < R&D 비용" },
 ];
 
+/* ───────────────────────────────────────────
+   Top 10: 펀더멘탈(80) + 모멘텀(20) = 100점
+   모멘텀 데이터는 2026.03.06 기준 수동 입력
+   (향후 API 연동 시 자동화 가능)
+   ─────────────────────────────────────────── */
+
 const TOP10_DEFICIT = [
-  { rank: 1, name: "서진시스템", type: "D", score: 92, reason: "영업이익 흑자(ROE 12.3%) + 일회성 환차손 제거 시 즉시 흑전. 리레이팅 거리 가장 짧음", catalyst: "환율 안정/일회성 비용 소멸" },
-  { rank: 2, name: "태성", type: "D", score: 90, reason: "ROE 16.6%로 본업 우수. 영업외 비용만 제거하면 즉시 정상화. 3D프린팅/시뮬레이션 성장", catalyst: "영업외 비용 정상화" },
-  { rank: 3, name: "에코프로비엠", type: "B", score: 87, reason: "EBITDA 755억 흑자. 본업 적자 축소 중. 2차전지 사이클 회복 시 가장 큰 레버리지", catalyst: "양극재 출하량 회복 + ASP 반등" },
-  { rank: 4, name: "에코프로", type: "B", score: 85, reason: "에코프로비엠 연결 효과. 2025년 흑자전환 목표. 인니 투자 + 원가혁신 진행", catalyst: "자회사 실적 턴어라운드" },
-  { rank: 5, name: "성호전자", type: "D", score: 83, reason: "ROE 6.5% 양호. 본업 건강하나 일회성 비용. 전장부품 성장 구간", catalyst: "일회성 비용 소멸" },
-  { rank: 6, name: "테크윙", type: "B", score: 80, reason: "반도체 테스트 핸들러 기술력. 사이클 하강기 일시적 적자. HBM 수혜 기대", catalyst: "반도체 사이클 상승 전환" },
-  { rank: 7, name: "로보티즈", type: "B", score: 78, reason: "로봇 액추에이터 선도. GP 흑자 확인. R&D 투자기이나 삼성 로봇 수혜 기대", catalyst: "로봇 양산 주문 확보" },
-  { rank: 8, name: "하나마이크론", type: "D", score: 75, reason: "반도체 패키징 영업흑자. 이자비용 구조만 개선되면 순이익 전환. HBM 패키징 수혜", catalyst: "차입금 축소 / 금리 하락" },
-  { rank: 9, name: "알지노믹스", type: "B", score: 73, reason: "핵산치료제 라이선싱 수익 발생 중. R&D 비용 초과이나 파이프라인 가치 인정", catalyst: "추가 라이선싱 딜" },
-  { rank: 10, name: "원익홀딩스", type: "D", score: 70, reason: "원익IPS 등 자회사 가치. 지분법 손실이 주원인. 반도체 장비 사이클에 연동", catalyst: "자회사 실적 개선" },
+  { rank: 1, name: "서진시스템", type: "D", fundScore: 76, reason: "영업이익 흑자(ROE 12.3%) + 일회성 환차손 제거 시 즉시 흑전", catalyst: "환율 안정/일회성 비용 소멸",
+    momentum: { pct52wHigh: 0.78, maAlign: "partial", ma120dir: "up", volRatio: 1.2 } },
+  { rank: 2, name: "에코프로비엠", type: "B", fundScore: 72, reason: "EBITDA 755억 흑자. 본업 적자 축소 중. 2차전지 사이클 회복 시 가장 큰 레버리지", catalyst: "양극재 출하량 회복 + ASP 반등",
+    momentum: { pct52wHigh: 0.82, maAlign: "full", ma120dir: "up", volRatio: 1.5 } },
+  { rank: 3, name: "에코프로", type: "B", fundScore: 70, reason: "에코프로비엠 연결 효과. 2025년 흑자전환 목표. 인니 투자 + 원가혁신 진행", catalyst: "자회사 실적 턴어라운드",
+    momentum: { pct52wHigh: 0.85, maAlign: "full", ma120dir: "up", volRatio: 1.8 } },
+  { rank: 4, name: "태성", type: "D", fundScore: 74, reason: "ROE 16.6%로 본업 우수. 영업외 비용만 제거하면 즉시 정상화", catalyst: "영업외 비용 정상화",
+    momentum: { pct52wHigh: 0.65, maAlign: "none", ma120dir: "flat", volRatio: 0.9 } },
+  { rank: 5, name: "테크윙", type: "B", fundScore: 62, reason: "반도체 테스트 핸들러 기술력. 사이클 하강기 일시적 적자", catalyst: "반도체 사이클 상승 전환",
+    momentum: { pct52wHigh: 0.60, maAlign: "partial", ma120dir: "down", volRatio: 2.1 } },
+  { rank: 6, name: "성호전자", type: "D", fundScore: 68, reason: "ROE 6.5% 양호. 본업 건강하나 일회성 비용", catalyst: "일회성 비용 소멸",
+    momentum: { pct52wHigh: 0.72, maAlign: "partial", ma120dir: "up", volRatio: 1.4 } },
+  { rank: 7, name: "로보티즈", type: "B", fundScore: 64, reason: "로봇 액추에이터 선도. GP 흑자 확인. 삼성 로봇 수혜 기대", catalyst: "로봇 양산 주문 확보",
+    momentum: { pct52wHigh: 0.55, maAlign: "none", ma120dir: "down", volRatio: 0.8 } },
+  { rank: 8, name: "하나마이크론", type: "D", fundScore: 60, reason: "반도체 패키징 영업흑자. 이자비용 구조 개선 시 순이익 전환", catalyst: "차입금 축소 / 금리 하락",
+    momentum: { pct52wHigh: 0.58, maAlign: "partial", ma120dir: "flat", volRatio: 1.1 } },
+  { rank: 9, name: "알지노믹스", type: "B", fundScore: 58, reason: "핵산치료제 라이선싱 수익 발생 중. 파이프라인 가치 인정", catalyst: "추가 라이선싱 딜",
+    momentum: { pct52wHigh: 0.90, maAlign: "full", ma120dir: "up", volRatio: 1.6 } },
+  { rank: 10, name: "원익홀딩스", type: "D", fundScore: 55, reason: "원익IPS 등 자회사 가치. 지분법 손실이 주원인", catalyst: "자회사 실적 개선",
+    momentum: { pct52wHigh: 0.62, maAlign: "partial", ma120dir: "up", volRatio: 1.3 } },
 ];
 
+// 모멘텀 스코어 계산 (최대 20점)
+function calcMomentum(m) {
+  if (!m) return 0;
+  // ① 52주고가 근접도 (0~6점): 비율 × 6, 90%이상 만점
+  const s1 = Math.min(6, Math.round(m.pct52wHigh * 6 * 10) / 10);
+  // ② 이평선 정배열 (0~6점): full=6, partial=3, none=0
+  const s2 = m.maAlign === "full" ? 6 : m.maAlign === "partial" ? 3 : 0;
+  // ③ 120일선 방향 (-3~4점): up=+4, flat=0, down=-3
+  const s3 = m.ma120dir === "up" ? 4 : m.ma120dir === "flat" ? 0 : -3;
+  // ④ 거래량 모멘텀 (0~4점): 5일/20일 비율 기반, cap at 4
+  const s4 = Math.min(4, Math.round(Math.max(0, (m.volRatio - 0.8)) * 5 * 10) / 10);
+  return Math.round((s1 + s2 + s3 + s4) * 10) / 10;
+}
+
+// Top10을 총점 기준 정렬
+const TOP10_SCORED = TOP10_DEFICIT.map((c) => {
+  const momScore = calcMomentum(c.momentum);
+  return { ...c, momScore, totalScore: c.fundScore + momScore };
+}).sort((a, b) => b.totalScore - a.totalScore).map((c, i) => ({ ...c, rank: i + 1 }));
+
+/* ───────────────────────────────────────────
+   ETF: 가중 노출도 기반 매칭
+   코스닥150은 유동시가총액 가중 → 시총 비중으로 추산
+   테마 ETF는 공시 편입비중 기반
+   ─────────────────────────────────────────── */
+
 const ETF_DATA = [
-  { name: "KODEX 코스닥150", code: "229200", matches: ["에코프로", "에코프로비엠", "테크윙", "로보티즈", "알지노믹스", "서진시스템", "원익홀딩스", "하나마이크론", "성호전자", "태성"], matchCount: 10, aum: "7.5조", fee: "0.20%", note: "코스닥 시총 상위 150종목. Top10 적자기업 전종목 편입" },
-  { name: "TIGER 코스닥150", code: "232080", matches: ["에코프로", "에코프로비엠", "테크윙", "로보티즈", "알지노믹스", "서진시스템", "원익홀딩스", "하나마이크론", "성호전자", "태성"], matchCount: 10, aum: "1.3조", fee: "0.19%", note: "KODEX와 동일 지수. 수수료 약간 저렴" },
-  { name: "KODEX 2차전지산업", code: "305720", matches: ["에코프로", "에코프로비엠"], matchCount: 2, aum: "8,500억", fee: "0.45%", note: "2차전지 밸류체인 집중. B유형 적자기업 고비중 편입" },
-  { name: "TIGER 코스닥150바이오테크", code: "261070", matches: ["알지노믹스"], matchCount: 1, aum: "3,200억", fee: "0.40%", note: "코스닥 바이오 집중. C유형 바이오 적자기업 다수 편입" },
-  { name: "TIGER 코리아휴머노이드로봇산업", code: "490600", matches: ["로보티즈"], matchCount: 1, aum: "2,800억", fee: "0.45%", note: "레인보우로보틱스 15.7%, 로보티즈 10.9% 편입" },
-  { name: "KODEX 코스닥150IT", code: "261060", matches: ["테크윙", "서진시스템", "원익홀딩스", "하나마이크론", "태성"], matchCount: 5, aum: "1,100억", fee: "0.25%", note: "코스닥 IT 섹터 집중. D유형 IT기업 다수 편입" },
+  {
+    name: "KODEX 코스닥150", code: "229200", aum: "7.5조", fee: "0.20%",
+    note: "코스닥 대표 150종목. 시총 가중",
+    // 코스닥150 전체 시총 대비 Top10 종목 비중 (유동시총 추산)
+    holdings: [
+      { name: "에코프로", weight: 8.2 },
+      { name: "에코프로비엠", weight: 7.0 },
+      { name: "로보티즈", weight: 1.3 },
+      { name: "테크윙", weight: 0.9 },
+      { name: "서진시스템", weight: 1.0 },
+      { name: "원익홀딩스", weight: 0.9 },
+      { name: "하나마이크론", weight: 0.8 },
+      { name: "성호전자", weight: 0.9 },
+      { name: "태성", weight: 0.8 },
+      { name: "알지노믹스", weight: 0.8 },
+    ],
+  },
+  {
+    name: "KODEX 2차전지산업", code: "305720", aum: "8,500억", fee: "0.45%",
+    note: "2차전지 밸류체인 25종목. 키워드+시총 가중. 최대 편입 20% 캡",
+    holdings: [
+      { name: "에코프로비엠", weight: 12.5 },
+      { name: "에코프로", weight: 8.0 },
+    ],
+  },
+  {
+    name: "TIGER 코스닥150", code: "232080", aum: "1.3조", fee: "0.19%",
+    note: "KODEX와 동일 지수. 수수료 소폭 저렴",
+    holdings: [
+      { name: "에코프로", weight: 8.2 },
+      { name: "에코프로비엠", weight: 7.0 },
+      { name: "로보티즈", weight: 1.3 },
+      { name: "테크윙", weight: 0.9 },
+      { name: "서진시스템", weight: 1.0 },
+      { name: "원익홀딩스", weight: 0.9 },
+      { name: "하나마이크론", weight: 0.8 },
+      { name: "성호전자", weight: 0.9 },
+      { name: "태성", weight: 0.8 },
+      { name: "알지노믹스", weight: 0.8 },
+    ],
+  },
+  {
+    name: "KODEX 코스닥150IT", code: "261060", aum: "1,100억", fee: "0.25%",
+    note: "코스닥 IT 섹터 집중. 반도체/전자 비중 높음",
+    holdings: [
+      { name: "테크윙", weight: 3.8 },
+      { name: "서진시스템", weight: 3.5 },
+      { name: "하나마이크론", weight: 3.2 },
+      { name: "원익홀딩스", weight: 3.0 },
+      { name: "태성", weight: 2.8 },
+    ],
+  },
+  {
+    name: "TIGER 코리아휴머노이드로봇", code: "490600", aum: "2,800억", fee: "0.45%",
+    note: "휴머노이드 로봇 산업 집중. 레인보우로보틱스 15.7%",
+    holdings: [
+      { name: "로보티즈", weight: 10.9 },
+    ],
+  },
+  {
+    name: "TIGER 코스닥150바이오테크", code: "261070", aum: "3,200억", fee: "0.40%",
+    note: "코스닥 바이오 섹터 집중",
+    holdings: [
+      { name: "알지노믹스", weight: 2.5 },
+    ],
+  },
 ];
+
+// ETF 가중노출도 계산: 1억 투자 시 Top10 적자기업에 합산 얼마나 노출되는지
+const ETF_SCORED = ETF_DATA.map((etf) => {
+  const top10Names = new Set(TOP10_SCORED.map((c) => c.name));
+  const matchedHoldings = etf.holdings.filter((h) => top10Names.has(h.name));
+  const totalExposure = matchedHoldings.reduce((sum, h) => sum + h.weight, 0);
+  // 가중점수: 각 종목 비중 × 해당 종목의 총점(normalized)으로도 가중
+  const qualityExposure = matchedHoldings.reduce((sum, h) => {
+    const comp = TOP10_SCORED.find((c) => c.name === h.name);
+    return sum + h.weight * (comp ? comp.totalScore / 100 : 0);
+  }, 0);
+  return { ...etf, matchedHoldings, totalExposure: Math.round(totalExposure * 10) / 10, qualityExposure: Math.round(qualityExposure * 10) / 10, matchCount: matchedHoldings.length };
+}).sort((a, b) => b.totalExposure - a.totalExposure);
 
 /* ───────────────────────────────────────────
    유틸 컴포넌트
@@ -113,6 +228,30 @@ function TypeBadge({ type }) {
     }}>
       {type === "흑자" ? "흑자" : type}
     </span>
+  );
+}
+
+function MomentumBadge({ m }) {
+  if (!m) return null;
+  const labels = [];
+  if (m.maAlign === "full") labels.push({ text: "정배열", color: "#00CC66" });
+  else if (m.maAlign === "partial") labels.push({ text: "부분정배열", color: "#FFB800" });
+  else labels.push({ text: "역배열", color: "#FF4444" });
+
+  if (m.ma120dir === "up") labels.push({ text: "120▲", color: "#00CC66" });
+  else if (m.ma120dir === "down") labels.push({ text: "120▼", color: "#FF4444" });
+
+  if (m.pct52wHigh >= 0.9) labels.push({ text: "52w高", color: "#FFB800" });
+  if (m.volRatio >= 1.5) labels.push({ text: "거래↑", color: "#4EA8FF" });
+
+  return (
+    <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+      {labels.map((l, i) => (
+        <span key={i} style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: l.color + "20", color: l.color, border: `1px solid ${l.color}30`, fontWeight: 600 }}>
+          {l.text}
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -167,25 +306,21 @@ export default function DeficitAnalysisPage() {
             <h1 className="text-xl font-black bg-gradient-to-r from-[#4EA8FF] to-[#FFB800] bg-clip-text text-transparent">
               🐺 적자기업 투자분석
             </h1>
-            <p className="text-xs text-[#5A6478] mt-1">적자의 성격 분류 → 위험 대비 기대수익 Top 10 → ETF 매칭</p>
+            <p className="text-xs text-[#5A6478] mt-1">적자유형 분류 → 펀더멘탈(80) + 모멘텀(20) 스코어링 → 가중 ETF 매칭</p>
           </div>
-          <button
-            onClick={handleAiUpdate}
-            disabled={aiLoading}
+          <button onClick={handleAiUpdate} disabled={aiLoading}
             className="px-5 py-2.5 rounded-lg border border-[#4EA8FF50] font-bold text-sm text-[#4EA8FF] transition
                        bg-gradient-to-br from-[#0D2847] to-[#132E52]
                        hover:from-[#133058] hover:to-[#1A3D6A] hover:border-[#4EA8FF] hover:shadow-[0_0_20px_#4EA8FF30]
-                       disabled:opacity-50 disabled:cursor-wait flex items-center gap-2"
-          >
+                       disabled:opacity-50 disabled:cursor-wait flex items-center gap-2">
             {aiLoading ? "⚡ AI 분석 중..." : "⚡ AI 업데이트"}
           </button>
         </div>
         <div className="h-0.5 bg-gradient-to-r from-transparent via-[#4EA8FF] to-transparent opacity-60" />
       </div>
 
-      {/* ── AI 결과 ── */}
       {aiResult && (
-        <div className="mx-7 mt-4 p-4 bg-[#0D2847] border border-[#4EA8FF30] rounded-lg animate-fade-in">
+        <div className="mx-7 mt-4 p-4 bg-[#0D2847] border border-[#4EA8FF30] rounded-lg">
           <div className="text-xs font-bold text-[#4EA8FF] mb-2">⚡ AI 업데이트 결과</div>
           <div className="text-xs text-[#A0B0CC] leading-relaxed whitespace-pre-wrap">{aiResult}</div>
           <button onClick={() => setAiResult(null)} className="mt-2 text-[11px] text-[#5A6478] hover:text-[#8892A4]">닫기 ×</button>
@@ -211,13 +346,11 @@ export default function DeficitAnalysisPage() {
           { id: "etf", label: "💼 ETF 매칭" },
           { id: "framework", label: "📋 적자유형 프레임워크" },
         ].map((t) => (
-          <button key={t.id}
-            onClick={() => setActiveTab(t.id)}
+          <button key={t.id} onClick={() => setActiveTab(t.id)}
             className={`px-4 py-2 rounded-md text-xs font-semibold border transition whitespace-nowrap
               ${activeTab === t.id
                 ? "bg-gradient-to-br from-[#1A3A5C] to-[#162D4A] text-[#4EA8FF] border-[#4EA8FF40]"
-                : "bg-transparent text-[#8892A4] border-[#1E2636] hover:bg-[#1A2030] hover:text-[#C0C8D8]"}`}
-          >
+                : "bg-transparent text-[#8892A4] border-[#1E2636] hover:bg-[#1A2030] hover:text-[#C0C8D8]"}`}>
             {t.label}
           </button>
         ))}
@@ -225,39 +358,58 @@ export default function DeficitAnalysisPage() {
 
       <div className="px-7 pb-10">
 
-        {/* ── Top 10 탭 ── */}
+        {/* ════════ Top 10 탭 ════════ */}
         {activeTab === "top10" && (
           <div>
+            {/* 스코어링 설명 */}
             <div className="bg-[#111827] border border-[#1E2636] rounded-lg p-5 mb-4">
-              <div className="text-sm font-bold text-[#FFB800] mb-1">핵심 논리</div>
-              <div className="text-xs text-[#8892A4] leading-relaxed">
-                코스닥 적자기업 중 <span className="text-[#4EA8FF] font-bold">D유형(본업 흑자+일회성 순손실)</span>이 가장 빠른 리레이팅,
-                <span className="text-[#FFB800] font-bold"> B유형(GP흑자+영업적자)</span>이 가장 큰 비대칭 수익 기회.
-                A유형(GP적자)과 C유형(바이오 EBITDA적자)은 제외.
+              <div className="text-sm font-bold text-[#FFB800] mb-2">스코어링 구조: 펀더멘탈(80) + 모멘텀(20) = 100</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs text-[#8892A4] leading-relaxed">
+                <div>
+                  <div className="text-[#E0E4EC] font-bold mb-1">펀더멘탈 (80점)</div>
+                  <p>적자 유형 매력도, ROE 수준, 흑자전환 거리, 촉매 확실성, 재무안정성</p>
+                </div>
+                <div>
+                  <div className="text-[#E0E4EC] font-bold mb-1">모멘텀 (20점)</div>
+                  <div className="space-y-0.5">
+                    <p>52주 고가 근접도 <span className="font-mono text-[#5A6478]">(0~6점)</span> — 현재가/52주고가 × 6</p>
+                    <p>이평선 정배열 <span className="font-mono text-[#5A6478]">(0~6점)</span> — 20&gt;60&gt;120 정배열 6, 부분 3</p>
+                    <p>120일선 방향 <span className="font-mono text-[#5A6478]">(-3~+4점)</span> — 상승 +4, 하락 -3</p>
+                    <p>거래량 모멘텀 <span className="font-mono text-[#5A6478]">(0~4점)</span> — 5일/20일 거래량 비율</p>
+                  </div>
+                </div>
               </div>
             </div>
+
+            {/* 리스트 */}
             <div className="bg-[#111827] border border-[#1E2636] rounded-lg overflow-hidden">
-              {TOP10_DEFICIT.map((c, i) => (
+              {TOP10_SCORED.map((c, i) => (
                 <div key={c.name} className="px-5 py-4 border-b border-[#1E2636] hover:bg-[#151D2C] transition">
-                  <div className="flex items-center gap-3 mb-2">
+                  <div className="flex items-center gap-3 mb-2 flex-wrap">
                     <span className={`font-mono text-lg font-black min-w-[30px] ${i < 3 ? "text-[#FFB800]" : "text-[#5A6478]"}`}>
                       {String(c.rank).padStart(2, "0")}
                     </span>
                     <span className="text-sm font-bold">{c.name}</span>
                     <TypeBadge type={c.type} />
+                    <MomentumBadge m={c.momentum} />
                     <div className="flex-1" />
-                    <div className="w-28">
-                      <div className="h-1.5 rounded-full bg-[#1E2636] overflow-hidden">
-                        <div className="h-full rounded-full transition-all duration-500"
-                          style={{
-                            width: `${c.score}%`,
-                            background: c.score >= 85 ? "linear-gradient(90deg,#FFB800,#FF8C00)" : c.score >= 75 ? "linear-gradient(90deg,#4EA8FF,#3D8BD4)" : "#5A6478",
-                          }} />
+                    {/* 스코어 바 */}
+                    <div className="w-36 flex items-center gap-2">
+                      <div className="flex-1 h-2 rounded-full bg-[#1E2636] overflow-hidden flex">
+                        <div className="h-full" style={{ width: `${(c.fundScore / 100) * 100}%`, background: "#4EA8FF" }} />
+                        <div className="h-full" style={{ width: `${(Math.max(0, c.momScore) / 100) * 100}%`, background: "#FFB800" }} />
                       </div>
+                      <span className={`font-mono text-sm font-bold min-w-[35px] text-right ${c.totalScore >= 85 ? "text-[#FFB800]" : "text-[#4EA8FF]"}`}>
+                        {c.totalScore}
+                      </span>
                     </div>
-                    <span className={`font-mono text-sm font-bold min-w-[30px] text-right ${c.score >= 85 ? "text-[#FFB800]" : "text-[#4EA8FF]"}`}>
-                      {c.score}
-                    </span>
+                  </div>
+                  {/* 점수 내역 */}
+                  <div className="ml-[42px] flex gap-4 text-[10px] text-[#5A6478] mb-1 font-mono">
+                    <span>펀더: <span className="text-[#4EA8FF]">{c.fundScore}</span></span>
+                    <span>모멘: <span className="text-[#FFB800]">{c.momScore > 0 ? "+" : ""}{c.momScore}</span></span>
+                    <span>52w: <span className="text-[#8892A4]">{Math.round(c.momentum.pct52wHigh * 100)}%</span></span>
+                    <span>Vol: <span className="text-[#8892A4]">{c.momentum.volRatio}x</span></span>
                   </div>
                   <div className="text-[11px] text-[#8892A4] ml-[42px] leading-relaxed">{c.reason}</div>
                   <div className="text-[10px] text-[#4EA8FF] ml-[42px] mt-1">📌 촉매: {c.catalyst}</div>
@@ -267,7 +419,7 @@ export default function DeficitAnalysisPage() {
           </div>
         )}
 
-        {/* ── 전체 50종목 탭 ── */}
+        {/* ════════ 전체 50종목 탭 ════════ */}
         {activeTab === "all" && (
           <div>
             <div className="flex gap-1.5 mb-3 flex-wrap">
@@ -279,9 +431,7 @@ export default function DeficitAnalysisPage() {
               {Object.entries(DEFICIT_TYPES).map(([key, val]) => (
                 <button key={key} onClick={() => setFilterType(key)}
                   className="px-3 py-1 rounded-full text-[11px] font-semibold border transition"
-                  style={filterType === key
-                    ? { background: val.bg, color: val.color, borderColor: val.color + "60" }
-                    : { background: "transparent", color: "#8892A4", borderColor: "#1E2636" }}>
+                  style={filterType === key ? { background: val.bg, color: val.color, borderColor: val.color + "60" } : { background: "transparent", color: "#8892A4", borderColor: "#1E2636" }}>
                   {key === "흑자" ? "흑자" : key} ({typeDistribution[key] || 0})
                 </button>
               ))}
@@ -291,13 +441,9 @@ export default function DeficitAnalysisPage() {
                 <thead>
                   <tr>
                     {[
-                      { key: "rank", label: "#" },
-                      { key: "name", label: "종목명", align: "left" },
-                      { key: "cap", label: "시총(억)" },
-                      { key: "per", label: "PER" },
-                      { key: "roe", label: "ROE(%)" },
-                      { key: "type", label: "유형" },
-                      { key: "detail", label: "분류 근거", align: "left" },
+                      { key: "rank", label: "#" }, { key: "name", label: "종목명", align: "left" },
+                      { key: "cap", label: "시총(억)" }, { key: "per", label: "PER" }, { key: "roe", label: "ROE(%)" },
+                      { key: "type", label: "유형" }, { key: "detail", label: "분류 근거", align: "left" },
                     ].map((h) => (
                       <th key={h.key}
                         onClick={() => ["rank", "cap", "type"].includes(h.key) && setSortBy(h.key)}
@@ -335,44 +481,57 @@ export default function DeficitAnalysisPage() {
           </div>
         )}
 
-        {/* ── ETF 매칭 탭 ── */}
+        {/* ════════ ETF 매칭 탭 ════════ */}
         {activeTab === "etf" && (
           <div>
             <div className="bg-[#111827] border border-[#1E2636] rounded-lg p-5 mb-4">
-              <div className="text-sm font-bold text-[#4EA8FF] mb-1">ETF 매칭 로직</div>
+              <div className="text-sm font-bold text-[#4EA8FF] mb-2">ETF 가중 노출도 매칭</div>
               <div className="text-xs text-[#8892A4] leading-relaxed">
-                위험 대비 기대수익 Top 10 적자기업을 <span className="text-[#FFB800] font-bold">가장 많이 편입한 국내 ETF</span>를 매칭.
-                개별 종목 직접투자 대비 분산효과 확보.
+                단순 편입 종목 수가 아니라 <span className="text-[#FFB800] font-bold">Top10 적자기업에 실질적으로 몇 %나 노출되는지</span>를 기준으로 순위화.
+                1억 투자 시 Top10 기업에 합산 얼마나 배분되는지 = <span className="text-[#4EA8FF] font-bold">가중 노출도</span>.
+                추가로 종목별 스코어를 반영한 <span className="text-[#00CC66] font-bold">품질 가중 노출도</span>도 함께 표시.
               </div>
             </div>
+
             <div className="bg-[#111827] border border-[#1E2636] rounded-lg overflow-hidden">
-              <div className="grid grid-cols-[2fr_1fr_1fr_1fr_3fr] gap-3 px-4 py-3 text-[11px] font-bold text-[#6B7894] border-b-2 border-[#1E2636]">
-                <span>ETF명</span><span className="text-center">매칭</span><span className="text-center">AUM</span><span className="text-center">보수</span><span>매칭 종목 / 특징</span>
+              {/* 헤더 */}
+              <div className="grid gap-3 px-4 py-3 text-[11px] font-bold text-[#6B7894] border-b-2 border-[#1E2636]"
+                style={{ gridTemplateColumns: "2fr 80px 80px 70px 60px 3fr" }}>
+                <span>ETF명</span>
+                <span className="text-center">가중노출</span>
+                <span className="text-center">품질가중</span>
+                <span className="text-center">AUM</span>
+                <span className="text-center">보수</span>
+                <span>편입 종목 (비중%)</span>
               </div>
-              {ETF_DATA.sort((a, b) => b.matchCount - a.matchCount).map((etf) => (
-                <div key={etf.code} className="grid grid-cols-[2fr_1fr_1fr_1fr_3fr] gap-3 px-4 py-3.5 border-b border-[#1E2636] items-center text-xs hover:bg-[#1A2030] transition">
+              {ETF_SCORED.map((etf) => (
+                <div key={etf.code} className="grid gap-3 px-4 py-3.5 border-b border-[#1E2636] items-center text-xs hover:bg-[#1A2030] transition"
+                  style={{ gridTemplateColumns: "2fr 80px 80px 70px 60px 3fr" }}>
                   <div>
                     <div className="font-bold text-sm">{etf.name}</div>
                     <div className="text-[10px] text-[#5A6478] font-mono">{etf.code}</div>
                   </div>
                   <div className="text-center">
-                    <span className={`font-mono text-xl font-black ${etf.matchCount >= 8 ? "text-[#FFB800]" : etf.matchCount >= 3 ? "text-[#4EA8FF]" : "text-[#5A6478]"}`}>
-                      {etf.matchCount}
+                    <span className={`font-mono text-lg font-black ${etf.totalExposure >= 15 ? "text-[#FFB800]" : etf.totalExposure >= 5 ? "text-[#4EA8FF]" : "text-[#5A6478]"}`}>
+                      {etf.totalExposure}%
                     </span>
-                    <span className="text-[10px] text-[#5A6478]">/10</span>
+                  </div>
+                  <div className="text-center">
+                    <span className="font-mono text-sm font-bold text-[#00CC66]">{etf.qualityExposure}</span>
                   </div>
                   <div className="text-center font-mono text-[#8892A4]">{etf.aum}</div>
                   <div className="text-center font-mono text-[#8892A4]">{etf.fee}</div>
                   <div>
                     <div className="flex flex-wrap gap-1 mb-1">
-                      {etf.matches.map((m) => {
-                        const comp = TOP10_DEFICIT.find((c) => c.name === m);
-                        return comp ? (
-                          <span key={m} className="text-[10px] px-1.5 py-0.5 rounded"
-                            style={{ background: DEFICIT_TYPES[comp.type].bg, color: DEFICIT_TYPES[comp.type].color, border: `1px solid ${DEFICIT_TYPES[comp.type].color}30` }}>
-                            {m}
+                      {etf.matchedHoldings.sort((a, b) => b.weight - a.weight).map((h) => {
+                        const comp = TOP10_SCORED.find((c) => c.name === h.name);
+                        const dt = comp ? DEFICIT_TYPES[comp.type] : DEFICIT_TYPES["흑자"];
+                        return (
+                          <span key={h.name} className="text-[10px] px-1.5 py-0.5 rounded font-mono"
+                            style={{ background: dt.bg, color: dt.color, border: `1px solid ${dt.color}30` }}>
+                            {h.name} <span className="opacity-70">{h.weight}%</span>
                           </span>
-                        ) : null;
+                        );
                       })}
                     </div>
                     <div className="text-[10px] text-[#5A6478]">{etf.note}</div>
@@ -380,18 +539,20 @@ export default function DeficitAnalysisPage() {
                 </div>
               ))}
             </div>
+
+            {/* 전략 제안 */}
             <div className="bg-[#111827] border border-[#1E2636] rounded-lg p-5 mt-4">
               <div className="text-sm font-bold text-[#FFB800] mb-2">💡 전략 제안</div>
               <div className="text-xs text-[#8892A4] leading-relaxed space-y-1">
-                <p><strong className="text-[#E0E4EC]">Core (60%)</strong>: KODEX/TIGER 코스닥150 — Top 10 전종목 편입</p>
-                <p><strong className="text-[#E0E4EC]">Satellite (25%)</strong>: KODEX 코스닥150IT — D유형 IT기업 집중 노출</p>
-                <p><strong className="text-[#E0E4EC]">Alpha (15%)</strong>: 서진시스템·태성·에코프로비엠 직접 매수</p>
+                <p><strong className="text-[#E0E4EC]">Core (60%)</strong>: KODEX/TIGER 코스닥150 — 가중노출 22.6%. 10종목 전부 자연 편입</p>
+                <p><strong className="text-[#E0E4EC]">Satellite (25%)</strong>: KODEX 2차전지산업 — 에코프로+비엠 합산 20.5%. B유형 집중 베팅</p>
+                <p><strong className="text-[#E0E4EC]">Alpha (15%)</strong>: 서진시스템·태성 직접 매수 — D유형 고점수 종목 오버웨이트. 코스닥150 편입비중(0.8~1.0%)으로는 부족</p>
               </div>
             </div>
           </div>
         )}
 
-        {/* ── 프레임워크 탭 ── */}
+        {/* ════════ 프레임워크 탭 ════════ */}
         {activeTab === "framework" && (
           <div className="space-y-3">
             {Object.entries(DEFICIT_TYPES).filter(([k]) => k !== "흑자").map(([key, val]) => (
@@ -424,7 +585,7 @@ export default function DeficitAnalysisPage() {
       {/* ── 푸터 ── */}
       <div className="px-7 py-4 border-t border-[#1E2636] text-center">
         <div className="text-[10px] text-[#3A4458]">
-          늑대무리원정단 · 적자기업 투자분석 모듈 · 데이터 기준: 2026.03.06 · 투자 판단은 본인 책임
+          늑대무리원정단 · 적자기업 투자분석 모듈 · 데이터 기준: 2026.03.06 · 모멘텀 데이터는 수동 입력 (향후 API 자동화 예정) · 투자 판단은 본인 책임
         </div>
       </div>
     </div>
