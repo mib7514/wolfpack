@@ -233,7 +233,7 @@ export default function FundIdeasPage() {
         <div className="flex gap-6 flex-wrap">
           <RangeSlider label="만기매칭 금리" value={coreYield} min={1.0} max={5.0} step={0.1} onChange={setCoreYield} color={C.core} unit="%" />
           <RangeSlider label="BCP 기대수익률" value={bcpYield} min={2.0} max={8.0} step={0.1} onChange={setBcpYield} color={C.accent} unit="%" />
-          <RangeSlider label="주식 기대수익률" value={eqRet} min={-30} max={40} step={1} onChange={setEqRet} color={C.equity} unit="%" decimals={0} />
+          <RangeSlider label="주식 기대수익률" value={eqRet} min={-30} max={40} step={0.1} onChange={setEqRet} color={C.equity} unit="%" />
         </div>
       </div>
 
