@@ -168,6 +168,16 @@ const MODULES = [
     layer: "fund-idea",
     status: "live",
   },
+  {
+    id: "barbell-mdd",
+    name: "베크플 바벨 MDD방어형",
+    subtitle: "Barbell MDD Defense Designer",
+    icon: "⚖️",
+    description: "만기매칭 + 베크플 + 장기국채 바벨, 6시나리오 MDD 방어 설계",
+    path: "/modules/barbell-mdd",
+    layer: "fund-idea",
+    status: "live",
+  },
 ];
 
 const LAYERS = [
