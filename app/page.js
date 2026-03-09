@@ -150,10 +150,10 @@ const MODULES = [
   // ─── Layer 5: FUND IDEA ───
   {
     id: "fund-ideas",
-    name: "펀드아이디어",
-    subtitle: "Reverse Target Conversion Fund",
+    name: "역목표전환형",
+    subtitle: "BCP-Powered Reverse Target Conversion",
     icon: "💡",
-    description: "역목표전환형 — 경과이자 한도 내 주식 투자 · 원금보존형 자산배분 전략",
+    description: "베스트크레딧플러스 기반 원금보존형 · 경과수익 한도 내 주식 투자 전략",
     path: "/modules/fund-ideas",
     layer: "fund-idea",
     status: "live",
