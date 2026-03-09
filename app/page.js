@@ -137,6 +137,17 @@ const MODULES = [
     layer: "portfolio",
     status: "live",
   },
+  {
+    id: 'reit-scoring',
+    layer: 'PORTFOLIO',
+    title: 'K-REIT 스코어링',
+    subtitle: 'REIT Screening & Scoring',
+    description: '채권 투자자 관점 5축 분석 · 연율화 캐리 · 금리 스트레스 테스트',
+    href: '/modules/reit-scoring',
+    icon: '◉',
+    accentColor: '#22d3ee',
+    status: 'active',
+  },
 ];
 
 const LAYERS = [
