@@ -147,6 +147,7 @@ const MODULES = [
     layer: "portfolio",
     status: "live",
   },
+  // ─── Layer 5: FUND IDEA ───
   {
     id: "fund-ideas",
     name: "펀드아이디어",
@@ -164,6 +165,7 @@ const LAYERS = [
   { id: "market", label: "Layer 2 · MARKET", color: "#3b82f6" },
   { id: "credit", label: "Layer 3 · CREDIT", color: "#ef4444" },
   { id: "portfolio", label: "Layer 4 · PORTFOLIO", color: "#10b981" },
+  { id: "fund-idea", label: "Layer 5 · FUND IDEA", color: "#a855f7" },
 ];
 
 export default function ControlTower() {
@@ -220,9 +222,9 @@ export default function ControlTower() {
       {/* Footer */}
       <footer className="border-t border-gray-800/50 py-6 text-center">
         <p className="text-xs text-gray-600 font-mono">
-          늑대무리원정단 v1.3.0
+          늑대무리원정단 v1.4.0
           <span className="text-gray-700 mx-1">·</span>
-          Macro · Market · Credit · Portfolio
+          Macro · Market · Credit · Portfolio · Fund Idea
         </p>
       </footer>
     </div>
