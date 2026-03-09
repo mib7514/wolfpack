@@ -226,7 +226,7 @@ export default function FundIdeasPage() {
             <select value={years} onChange={(e) => setYears(Number(e.target.value))}
               className="rounded-md px-2 py-1 text-xs"
               style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text, fontFamily: MONO }}>
-              {[1,2,3,5].map(v => <option key={v} value={v}>{v}년</option>)}
+              {[1,1.5,2,2.5,3,4,5].map(v => <option key={v} value={v}>{v}년</option>)}
             </select>
           </div>
         </div>
