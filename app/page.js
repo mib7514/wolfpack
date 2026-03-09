@@ -158,6 +158,16 @@ const MODULES = [
     layer: "fund-idea",
     status: "live",
   },
+  {
+    id: "becpl-shield",
+    name: "베크플 MDD Shield",
+    subtitle: "BECPL Drawdown Protector",
+    icon: "🛡️",
+    description: "베스트크레딧플러스 + 만기매칭 구조 마이너스 방어 설계",
+    path: "/modules/becpl-shield",
+    layer: "fund-idea",
+    status: "live",
+  },
 ];
 
 const LAYERS = [
