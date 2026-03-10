@@ -191,48 +191,36 @@ export default function TaylorRulePage(){
   const latest=chartData[chartData.length-1];
   const policyGap=latest.bok-latest.taylor;
 
-  // ── AI Update (Claude API + web search) ──
+  // ── AI Update (서버 사이드 API) ──
   const handleAIUpdate=useCallback(async()=>{
     setAiLoading(true);
     setAiResult(null);
     try{
-      const res=await fetch("https://api.anthropic.com/v1/messages",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
-          model:"claude-sonnet-4-5-20250514",
-          max_tokens:1000,
-          tools:[{type:"web_search_20250305",name:"web_search"}],
-          messages:[{role:"user",content:"오늘 한국 국고채 3년 금리가 몇 %인지 알려줘. 숫자만 JSON으로 답해줘: {\"rate\": 숫자, \"date\": \"YYYY.MM.DD\"} 형식으로. 반드시 웹검색해서 최신 데이터를 찾아줘."}],
-        }),
-      });
+      const res=await fetch("/api/taylor-update",{method:"POST"});
       const d=await res.json();
-      const txt=d.content?.map(c=>c.text||"").join("")||"";
-      const m=txt.match(/\{[^}]*"rate"\s*:\s*([\d.]+)[^}]*"date"\s*:\s*"([^"]+)"[^}]*\}/);
-      if(m){
-        const rate=parseFloat(m[1]);
-        const date=m[2];
-        setAiResult({rate,date,ok:true});
+      if(!res.ok||d.error){
+        setAiResult({ok:false,msg:d.error||"API 오류"});
+      }else{
+        const {date,bok_rate,ktb3y,cpi_yoy,output_gap,notes}=d;
+        setAiResult({ok:true,rate:ktb3y,date:date||"최신",
+          msg:`기준금리 ${bok_rate}% · 국고3년 ${ktb3y}% · CPI ${cpi_yoy}% · 갭 ${output_gap}`});
         setData(prev=>{
           const nd=[...prev];
           const li=nd.length-1;
-          if(nd[li].live) nd[li]={...nd[li],k:rate};
+          if(nd[li].live){
+            nd[li]={...nd[li],
+              k:ktb3y||nd[li].k,
+              bok:bok_rate||nd[li].bok,
+              cpi:cpi_yoy!==undefined?cpi_yoy:nd[li].cpi,
+              gap:output_gap!==undefined?output_gap:nd[li].gap,
+              d:date||nd[li].d,
+            };
+          }else{
+            // 새로운 데이터포인트 추가
+            nd.push({d:date||"2026.04",cpi:cpi_yoy||2.4,gap:output_gap||0.4,bok:bok_rate||2.50,k:ktb3y||3.18,live:true});
+          }
           return nd;
         });
-      }else{
-        const nm=txt.match(/([\d]+\.[\d]+)\s*%/);
-        if(nm){
-          const rate=parseFloat(nm[1]);
-          setAiResult({rate,date:"최신",ok:true});
-          setData(prev=>{
-            const nd=[...prev];
-            const li=nd.length-1;
-            if(nd[li].live) nd[li]={...nd[li],k:rate};
-            return nd;
-          });
-        }else{
-          setAiResult({ok:false,msg:"데이터를 파싱할 수 없습니다"});
-        }
       }
     }catch(e){
       setAiResult({ok:false,msg:e.message});
@@ -275,13 +263,13 @@ export default function TaylorRulePage(){
               color:aiLoading?"#999":"#fff",cursor:aiLoading?"wait":"pointer",fontFamily:mono,fontSize:10.5,fontWeight:600,
               display:"flex",alignItems:"center",gap:6,transition:"all 0.15s",letterSpacing:0.5,
             }}>
-              {aiLoading?<span style={{animation:"pulse 1s infinite"}}>검색 중...</span>:<><span style={{fontSize:13}}>⚡</span>국고3년 AI 업데이트</>}
+              {aiLoading?<span style={{animation:"pulse 1s infinite"}}>검색 중...</span>:<><span style={{fontSize:13}}>⚡</span>AI 업데이트</>}
             </button>
           </div>
           {aiResult&&(
             <div style={{marginTop:8,padding:"6px 12px",borderRadius:6,fontSize:11,fontFamily:mono,
               background:aiResult.ok?"#f0f7ff":"#fef5f4",color:aiResult.ok?"#0984e3":"#c0392b",fontWeight:600}}>
-              {aiResult.ok?`✓ 국고3년 업데이트: ${aiResult.rate}% (${aiResult.date})`:`✗ ${aiResult.msg}`}
+              {aiResult.ok?`✓ ${aiResult.msg} (${aiResult.date})`:`✗ ${aiResult.msg}`}
             </div>
           )}
         </div>
