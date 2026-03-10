@@ -1,13 +1,26 @@
 import { NextResponse } from "next/server";
 
+function extractJSON(text) {
+  if (!text) return null;
+  try {
+    return JSON.parse(text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim());
+  } catch {}
+  const matches = text.match(/\{[\s\S]*\}/g);
+  if (matches) {
+    for (const m of matches.sort((a, b) => b.length - a.length)) {
+      try { return JSON.parse(m); } catch {}
+    }
+  }
+  return null;
+}
+
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
 export async function POST() {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-
   if (!apiKey) {
-    return NextResponse.json(
-      { error: "ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다" }, { status: 500 });
   }
 
   try {
@@ -56,8 +69,8 @@ Percentages should sum to ~100 for each meeting.`;
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-5-20250929",
-        max_tokens: 4000,
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 8000,
         tools: [{ type: "web_search_20250305", name: "web_search" }],
         messages: [{ role: "user", content: prompt }],
       }),
@@ -66,34 +79,16 @@ Percentages should sum to ~100 for each meeting.`;
     if (!res.ok) {
       const errText = await res.text();
       console.error("Anthropic API error:", res.status, errText);
-      return NextResponse.json(
-        { error: `Anthropic API ${res.status}: ${errText.slice(0, 200)}` },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: `Anthropic API ${res.status}: ${errText.slice(0, 200)}` }, { status: 500 });
     }
 
     const data = await res.json();
-    const rawText = data.content
-      .filter((b) => b.type === "text")
-      .map((b) => b.text)
-      .join("\n");
+    const rawText = (data.content?.filter((b) => b.type === "text") || []).map((b) => b.text).join("\n");
+    const parsed = extractJSON(rawText);
 
-    // Parse JSON
-    let parsed;
-    try {
-      const cleaned = rawText.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
-      parsed = JSON.parse(cleaned);
-    } catch {
-      const match = rawText.match(/\{[\s\S]*\}/);
-      if (match) {
-        parsed = JSON.parse(match[0]);
-      } else {
-        console.error("JSON parse failed. Raw:", rawText.slice(0, 500));
-        return NextResponse.json(
-          { error: "AI 응답을 JSON으로 파싱할 수 없습니다" },
-          { status: 500 }
-        );
-      }
+    if (!parsed) {
+      console.error("JSON parse failed. Raw:", rawText.slice(0, 500));
+      return NextResponse.json({ error: "AI 응답을 JSON으로 파싱할 수 없습니다", raw: rawText.slice(0, 300) }, { status: 500 });
     }
 
     const now = new Date().toISOString();
@@ -108,36 +103,28 @@ Percentages should sum to ~100 for each meeting.`;
         risks: parsed.risks || [],
         recent_fed_speakers: parsed.recent_fed_speakers || [],
       },
-      rate: parsed.current_rate
-        ? {
-            current_rate_lower: parseInt(parsed.current_rate.split("-")[0]),
-            current_rate_upper: parseInt(parsed.current_rate.split("-")[1]),
-          }
-        : null,
+      rate: parsed.current_rate ? {
+        current_rate_lower: parseInt(parsed.current_rate.split("-")[0]),
+        current_rate_upper: parseInt(parsed.current_rate.split("-")[1]),
+      } : null,
       updated_at: now,
     };
 
-    // Supabase save (best-effort, won't break if tables don't exist)
+    // Supabase save (best-effort)
     try {
       const sbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const sbKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
       if (sbUrl && sbKey) {
         const { createClient } = await import("@supabase/supabase-js");
         const sb = createClient(sbUrl, sbKey);
-        await sb.from("fedwatch_data").upsert({
-          id: "latest",
-          data: result,
-          updated_at: now,
-        });
+        await sb.from("fedwatch_data").upsert({ id: "latest", data: result, updated_at: now });
         const today = now.split("T")[0];
         await sb.from("fedwatch_snapshots").insert({
           data: {
             date: today,
             meetings: (parsed.meetings || []).map((m) => ({
-              date: m.date,
-              label: m.label,
-              expected_rate: m.expected_rate || 0,
-              cut_prob: m.cut_prob || 0,
+              date: m.date, label: m.label,
+              expected_rate: m.expected_rate || 0, cut_prob: m.cut_prob || 0,
             })),
           },
         });
