@@ -66,16 +66,6 @@ const MODULES = [
   },
   // ─── Layer 2: MARKET ───
   {
-    id: "market-monitor",
-    name: "Market Monitor",
-    subtitle: "글로벌 시장 모니터링",
-    icon: "📊",
-    description: "차트 스크린샷 AI 분석 · Chart Vision",
-    path: "/market",
-    layer: "market",
-    status: "live",
-  },
-  {
     id: "consumer-sector",
     name: "소비주 모니터링",
     subtitle: "Consumer Sector Tracker",
@@ -132,7 +122,7 @@ const MODULES = [
     name: "적자기업 투자분석",
     subtitle: "Deficit Company Analysis",
     icon: "🎯",
-    description: "코스닥 Top50 적자유형 · 위험대비수익 Top10 · ETF 매칭",
+    description: "코스닥 시총 상위 150개 적자유형 · 위험대비수익 Top10 · ETF 매칭",
     path: "/modules/deficit-analysis",
     layer: "portfolio",
     status: "live",
@@ -152,7 +142,7 @@ const MODULES = [
   name: "Wolf Radar",
   subtitle: "성장주 발굴",
   icon: "🐺",
-  description: "AI 기반 성장주 thesis 자동 생성 · Kelly Criterion 배분",
+  description: "종목 검색 · AI thesis 생성 · 모니터링 지표 스코어링",
   path: "/modules/radar",
   layer: "portfolio",
   status: "live",
@@ -252,7 +242,7 @@ export default function ControlTower() {
       {/* Footer */}
       <footer className="border-t border-gray-800/50 py-6 text-center">
         <p className="text-xs text-gray-600 font-mono">
-          늑대무리원정단 v1.4.0
+          늑대무리원정단 v2.0.0
           <span className="text-gray-700 mx-1">·</span>
           Macro · Market · Credit · Portfolio · Fund Idea
         </p>
