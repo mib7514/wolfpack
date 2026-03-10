@@ -94,12 +94,17 @@ Return maximum 8 items.`
     function safeJSON(raw, fallback) {
       if (!raw) return fallback;
       try {
-        // Strip markdown code fences if present
         const cleaned = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
         return JSON.parse(cleaned);
-      } catch {
-        return fallback;
+      } catch {}
+      // Try to extract JSON from text
+      const matches = raw.match(/[\[{][\s\S]*[\]}]/g);
+      if (matches) {
+        for (const m of matches.sort((a, b) => b.length - a.length)) {
+          try { return JSON.parse(m); } catch {}
+        }
       }
+      return fallback;
     }
 
     const result = {
