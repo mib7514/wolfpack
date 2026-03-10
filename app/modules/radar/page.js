@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
-// ── Kelly ────────────────────────────────────
+// ── Kelly ──
 function calcKelly(wp, wlr) {
   if (!wp || !wlr) return { full: 0, half: 0, quarter: 0 };
   const q = 1 - wp;
@@ -12,7 +12,7 @@ function calcKelly(wp, wlr) {
   return { full: +(k * 100).toFixed(1), half: +(k * 50).toFixed(1), quarter: +(k * 25).toFixed(1) };
 }
 
-// ── Constants ────────────────────────────────
+// ── Constants ──
 const ST = {
   WATCHING: { label: "Watching", icon: "👁", c: "#6b8aad" },
   STALKING: { label: "Stalking", icon: "🐺", c: "#d4a843" },
@@ -21,29 +21,13 @@ const ST = {
   KILLED:  { label: "Killed",  icon: "💀", c: "#ef4444" },
 };
 
-const CATS = ["BTC_TREASURY","AI_INFRA","AI_APP","BIOTECH","SPAC","IPO","ROBOTICS","ENERGY","FINTECH","CRYPTO","SEMI","OTHER"];
 const CC = {
   BTC_TREASURY:"#f7931a",AI_INFRA:"#8b5cf6",AI_APP:"#a78bfa",BIOTECH:"#10b981",
   SPAC:"#f59e0b",IPO:"#ec4899",ROBOTICS:"#06b6d4",ENERGY:"#84cc16",
   FINTECH:"#3b82f6",CRYPTO:"#eab308",SEMI:"#6366f1",OTHER:"#6b7280",
 };
 
-const THEMES = [
-  { id: "ai", label: "🤖 AI / LLM", query: "AI infrastructure, LLM, GPU, AI application stocks with high growth potential" },
-  { id: "btc", label: "₿ Bitcoin / Crypto", query: "Bitcoin treasury companies, crypto infrastructure, DeFi stocks" },
-  { id: "bio", label: "🧬 Biotech / GLP-1", query: "Biotech, GLP-1 obesity drugs, gene therapy, CRISPR stocks" },
-  { id: "robot", label: "🦾 Robotics / Physical AI", query: "Robotics, humanoid robots, industrial automation, physical AI stocks" },
-  { id: "energy", label: "⚡ Energy / Nuclear", query: "Nuclear energy, SMR, uranium, clean energy, data center power stocks" },
-  { id: "semi", label: "💎 Semiconductor", query: "Semiconductor equipment, advanced packaging, HBM, foundry stocks" },
-  { id: "space", label: "🚀 Space / Defense", query: "Space economy, satellite, defense tech, hypersonic stocks" },
-  { id: "ipo", label: "🆕 Recent IPO / SPAC", query: "Most interesting recent IPOs and SPAC mergers in 2025-2026, any sector" },
-  { id: "kr", label: "🇰🇷 한국 성장주", query: "Korean stock market KRX KOSDAQ high growth small cap stocks" },
-  { id: "hk", label: "🇭🇰 홍콩/중국 성장주", query: "Hong Kong HKEX China tech AI stocks with high upside" },
-  { id: "contrarian", label: "🔄 역발상 / 턴어라운드", query: "Contrarian turnaround stocks, deep value, heavily shorted with catalyst" },
-  { id: "custom", label: "✏️ 직접 입력", query: "" },
-];
-
-// ── DB helpers ───────────────────────────────
+// ── DB helpers ──
 async function dbFetch() {
   const { data } = await supabase.from("radar_stocks").select("*").order("added_at", { ascending: false });
   return data || [];
@@ -59,281 +43,114 @@ async function dbDelete(id) {
   await supabase.from("radar_stocks").delete().eq("id", id);
 }
 
-// ── Heat Bar ─────────────────────────────────
-function HeatBar({ heat }) {
-  const h = Math.max(1, Math.min(10, heat || 5));
-  const color = h >= 8 ? "#ef4444" : h >= 5 ? "#d4a843" : "#6b8aad";
+// ── Score Ring ──
+function ScoreRing({ score, size = 44 }) {
+  const r = (size - 6) / 2;
+  const circ = 2 * Math.PI * r;
+  const pct = Math.max(0, Math.min(100, score));
+  const offset = circ * (1 - pct / 100);
+  const color = pct >= 70 ? "#4ade80" : pct >= 40 ? "#d4a843" : "#ef4444";
   return (
-    <div className="flex items-center gap-1.5">
-      <div className="flex gap-px">
-        {Array.from({ length: 10 }, (_, i) => (
-          <div key={i} className="w-1.5 h-3 rounded-sm" style={{ background: i < h ? color : "#1a2030" }} />
-        ))}
+    <svg width={size} height={size} className="shrink-0">
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={3} />
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={3}
+        strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
+        transform={`rotate(-90 ${size/2} ${size/2})`} style={{ transition: "stroke-dashoffset 0.5s" }} />
+      <text x={size/2} y={size/2} textAnchor="middle" dominantBaseline="central"
+        fill={color} fontSize={size * 0.3} fontWeight={800} fontFamily="monospace">{Math.round(pct)}</text>
+    </svg>
+  );
+}
+
+// ── Indicator Score Slider ──
+function IndicatorRow({ ind, onChange }) {
+  const score = ind.score ?? 50;
+  const color = score >= 70 ? "#4ade80" : score >= 40 ? "#d4a843" : "#ef4444";
+  return (
+    <div className="flex items-center gap-3 py-2 border-b border-white/[0.04] last:border-0">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] px-1.5 py-0.5 rounded font-mono"
+            style={{ background: ind.type === "auto" ? "#8b5cf620" : "#d4a84320", color: ind.type === "auto" ? "#8b5cf6" : "#d4a843" }}>
+            {ind.type === "auto" ? "AUTO" : "MANUAL"}
+          </span>
+          <span className="text-[11px] font-semibold text-slate-300 truncate">{ind.name}</span>
+        </div>
+        <div className="text-[9px] text-slate-600 mt-0.5">목표: {ind.target} · 가중치 {ind.weight}%</div>
       </div>
-      <span className="text-[9px] font-mono" style={{ color }}>{h}/10</span>
+      <input type="range" min={0} max={100} step={5} value={score}
+        onChange={(e) => onChange(parseInt(e.target.value))}
+        className="w-20 h-1 rounded appearance-none cursor-pointer"
+        style={{ accentColor: color, background: `linear-gradient(to right, ${color} ${score}%, #1a2030 ${score}%)` }} />
+      <span className="text-sm font-mono font-bold w-8 text-right" style={{ color }}>{score}</span>
     </div>
   );
 }
 
-// ── Discover Modal ───────────────────────────
-function DiscoverModal({ onClose, onAdd, existingTickers }) {
-  const [phase, setPhase] = useState("pick"); // pick | loading | results
-  const [selectedTheme, setSelectedTheme] = useState(null);
-  const [customQuery, setCustomQuery] = useState("");
-  const [results, setResults] = useState([]);
-  const [adding, setAdding] = useState({});
+// ── Detail Panel ──
+function DetailPanel({ stock, onClose, onUpdate, onDelete }) {
+  const thesis = stock.thesis_json || {};
+  const indicators = stock.indicators || [];
+  const [localIndicators, setLocalIndicators] = useState(indicators);
+  const [showAddIndicator, setShowAddIndicator] = useState(false);
+  const [newInd, setNewInd] = useState({ name: "", type: "manual", target: "", weight: 10 });
 
-  const discover = async (theme) => {
-    const query = theme.id === "custom" ? customQuery : theme.query;
-    if (!query) return;
-    setSelectedTheme(theme);
-    setPhase("loading");
+  useEffect(() => {
+    setLocalIndicators(stock.indicators || []);
+  }, [stock]);
 
-    try {
-      const res = await fetch("/api/radar/discover", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ theme: query }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setResults(data);
-      } else {
-        setResults([]);
-      }
-    } catch (e) {
-      console.error(e);
-      setResults([]);
-    }
-    setPhase("results");
+  const totalScore = localIndicators.length > 0
+    ? Math.round(localIndicators.reduce((s, i) => s + (i.score ?? 50) * (i.weight || 1), 0) / Math.max(1, localIndicators.reduce((s, i) => s + (i.weight || 1), 0)))
+    : 0;
+
+  const handleIndicatorChange = (idx, score) => {
+    const updated = [...localIndicators];
+    updated[idx] = { ...updated[idx], score };
+    setLocalIndicators(updated);
+    onUpdate({ ...stock, indicators: updated });
+    dbUpdate(stock.id, { indicators: updated });
   };
 
-  const addToWatchlist = async (item) => {
-    setAdding(prev => ({ ...prev, [item.ticker]: true }));
-    const row = {
-      ticker: item.ticker,
-      exchange: item.exchange || "NYSE",
-      name: item.name || item.ticker,
-      category: item.category || "OTHER",
-      status: "WATCHING",
-      thesis_oneliner: item.thesis_oneliner || "",
-      thesis_json: {
-        bull_case: item.bull_case || "",
-        bear_case: item.bear_case || "",
-        catalysts: item.catalysts || "",
-        key_metrics: item.key_metrics || "",
-        entry_exit: item.entry_exit || "",
-      },
-      kelly_win_prob: item.win_prob || 0.5,
-      kelly_wl_ratio: item.wl_ratio || 2.0,
-    };
-    const saved = await dbInsert(row);
-    if (saved) onAdd(saved);
-    setAdding(prev => ({ ...prev, [item.ticker]: "done" }));
+  const addIndicator = () => {
+    if (!newInd.name) return;
+    const updated = [...localIndicators, { ...newInd, score: 50 }];
+    setLocalIndicators(updated);
+    onUpdate({ ...stock, indicators: updated });
+    dbUpdate(stock.id, { indicators: updated });
+    setNewInd({ name: "", type: "manual", target: "", weight: 10 });
+    setShowAddIndicator(false);
   };
 
-  const alreadyExists = (ticker) => existingTickers.includes(ticker);
+  const removeIndicator = (idx) => {
+    const updated = localIndicators.filter((_, i) => i !== idx);
+    setLocalIndicators(updated);
+    onUpdate({ ...stock, indicators: updated });
+    dbUpdate(stock.id, { indicators: updated });
+  };
+
+  const kelly = calcKelly(stock.kelly_win_prob, stock.kelly_wl_ratio);
+  const st = ST[stock.status] || ST.WATCHING;
 
   return (
-    <div className="fixed inset-0 bg-black/85 flex items-start justify-center z-50 p-4 pt-8 overflow-y-auto" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/85 z-50 flex justify-end" onClick={onClose}>
       <div onClick={e => e.stopPropagation()}
-        className="w-full max-w-lg rounded-2xl border border-amber-500/15 shadow-2xl mb-8"
-        style={{ background: "linear-gradient(145deg,#13172a,#181d32)" }}>
+        className="w-full max-w-lg bg-[#0d1220] h-full overflow-y-auto border-l border-white/[0.06]">
 
         {/* Header */}
-        <div className="p-5 border-b border-white/[0.04]">
-          <div className="text-sm font-extrabold text-amber-500 font-mono tracking-[3px]">🔍 DISCOVER</div>
-          <div className="text-[11px] text-slate-500 mt-1">AI가 테마별 성장주를 웹에서 찾아옵니다</div>
-        </div>
-
-        {/* Phase: Pick Theme */}
-        {phase === "pick" && (
-          <div className="p-5">
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              {THEMES.filter(t => t.id !== "custom").map(t => (
-                <button key={t.id} onClick={() => discover(t)}
-                  className="px-3 py-3 rounded-xl text-left text-xs font-semibold border border-white/[0.06] hover:border-amber-500/30 hover:bg-amber-500/5 transition-all"
-                  style={{ background: "rgba(0,0,0,0.2)" }}>
-                  <div className="text-sm mb-0.5">{t.label}</div>
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <input value={customQuery} onChange={e => setCustomQuery(e.target.value)}
-                placeholder="또는 직접 테마 입력... (예: 우주 인터넷, 양자컴퓨터)"
-                className="flex-1 px-3 py-2.5 bg-black/40 border border-white/10 rounded-lg text-slate-200 text-xs outline-none focus:border-amber-500 transition-colors" />
-              <button onClick={() => discover({ id: "custom", query: customQuery })}
-                disabled={!customQuery.trim()}
-                className="px-4 py-2.5 rounded-lg text-xs font-bold font-mono disabled:opacity-30 transition-all"
-                style={{ background: "linear-gradient(135deg,#d4a843,#b8860b)", color: "#0a0e18" }}>HUNT</button>
-            </div>
-          </div>
-        )}
-
-        {/* Phase: Loading */}
-        {phase === "loading" && (
-          <div className="p-10 flex flex-col items-center gap-4">
-            <div className="text-4xl animate-pulse">🐺</div>
-            <div className="text-sm text-slate-400 text-center">
-              <span className="text-amber-500 font-mono font-bold">{selectedTheme?.label || "Custom"}</span>
-              <br />관련 성장주 스캔 중...
-            </div>
-            <div className="flex gap-1">
-              {[0,1,2].map(i => (
-                <div key={i} className="w-2 h-2 rounded-full bg-amber-500 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Phase: Results */}
-        {phase === "results" && (
-          <div className="p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-xs text-slate-400">
-                <span className="text-amber-500 font-bold">{results.length}개</span> 발굴
+        <div className="sticky top-0 z-10 bg-[#0d1220]/95 backdrop-blur-md border-b border-white/[0.04] p-5">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <ScoreRing score={totalScore} size={52} />
+              <div>
+                <div className="text-lg font-extrabold font-mono text-slate-100">{stock.ticker}</div>
+                <div className="text-[11px] text-slate-500">{stock.name} · {stock.exchange}</div>
               </div>
-              <button onClick={() => { setPhase("pick"); setResults([]); }}
-                className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors">
-                ← 다른 테마
-              </button>
             </div>
-
-            {results.length === 0 ? (
-              <div className="text-center py-10 text-slate-600 text-sm">결과 없음. 다른 테마를 시도해보세요.</div>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {results.map((item, i) => {
-                  const cat = item.category || "OTHER";
-                  const exists = alreadyExists(item.ticker);
-                  const isAdding = adding[item.ticker];
-
-                  return (
-                    <div key={i} className="rounded-xl border border-white/[0.05] p-3.5"
-                      style={{ background: "rgba(0,0,0,0.25)" }}>
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap mb-1">
-                            <span className="text-sm font-extrabold text-slate-100 font-mono">{item.ticker}</span>
-                            <span className="text-[8px] px-1.5 py-0.5 rounded-full font-semibold border"
-                              style={{ background: `${CC[cat]}15`, color: CC[cat], borderColor: `${CC[cat]}33` }}>{cat}</span>
-                            <span className="text-[8px] text-slate-600">{item.exchange}</span>
-                          </div>
-                          <div className="text-[11px] text-slate-300 mb-1.5">{item.name}</div>
-                          <div className="text-[11px] text-slate-400 mb-2">{item.thesis_oneliner}</div>
-                          <HeatBar heat={item.heat} />
-                        </div>
-
-                        <button
-                          onClick={() => !exists && !isAdding && addToWatchlist(item)}
-                          disabled={exists || isAdding === true}
-                          className="shrink-0 px-3 py-2 rounded-lg text-[10px] font-bold font-mono border transition-all"
-                          style={{
-                            borderColor: exists ? "#4ade8044" : isAdding === "done" ? "#4ade8066" : "#d4a84344",
-                            background: exists ? "#4ade8012" : isAdding === "done" ? "#4ade8015" : isAdding === true ? "#2a3040" : "transparent",
-                            color: exists || isAdding === "done" ? "#4ade80" : isAdding === true ? "#6b7b8d" : "#d4a843",
-                          }}>
-                          {exists ? "✓ 추적중" : isAdding === "done" ? "✓ 추가됨" : isAdding === true ? "..." : "+ 추가"}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            <button onClick={onClose}
-              className="w-full mt-4 py-2.5 rounded-lg text-xs border border-white/10 text-slate-500 hover:text-slate-300 transition-colors">
-              닫기
-            </button>
+            <button onClick={onClose} className="text-slate-600 hover:text-slate-300 text-xl">✕</button>
           </div>
-        )}
-      </div>
-    </div>
-  );
-}
+          <div className="text-[12px] text-slate-400 italic">{stock.thesis_oneliner || "—"}</div>
 
-// ── Kelly Panel ──────────────────────────────
-function KellyPanel({ stock, onSave }) {
-  const [wp, setWp] = useState(stock.kelly_win_prob || 0.5);
-  const [wlr, setWlr] = useState(stock.kelly_wl_ratio || 2);
-  const k = calcKelly(wp, wlr);
-
-  return (
-    <div className="mt-3 p-4 rounded-xl bg-black/30 border border-white/5">
-      <div className="text-[10px] font-bold tracking-[3px] text-amber-500/80 mb-3 font-mono">KELLY CRITERION</div>
-      <div className="grid grid-cols-2 gap-4 mb-3">
-        <label>
-          <div className="text-[10px] text-slate-500 mb-1">승률 (Win Prob)</div>
-          <input type="range" min={0.05} max={0.95} step={0.05} value={wp}
-            onChange={e => setWp(+e.target.value)}
-            onMouseUp={() => onSave(wp, wlr)} onTouchEnd={() => onSave(wp, wlr)}
-            className="w-full accent-amber-500" />
-          <div className="text-sm text-center text-slate-300 font-mono">{(wp * 100).toFixed(0)}%</div>
-        </label>
-        <label>
-          <div className="text-[10px] text-slate-500 mb-1">보상/손실 비율</div>
-          <input type="range" min={0.5} max={10} step={0.25} value={wlr}
-            onChange={e => setWlr(+e.target.value)}
-            onMouseUp={() => onSave(wp, wlr)} onTouchEnd={() => onSave(wp, wlr)}
-            className="w-full accent-amber-500" />
-          <div className="text-sm text-center text-slate-300 font-mono">{wlr.toFixed(2)}x</div>
-        </label>
-      </div>
-      <div className="grid grid-cols-3 gap-2">
-        {[
-          { l: "Full Kelly", v: k.full, border: "border-red-500/20", text: "text-red-400" },
-          { l: "Half Kelly", v: k.half, border: "border-amber-500/20", text: "text-amber-400" },
-          { l: "¼ Kelly", v: k.quarter, border: "border-emerald-500/20", text: "text-emerald-400" },
-        ].map(({ l, v, border, text }) => (
-          <div key={l} className={`bg-black/40 rounded-lg p-2 text-center border ${border}`}>
-            <div className="text-[9px] text-slate-500">{l}</div>
-            <div className={`text-lg font-extrabold font-mono ${text}`}>{v}%</div>
-          </div>
-        ))}
-      </div>
-      {k.full <= 0 && <div className="text-[10px] text-red-400 text-center mt-2">⚠ 음의 기대값 — 베팅 금지</div>}
-    </div>
-  );
-}
-
-// ── Thesis Block ─────────────────────────────
-function ThesisBlock({ label, color, text }) {
-  if (!text) return null;
-  return (
-    <div className="mb-3">
-      <div className="text-[10px] font-bold mb-1" style={{ color }}>{label}</div>
-      <div className="text-xs text-slate-400 leading-relaxed whitespace-pre-wrap">{text}</div>
-    </div>
-  );
-}
-
-// ── Stock Card ───────────────────────────────
-function StockCard({ stock, expanded, onToggle, onUpdate, onDelete }) {
-  const st = ST[stock.status] || ST.WATCHING;
-  const cat = stock.category || "OTHER";
-  const thesis = stock.thesis_json || {};
-
-  return (
-    <div className={`rounded-xl border transition-all duration-200 ${expanded ? "border-amber-500/25 shadow-[0_0_24px_rgba(212,168,67,0.06)]" : "border-white/[0.04] hover:border-white/[0.08]"}`}
-      style={{ background: "linear-gradient(145deg,#13172a,#181d32)" }}>
-      <div onClick={onToggle} className="flex items-center gap-3 px-4 py-3.5 cursor-pointer select-none">
-        <div className="w-2 h-2 rounded-full shrink-0" style={{ background: st.c, boxShadow: `0 0 8px ${st.c}66` }} />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[15px] font-extrabold text-slate-100 font-mono">{stock.ticker}</span>
-            <span className="text-[8px] px-1.5 py-0.5 rounded-full font-semibold border"
-              style={{ background: `${CC[cat]}15`, color: CC[cat], borderColor: `${CC[cat]}33` }}>{cat}</span>
-            <span className="text-[8px] px-1.5 py-0.5 rounded-full font-semibold"
-              style={{ background: `${st.c}15`, color: st.c }}>{st.icon} {st.label}</span>
-          </div>
-          <div className="text-[11px] text-slate-500 mt-1 truncate">{stock.thesis_oneliner || "—"}</div>
-        </div>
-        <span className={`text-[10px] text-slate-600 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}>▼</span>
-      </div>
-
-      {expanded && (
-        <div className="px-4 pb-4 border-t border-white/[0.04]">
+          {/* Status buttons */}
           <div className="flex gap-1.5 mt-3 flex-wrap">
             {Object.entries(ST).map(([key, { label, icon, c }]) => (
               <button key={key}
@@ -346,47 +163,211 @@ function StockCard({ stock, expanded, onToggle, onUpdate, onDelete }) {
                 }}>{icon} {label}</button>
             ))}
           </div>
-          <div className="mt-4">
-            <ThesisBlock label="▲ BULL CASE" color="#4ade80" text={thesis.bull_case} />
-            <ThesisBlock label="▼ BEAR CASE" color="#ef4444" text={thesis.bear_case} />
-            <ThesisBlock label="⚡ CATALYSTS" color="#d4a843" text={thesis.catalysts} />
-            <ThesisBlock label="📊 KEY METRICS" color="#8b5cf6" text={thesis.key_metrics} />
-            <ThesisBlock label="🎯 ENTRY / EXIT" color="#06b6d4" text={thesis.entry_exit} />
+        </div>
+
+        <div className="p-5 space-y-5">
+
+          {/* Score Summary */}
+          <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-4 text-center">
+            <div className="text-[10px] text-slate-600 tracking-wider font-mono mb-2">MONITORING SCORE</div>
+            <div className="text-4xl font-black font-mono" style={{ color: totalScore >= 70 ? "#4ade80" : totalScore >= 40 ? "#d4a843" : "#ef4444" }}>
+              {totalScore}<span className="text-lg opacity-50">/100</span>
+            </div>
+            <div className="text-[10px] text-slate-600 mt-1">{localIndicators.length}개 지표 · 가중평균</div>
           </div>
-          <KellyPanel stock={stock}
-            onSave={(wp, wlr) => {
-              onUpdate({ ...stock, kelly_win_prob: wp, kelly_wl_ratio: wlr });
-              dbUpdate(stock.id, { kelly_win_prob: wp, kelly_wl_ratio: wlr });
-            }} />
-          <div className="flex justify-end mt-3">
-            <button onClick={() => { onDelete(stock.id); dbDelete(stock.id); }}
-              className="px-3 py-1.5 rounded-md text-[11px] border border-red-500/20 text-red-400 hover:bg-red-500/10 transition-colors">삭제</button>
+
+          {/* Monitoring Indicators */}
+          <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-[11px] font-bold text-slate-400 tracking-wider font-mono">MONITORING INDICATORS</div>
+              <button onClick={() => setShowAddIndicator(!showAddIndicator)}
+                className="text-[10px] px-2 py-1 rounded border border-amber-500/30 text-amber-500 hover:bg-amber-500/10 transition">
+                + 추가
+              </button>
+            </div>
+
+            {showAddIndicator && (
+              <div className="bg-black/30 rounded-lg p-3 mb-3 space-y-2">
+                <input value={newInd.name} onChange={e => setNewInd(p => ({...p, name: e.target.value}))}
+                  placeholder="지표명 (예: 매출 성장률)"
+                  className="w-full px-2 py-1.5 bg-black/40 border border-white/10 rounded text-xs text-slate-200 outline-none" />
+                <div className="flex gap-2">
+                  <select value={newInd.type} onChange={e => setNewInd(p => ({...p, type: e.target.value}))}
+                    className="px-2 py-1.5 bg-black/40 border border-white/10 rounded text-xs text-slate-300 outline-none">
+                    <option value="auto">Auto</option>
+                    <option value="manual">Manual</option>
+                  </select>
+                  <input value={newInd.target} onChange={e => setNewInd(p => ({...p, target: e.target.value}))}
+                    placeholder="목표 (예: >20%)"
+                    className="flex-1 px-2 py-1.5 bg-black/40 border border-white/10 rounded text-xs text-slate-200 outline-none" />
+                  <input type="number" value={newInd.weight} onChange={e => setNewInd(p => ({...p, weight: parseInt(e.target.value)||10}))}
+                    className="w-16 px-2 py-1.5 bg-black/40 border border-white/10 rounded text-xs text-slate-200 outline-none"
+                    placeholder="가중치" />
+                </div>
+                <button onClick={addIndicator}
+                  className="w-full py-1.5 rounded text-xs font-bold bg-amber-600/20 text-amber-500 border border-amber-500/30 hover:bg-amber-600/30">
+                  등록
+                </button>
+              </div>
+            )}
+
+            {localIndicators.length === 0 ? (
+              <div className="text-center py-6 text-slate-600 text-xs">
+                등록된 모니터링 지표가 없습니다
+              </div>
+            ) : (
+              localIndicators.map((ind, i) => (
+                <div key={i} className="group relative">
+                  <IndicatorRow ind={ind} onChange={(score) => handleIndicatorChange(i, score)} />
+                  <button onClick={() => removeIndicator(i)}
+                    className="absolute right-0 top-1 text-[8px] text-red-400/40 hover:text-red-400 opacity-0 group-hover:opacity-100 transition">✕</button>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Thesis */}
+          <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-4 space-y-3">
+            <div className="text-[11px] font-bold text-slate-400 tracking-wider font-mono mb-2">THESIS</div>
+            {[
+              { label: "▲ BULL CASE", color: "#4ade80", text: thesis.bull_case },
+              { label: "▼ BEAR CASE", color: "#ef4444", text: thesis.bear_case },
+              { label: "⚡ CATALYSTS", color: "#d4a843", text: thesis.catalysts },
+              { label: "📊 KEY METRICS", color: "#8b5cf6", text: thesis.key_metrics },
+              { label: "🎯 ENTRY / EXIT", color: "#06b6d4", text: thesis.entry_exit },
+            ].map(({ label, color, text }) => text && (
+              <div key={label}>
+                <div className="text-[10px] font-bold mb-1" style={{ color }}>{label}</div>
+                <div className="text-[11px] text-slate-400 leading-relaxed whitespace-pre-wrap">{text}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Kelly */}
+          <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-4">
+            <div className="text-[11px] font-bold text-slate-400 tracking-wider font-mono mb-2">KELLY CRITERION</div>
+            <div className="flex gap-4 text-center">
+              {[
+                { label: "Full Kelly", value: kelly.full },
+                { label: "Half Kelly", value: kelly.half },
+                { label: "Quarter Kelly", value: kelly.quarter },
+              ].map(({ label, value }) => (
+                <div key={label} className="flex-1 bg-black/20 rounded-lg py-2">
+                  <div className="text-lg font-mono font-bold text-amber-500">{value}%</div>
+                  <div className="text-[9px] text-slate-600">{label}</div>
+                </div>
+              ))}
+            </div>
+            <div className="text-[9px] text-slate-600 mt-2 text-center font-mono">
+              Win Prob: {((stock.kelly_win_prob || 0.5) * 100).toFixed(0)}% · W/L Ratio: {(stock.kelly_wl_ratio || 2.0).toFixed(1)}x
+            </div>
+          </div>
+
+          {/* Delete */}
+          <div className="flex justify-end">
+            <button onClick={() => { onDelete(stock.id); dbDelete(stock.id); onClose(); }}
+              className="px-4 py-2 rounded-md text-xs border border-red-500/20 text-red-400 hover:bg-red-500/10 transition">
+              종목 삭제
+            </button>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
 
-// ── Main Page ────────────────────────────────
+// ── Stock Card ──
+function StockCard({ stock, onClick }) {
+  const st = ST[stock.status] || ST.WATCHING;
+  const cat = stock.category || "OTHER";
+  const indicators = stock.indicators || [];
+  const totalScore = indicators.length > 0
+    ? Math.round(indicators.reduce((s, i) => s + (i.score ?? 50) * (i.weight || 1), 0) / Math.max(1, indicators.reduce((s, i) => s + (i.weight || 1), 0)))
+    : 0;
+
+  return (
+    <div onClick={onClick}
+      className="flex items-center gap-3 px-4 py-3 rounded-xl border border-white/[0.04] bg-white/[0.015] hover:bg-white/[0.03] hover:border-white/[0.08] transition-all cursor-pointer">
+      <ScoreRing score={totalScore} size={40} />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[14px] font-extrabold text-slate-100 font-mono">{stock.ticker}</span>
+          <span className="text-[8px] px-1.5 py-0.5 rounded-full font-semibold border"
+            style={{ background: `${CC[cat]}15`, color: CC[cat], borderColor: `${CC[cat]}33` }}>{cat}</span>
+          <span className="text-[8px] px-1.5 py-0.5 rounded-full font-semibold"
+            style={{ background: `${st.c}15`, color: st.c }}>{st.icon} {st.label}</span>
+        </div>
+        <div className="text-[11px] text-slate-500 mt-0.5 truncate">{stock.thesis_oneliner || "—"}</div>
+      </div>
+      <div className="text-[10px] text-slate-600">▶</div>
+    </div>
+  );
+}
+
+// ── Main Page ──
 export default function RadarPage() {
   const [stocks, setStocks] = useState([]);
-  const [showDiscover, setShowDiscover] = useState(false);
-  const [expanded, setExpanded] = useState(null);
+  const [selectedStock, setSelectedStock] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [searchResult, setSearchResult] = useState(null);
   const [sFilter, setSFilter] = useState("ALL");
-  const [cFilter, setCFilter] = useState("ALL");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { dbFetch().then(d => { setStocks(d); setLoading(false); }); }, []);
 
-  const filtered = stocks.filter(s =>
-    (sFilter === "ALL" || s.status === sFilter) &&
-    (cFilter === "ALL" || s.category === cFilter)
-  );
+  const handleSearch = useCallback(async () => {
+    if (!searchQuery.trim()) return;
+    setSearching(true);
+    setSearchResult(null);
+    try {
+      const res = await fetch("/api/radar/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: searchQuery.trim() }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSearchResult(data);
+      } else {
+        setSearchResult({ error: "검색 실패" });
+      }
+    } catch (e) {
+      setSearchResult({ error: e.message });
+    }
+    setSearching(false);
+  }, [searchQuery]);
 
+  const handleRegister = useCallback(async (result) => {
+    const row = {
+      ticker: result.ticker,
+      exchange: result.exchange || "NYSE",
+      name: result.name || result.ticker,
+      category: result.category || "OTHER",
+      status: "WATCHING",
+      thesis_oneliner: result.thesis_oneliner || "",
+      thesis_json: {
+        bull_case: result.bull_case || "",
+        bear_case: result.bear_case || "",
+        catalysts: result.catalysts || "",
+        key_metrics: result.key_metrics || "",
+        entry_exit: result.entry_exit || "",
+      },
+      indicators: (result.suggested_indicators || []).map(ind => ({ ...ind, score: 50 })),
+      kelly_win_prob: result.win_prob || 0.5,
+      kelly_wl_ratio: result.wl_ratio || 2.0,
+    };
+    const saved = await dbInsert(row);
+    if (saved) {
+      setStocks(prev => [saved, ...prev]);
+      setSearchResult(null);
+      setSearchQuery("");
+    }
+  }, []);
+
+  const filtered = stocks.filter(s => sFilter === "ALL" || s.status === sFilter);
   const counts = stocks.reduce((a, s) => { a[s.status] = (a[s.status] || 0) + 1; return a; }, {});
-  const activeCats = [...new Set(stocks.map(s => s.category))];
-  const existingTickers = stocks.map(s => s.ticker);
+  const existingTickers = new Set(stocks.map(s => s.ticker));
 
   return (
     <div className="min-h-screen bg-[#0a0e18] text-slate-200">
@@ -396,50 +377,94 @@ export default function RadarPage() {
             <div>
               <Link href="/" className="text-[10px] text-slate-600 hover:text-slate-400 transition-colors">← Control Tower</Link>
               <h1 className="text-lg font-extrabold font-mono text-amber-500 tracking-[3px] mt-1">🐺 WOLF RADAR</h1>
-              <p className="text-[11px] text-slate-600 mt-0.5">성장주 발굴 · {stocks.length}개 추적 중</p>
+              <p className="text-[11px] text-slate-600 mt-0.5">종목 검색 · 등록 · 모니터링 · {stocks.length}개 추적 중</p>
             </div>
-            <button onClick={() => setShowDiscover(true)}
-              className="px-5 py-2.5 rounded-lg text-xs font-extrabold font-mono tracking-wider"
+          </div>
+
+          {/* Search Bar */}
+          <div className="flex gap-2 mb-3">
+            <input
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleSearch()}
+              placeholder="종목명 또는 티커 검색... (예: TSLA, 삼성전자, NVDA)"
+              className="flex-1 px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl text-sm text-slate-200 outline-none focus:border-amber-500/50 transition-colors placeholder:text-slate-700"
+            />
+            <button onClick={handleSearch} disabled={searching || !searchQuery.trim()}
+              className="px-5 py-2.5 rounded-xl text-xs font-extrabold font-mono tracking-wider disabled:opacity-40"
               style={{ background: "linear-gradient(135deg,#d4a843,#b8860b)", color: "#0a0e18" }}>
-              🔍 DISCOVER
+              {searching ? "🔍..." : "🔍 검색"}
             </button>
           </div>
 
-          {/* Filters */}
-          {stocks.length > 0 && (
-            <>
-              <div className="flex gap-1.5 flex-wrap mb-2">
-                <button onClick={() => setSFilter("ALL")}
-                  className={`px-3 py-1 rounded-full text-[10px] font-semibold border transition-all ${sFilter === "ALL" ? "border-slate-400/20 bg-slate-400/10 text-slate-300" : "border-white/[0.04] text-slate-600"}`}>
-                  ALL ({stocks.length})</button>
-                {Object.entries(ST).map(([key, { icon, c }]) => (
-                  counts[key] ? (
-                    <button key={key} onClick={() => setSFilter(sFilter === key ? "ALL" : key)}
-                      className="px-3 py-1 rounded-full text-[10px] font-semibold border transition-all"
-                      style={{
-                        borderColor: sFilter === key ? `${c}55` : "rgba(255,255,255,0.04)",
-                        background: sFilter === key ? `${c}12` : "transparent",
-                        color: sFilter === key ? c : "#4a5568",
-                      }}>{icon} {counts[key]}</button>
-                  ) : null
-                ))}
+          {/* Search Result */}
+          {searching && (
+            <div className="text-center py-4 text-amber-500 text-sm animate-pulse font-mono">
+              AI가 종목을 분석하고 있습니다...
+            </div>
+          )}
+
+          {searchResult && !searchResult.error && (
+            <div className="bg-[#13172a] border border-amber-500/20 rounded-xl p-4 mb-3">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <span className="text-lg font-extrabold font-mono text-slate-100">{searchResult.ticker}</span>
+                  <span className="text-xs text-slate-500 ml-2">{searchResult.name} · {searchResult.exchange}</span>
+                </div>
+                {existingTickers.has(searchResult.ticker) ? (
+                  <span className="text-[10px] text-slate-500 font-mono">이미 등록됨</span>
+                ) : (
+                  <button onClick={() => handleRegister(searchResult)}
+                    className="px-4 py-2 rounded-lg text-xs font-bold bg-amber-600/20 text-amber-500 border border-amber-500/30 hover:bg-amber-600/30 transition">
+                    + 등록
+                  </button>
+                )}
               </div>
-              {activeCats.length > 1 && (
-                <div className="flex gap-1 flex-wrap">
-                  <button onClick={() => setCFilter("ALL")}
-                    className={`px-2.5 py-0.5 rounded-full text-[9px] border transition-all ${cFilter === "ALL" ? "border-slate-500/20 bg-slate-500/8 text-slate-400" : "border-white/[0.03] text-slate-700"}`}>ALL</button>
-                  {activeCats.map(c => (
-                    <button key={c} onClick={() => setCFilter(cFilter === c ? "ALL" : c)}
-                      className="px-2.5 py-0.5 rounded-full text-[9px] border transition-all"
-                      style={{
-                        borderColor: cFilter === c ? `${CC[c]}55` : "rgba(255,255,255,0.03)",
-                        background: cFilter === c ? `${CC[c]}12` : "transparent",
-                        color: cFilter === c ? CC[c] : "#3a4454",
-                      }}>{c}</button>
-                  ))}
+              <div className="text-[12px] text-amber-400/80 italic mb-2">{searchResult.thesis_oneliner}</div>
+              <div className="grid grid-cols-2 gap-2 text-[10px]">
+                {searchResult.bull_case && (
+                  <div className="bg-green-500/5 border border-green-500/10 rounded p-2">
+                    <div className="text-green-400 font-bold mb-1">▲ Bull Case</div>
+                    <div className="text-slate-400 leading-relaxed">{searchResult.bull_case?.slice(0, 120)}...</div>
+                  </div>
+                )}
+                {searchResult.bear_case && (
+                  <div className="bg-red-500/5 border border-red-500/10 rounded p-2">
+                    <div className="text-red-400 font-bold mb-1">▼ Bear Case</div>
+                    <div className="text-slate-400 leading-relaxed">{searchResult.bear_case?.slice(0, 120)}...</div>
+                  </div>
+                )}
+              </div>
+              {searchResult.suggested_indicators && (
+                <div className="mt-2 text-[9px] text-slate-600">
+                  추천 모니터링 지표: {searchResult.suggested_indicators.map(i => i.name).join(" · ")}
                 </div>
               )}
-            </>
+            </div>
+          )}
+
+          {searchResult?.error && (
+            <div className="text-center py-3 text-red-400 text-xs">{searchResult.error}</div>
+          )}
+
+          {/* Status Filters */}
+          {stocks.length > 0 && (
+            <div className="flex gap-1.5 flex-wrap">
+              <button onClick={() => setSFilter("ALL")}
+                className={`px-3 py-1 rounded-full text-[10px] font-semibold border transition-all ${sFilter === "ALL" ? "border-slate-400/20 bg-slate-400/10 text-slate-300" : "border-white/[0.04] text-slate-600"}`}>
+                ALL ({stocks.length})</button>
+              {Object.entries(ST).map(([key, { icon, c }]) => (
+                counts[key] ? (
+                  <button key={key} onClick={() => setSFilter(sFilter === key ? "ALL" : key)}
+                    className="px-3 py-1 rounded-full text-[10px] font-semibold border transition-all"
+                    style={{
+                      borderColor: sFilter === key ? `${c}55` : "rgba(255,255,255,0.04)",
+                      background: sFilter === key ? `${c}12` : "transparent",
+                      color: sFilter === key ? c : "#4a5568",
+                    }}>{icon} {counts[key]}</button>
+                ) : null
+              ))}
+            </div>
           )}
         </div>
       </header>
@@ -447,36 +472,35 @@ export default function RadarPage() {
       <main className="max-w-2xl mx-auto px-4 py-4 pb-24 flex flex-col gap-2.5">
         {loading ? (
           <div className="text-center py-20 text-slate-600 text-sm animate-pulse">로딩 중...</div>
-        ) : stocks.length === 0 ? (
+        ) : stocks.length === 0 && !searchResult ? (
           <div className="flex flex-col items-center justify-center py-28 gap-6 opacity-80">
             <div className="text-6xl">🐺</div>
             <div className="text-center font-mono text-slate-500 leading-relaxed">
               Wolf Radar 활성화 대기 중<br />
-              <span className="text-xs text-slate-600">테마를 선택하면 AI가 성장주를 찾아옵니다</span>
+              <span className="text-xs text-slate-600">위 검색창에서 종목을 검색하여 등록하세요</span>
             </div>
-            <button onClick={() => setShowDiscover(true)}
-              className="px-8 py-3 rounded-lg text-sm font-extrabold font-mono tracking-wider"
-              style={{ background: "linear-gradient(135deg,#d4a843,#b8860b)", color: "#0a0e18" }}>
-              🔍 DISCOVER
-            </button>
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-16 text-slate-600 text-sm">필터 조건에 맞는 종목 없음</div>
         ) : (
           filtered.map(s => (
-            <StockCard key={s.id} stock={s} expanded={expanded === s.id}
-              onToggle={() => setExpanded(expanded === s.id ? null : s.id)}
-              onUpdate={u => setStocks(prev => prev.map(p => p.id === u.id ? u : p))}
-              onDelete={id => { setStocks(prev => prev.filter(p => p.id !== id)); if (expanded === id) setExpanded(null); }} />
+            <StockCard key={s.id} stock={s} onClick={() => setSelectedStock(s)} />
           ))
         )}
       </main>
 
-      {showDiscover && (
-        <DiscoverModal
-          onClose={() => setShowDiscover(false)}
-          onAdd={s => setStocks(prev => [s, ...prev])}
-          existingTickers={existingTickers}
+      {selectedStock && (
+        <DetailPanel
+          stock={selectedStock}
+          onClose={() => setSelectedStock(null)}
+          onUpdate={u => {
+            setStocks(prev => prev.map(p => p.id === u.id ? u : p));
+            setSelectedStock(u);
+          }}
+          onDelete={id => {
+            setStocks(prev => prev.filter(p => p.id !== id));
+            setSelectedStock(null);
+          }}
         />
       )}
     </div>
