@@ -2,9 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
-
-const supabase = createClientComponentClient();
+import { supabase } from "@/lib/supabase";
 
 // ── Kelly ────────────────────────────────────
 function calcKelly(wp, wlr) {
@@ -211,7 +209,6 @@ function AddModal({ onClose, onAdd }) {
       onClose();
     } catch (e) {
       console.error(e);
-      // fallback: manual insert
       const saved = await dbInsert({
         ticker: ticker.toUpperCase(), exchange, name: ticker.toUpperCase(),
         category, status: "WATCHING", thesis_oneliner: "", thesis_json: {},
