@@ -74,25 +74,25 @@ const COMPANIES = [
    ─────────────────────────────────────────── */
 
 const TOP10_DEFICIT = [
-  { rank: 1, name: "서진시스템", type: "D", fundScore: 76, reason: "영업이익 흑자(ROE 12.3%) + 일회성 환차손 제거 시 즉시 흑전", catalyst: "환율 안정/일회성 비용 소멸",
+  { rank: 1, name: "서진시스템", code: "178320", type: "D", fundScore: 76, reason: "영업이익 흑자(ROE 12.3%) + 일회성 환차손 제거 시 즉시 흑전", catalyst: "환율 안정/일회성 비용 소멸",
     momentum: { pct52wHigh: 0.78, maAlign: "partial", ma120dir: "up", volRatio: 1.2 } },
-  { rank: 2, name: "에코프로비엠", type: "B", fundScore: 72, reason: "EBITDA 755억 흑자. 본업 적자 축소 중. 2차전지 사이클 회복 시 가장 큰 레버리지", catalyst: "양극재 출하량 회복 + ASP 반등",
+  { rank: 2, name: "에코프로비엠", code: "247540", type: "B", fundScore: 72, reason: "EBITDA 755억 흑자. 본업 적자 축소 중. 2차전지 사이클 회복 시 가장 큰 레버리지", catalyst: "양극재 출하량 회복 + ASP 반등",
     momentum: { pct52wHigh: 0.82, maAlign: "full", ma120dir: "up", volRatio: 1.5 } },
-  { rank: 3, name: "에코프로", type: "B", fundScore: 70, reason: "에코프로비엠 연결 효과. 2025년 흑자전환 목표. 인니 투자 + 원가혁신 진행", catalyst: "자회사 실적 턴어라운드",
+  { rank: 3, name: "에코프로", code: "086520", type: "B", fundScore: 70, reason: "에코프로비엠 연결 효과. 2025년 흑자전환 목표. 인니 투자 + 원가혁신 진행", catalyst: "자회사 실적 턴어라운드",
     momentum: { pct52wHigh: 0.85, maAlign: "full", ma120dir: "up", volRatio: 1.8 } },
-  { rank: 4, name: "태성", type: "D", fundScore: 74, reason: "ROE 16.6%로 본업 우수. 영업외 비용만 제거하면 즉시 정상화", catalyst: "영업외 비용 정상화",
+  { rank: 4, name: "태성", code: "045390", type: "D", fundScore: 74, reason: "ROE 16.6%로 본업 우수. 영업외 비용만 제거하면 즉시 정상화", catalyst: "영업외 비용 정상화",
     momentum: { pct52wHigh: 0.65, maAlign: "none", ma120dir: "flat", volRatio: 0.9 } },
-  { rank: 5, name: "테크윙", type: "B", fundScore: 62, reason: "반도체 테스트 핸들러 기술력. 사이클 하강기 일시적 적자", catalyst: "반도체 사이클 상승 전환",
+  { rank: 5, name: "테크윙", code: "089030", type: "B", fundScore: 62, reason: "반도체 테스트 핸들러 기술력. 사이클 하강기 일시적 적자", catalyst: "반도체 사이클 상승 전환",
     momentum: { pct52wHigh: 0.60, maAlign: "partial", ma120dir: "down", volRatio: 2.1 } },
-  { rank: 6, name: "성호전자", type: "D", fundScore: 68, reason: "ROE 6.5% 양호. 본업 건강하나 일회성 비용", catalyst: "일회성 비용 소멸",
+  { rank: 6, name: "성호전자", code: "043260", type: "D", fundScore: 68, reason: "ROE 6.5% 양호. 본업 건강하나 일회성 비용", catalyst: "일회성 비용 소멸",
     momentum: { pct52wHigh: 0.72, maAlign: "partial", ma120dir: "up", volRatio: 1.4 } },
-  { rank: 7, name: "로보티즈", type: "B", fundScore: 64, reason: "로봇 액추에이터 선도. GP 흑자 확인. 삼성 로봇 수혜 기대", catalyst: "로봇 양산 주문 확보",
+  { rank: 7, name: "로보티즈", code: "108490", type: "B", fundScore: 64, reason: "로봇 액추에이터 선도. GP 흑자 확인. 삼성 로봇 수혜 기대", catalyst: "로봇 양산 주문 확보",
     momentum: { pct52wHigh: 0.55, maAlign: "none", ma120dir: "down", volRatio: 0.8 } },
-  { rank: 8, name: "하나마이크론", type: "D", fundScore: 60, reason: "반도체 패키징 영업흑자. 이자비용 구조 개선 시 순이익 전환", catalyst: "차입금 축소 / 금리 하락",
+  { rank: 8, name: "하나마이크론", code: "067310", type: "D", fundScore: 60, reason: "반도체 패키징 영업흑자. 이자비용 구조 개선 시 순이익 전환", catalyst: "차입금 축소 / 금리 하락",
     momentum: { pct52wHigh: 0.58, maAlign: "partial", ma120dir: "flat", volRatio: 1.1 } },
-  { rank: 9, name: "알지노믹스", type: "B", fundScore: 58, reason: "핵산치료제 라이선싱 수익 발생 중. 파이프라인 가치 인정", catalyst: "추가 라이선싱 딜",
+  { rank: 9, name: "알지노믹스", code: "536560", type: "B", fundScore: 58, reason: "핵산치료제 라이선싱 수익 발생 중. 파이프라인 가치 인정", catalyst: "추가 라이선싱 딜",
     momentum: { pct52wHigh: 0.90, maAlign: "full", ma120dir: "up", volRatio: 1.6 } },
-  { rank: 10, name: "원익홀딩스", type: "D", fundScore: 55, reason: "원익IPS 등 자회사 가치. 지분법 손실이 주원인", catalyst: "자회사 실적 개선",
+  { rank: 10, name: "원익홀딩스", code: "030530", type: "D", fundScore: 55, reason: "원익IPS 등 자회사 가치. 지분법 손실이 주원인", catalyst: "자회사 실적 개선",
     momentum: { pct52wHigh: 0.62, maAlign: "partial", ma120dir: "up", volRatio: 1.3 } },
 ];
 
@@ -277,7 +277,14 @@ export default function DeficitAnalysisPage() {
     setAiLoading(true);
     setAiResult(null);
     try {
-      const res = await fetch("/api/deficit-update", { method: "POST" });
+      const top10Names = TOP10_DEFICIT.map(c => c.name);
+      const top10Codes = {};
+      TOP10_DEFICIT.forEach(c => { if (c.code) top10Codes[c.name] = c.code; });
+      const res = await fetch("/api/deficit-update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ names: top10Names, codes: top10Codes }),
+      });
       const data = await res.json();
 
       // 뉴스 결과
@@ -352,7 +359,7 @@ export default function DeficitAnalysisPage() {
             <h1 className="text-xl font-black bg-gradient-to-r from-[#4EA8FF] to-[#FFB800] bg-clip-text text-transparent">
               🐺 적자기업 투자분석
             </h1>
-            <p className="text-xs text-[#5A6478] mt-1">적자유형 분류 → 펀더멘탈(80) + 모멘텀(20) 스코어링 → 가중 ETF 매칭 · <span className="text-[#4EA8FF] font-mono">최종 업데이트: {lastUpdate}</span></p>
+            <p className="text-xs text-[#5A6478] mt-1">코스닥 시총 상위 150개 · 적자유형 분류 → 펀더멘탈(80) + 모멘텀(20) 스코어링 → 가중 ETF 매칭 · <span className="text-[#4EA8FF] font-mono">최종 업데이트: {lastUpdate}</span></p>
           </div>
           <button onClick={handleAiUpdate} disabled={aiLoading}
             className="px-5 py-2.5 rounded-lg border border-[#4EA8FF50] font-bold text-sm text-[#4EA8FF] transition
@@ -626,7 +633,7 @@ export default function DeficitAnalysisPage() {
                   {key === "E" && "회계상 흑자이나 대규모 Capex로 현금 유출. 성장 Capex vs 유지보수 Capex 구분이 핵심. 투자 사이클 완료 시 현금흐름 폭발적 개선. 반도체 설비투자기에 전형적."}
                 </div>
                 <div className="mt-2 text-[11px] text-[#5A6478]">
-                  해당 기업: {COMPANIES.filter((c) => c.type === key).map((c) => c.name).join(", ") || "해당 없음 (코스닥 Top50 내)"}
+                  해당 기업: {COMPANIES.filter((c) => c.type === key).map((c) => c.name).join(", ") || "해당 없음 (코스닥 시총 상위 150 내)"}
                 </div>
               </div>
             ))}
