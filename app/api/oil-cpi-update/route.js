@@ -17,7 +17,7 @@ export async function POST(request) {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-20250514",
-        max_tokens: 1000,
+        max_tokens: 4096,
         tools: [{ type: "web_search_20250305", name: "web_search" }],
         messages: [
           {
@@ -41,9 +41,19 @@ Search for: latest US CPI, Korea CPI, Fed funds rate, BOK base rate, Brent crude
     });
     const result = await response.json();
     const textBlocks = result.content?.filter((b) => b.type === "text") || [];
-    const raw = textBlocks.map((b) => b.text).join("");
-    const cleaned = raw.replace(/```json|```/g, "").trim();
-    const parsed = JSON.parse(cleaned);
+    const raw = textBlocks.map((b) => b.text).join("\n");
+    let parsed;
+    try {
+      parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
+    } catch {
+      const match = raw.match(/\{[\s\S]*\}/g);
+      if (match) {
+        for (const m of match.sort((a, b) => b.length - a.length)) {
+          try { parsed = JSON.parse(m); break; } catch {}
+        }
+      }
+    }
+    if (!parsed) return NextResponse.json({ error: "JSON parsing failed" }, { status: 500 });
     return NextResponse.json(parsed);
   } catch (error) {
     console.error("Oil-CPI AI update error:", error);
