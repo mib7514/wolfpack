@@ -1,19 +1,31 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { VALUATION_AI_PROMPT, parseAIResponse } from "@/lib/valuation-constants";
+import { VALUATION_AI_PROMPT } from "@/lib/valuation-constants";
 
 function getSupabase() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   );
 }
 
+function extractJSON(text) {
+  if (!text) return null;
+  try { return JSON.parse(text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim()); } catch {}
+  const matches = text.match(/\{[\s\S]*\}/g);
+  if (matches) {
+    for (const m of matches.sort((a, b) => b.length - a.length)) {
+      try { return JSON.parse(m); } catch {}
+    }
+  }
+  return null;
+}
+
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function POST() {
   const supabase = getSupabase();
-
   try {
     const apiRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -24,7 +36,7 @@ export async function POST() {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-20250514",
-        max_tokens: 1024,
+        max_tokens: 4096,
         tools: [{ type: "web_search_20250305", name: "web_search" }],
         messages: [{ role: "user", content: VALUATION_AI_PROMPT }],
       }),
@@ -36,34 +48,25 @@ export async function POST() {
     }
 
     const apiData = await apiRes.json();
-    const textBlocks = apiData.content?.filter((b) => b.type === "text") || [];
-    const fullText = textBlocks.map((b) => b.text).join("\n");
-    const parsed = parseAIResponse(fullText);
+    const fullText = (apiData.content?.filter((b) => b.type === "text") || []).map((b) => b.text).join("\n");
+    const parsed = extractJSON(fullText);
 
     if (!parsed) {
-      await supabase.from("valuation_update_log").insert({
-        raw_response: apiData,
-        status: "parse_error",
-        notes: fullText?.slice(0, 500),
-      });
-      return NextResponse.json(
-        { ok: false, error: "JSON 파싱 실패", raw: fullText?.slice(0, 500) },
-        { status: 422 }
-      );
+      return NextResponse.json({ ok: false, error: "JSON 파싱 실패", raw: fullText?.slice(0, 500) }, { status: 422 });
     }
 
-    if (parsed.metrics?.date) {
-      const m = parsed.metrics;
-      await supabase.from("valuation_metrics").upsert(
+    // Valuation data upsert
+    if (parsed.valuation?.date) {
+      const d = parsed.valuation;
+      await supabase.from("valuation_data").upsert(
         {
-          date: m.date,
-          kospi_pbr: m.kospi_pbr,
-          kospi_div_yield: m.kospi_div_yield,
-          total_dividend: m.total_dividend,
-          valueup_index: m.valueup_index,
-          kospi_close: m.kospi_close,
-          pbr_below1_pct: m.pbr_below1_pct,
-          valueup_corps_count: m.valueup_corps_count,
+          date: d.date,
+          kospi: d.kospi || null,
+          valueup: d.valueup || null,
+          kospi_pbr: d.kospi_pbr || null,
+          pbr_below1_pct: d.pbr_below1_pct || null,
+          kospi_div_yield: d.kospi_div_yield || null,
+          total_dividend: d.total_dividend || null,
           source: "ai_update",
           updated_at: new Date().toISOString(),
         },
@@ -71,42 +74,24 @@ export async function POST() {
       );
     }
 
-    if (parsed.events?.length) {
+    // Events upsert
+    if (parsed.events && Array.isArray(parsed.events)) {
       for (const ev of parsed.events) {
-        const { data: existing } = await supabase
-          .from("valueup_events")
-          .select("id")
-          .eq("date", ev.date)
-          .eq("title", ev.title)
-          .limit(1);
-
-        if (!existing?.length) {
-          await supabase.from("valueup_events").insert({
-            date: ev.date,
-            category: ev.category || "policy",
-            title: ev.title,
-            description: ev.description || "",
-            impact: ev.impact || "neutral",
-            source: "ai_update",
-          });
+        if (ev.date && ev.title) {
+          await supabase.from("valuation_events").upsert(
+            { date: ev.date, title: ev.title, category: ev.category || "policy", impact: ev.impact || "neutral", source: "ai_update" },
+            { onConflict: "date,title" }
+          );
         }
       }
     }
 
-    await supabase.from("valuation_update_log").insert({
-      raw_response: apiData,
-      parsed_data: parsed,
-      notes: parsed.notes || null,
-      status: "success",
-    });
+    const { data: valuation } = await supabase.from("valuation_data").select("*").order("date", { ascending: true });
+    const { data: events } = await supabase.from("valuation_events").select("*").order("date", { ascending: false }).limit(20);
 
-    const { data: metrics } = await supabase.from("valuation_metrics").select("*").order("date", { ascending: true });
-    const { data: events } = await supabase.from("valueup_events").select("*").order("date", { ascending: false });
-
-    return NextResponse.json({ ok: true, parsed, metrics, events });
+    return NextResponse.json({ ok: true, parsed, valuation, events });
   } catch (err) {
     console.error("[valuation-update] Error:", err);
-    await supabase.from("valuation_update_log").insert({ status: "api_error", notes: err.message?.slice(0, 500) }).catch(() => {});
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
   }
 }
