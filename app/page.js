@@ -147,6 +147,16 @@ const MODULES = [
     layer: "portfolio",
     status: "live",
   },
+  {
+  id: "wolf-radar",
+  name: "Wolf Radar",
+  subtitle: "성장주 발굴",
+  icon: "🐺",
+  description: "AI 기반 성장주 thesis 자동 생성 · Kelly Criterion 배분",
+  path: "/modules/radar",
+  layer: "portfolio",
+  status: "live",
+  },
   // ─── Layer 5: FUND IDEA ───
   {
     id: "fund-ideas",
