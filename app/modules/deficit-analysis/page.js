@@ -1,5 +1,6 @@
 "use client";
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
 
 /* ───────────────────────────────────────────
    데이터 정의
@@ -14,7 +15,7 @@ const DEFICIT_TYPES = {
   흑자: { label: "흑자", color: "#00CC66", bg: "#00CC6620", risk: 0, reward: 0, desc: "" },
 };
 
-const COMPANIES = [
+const SEED_COMPANIES = [
   { rank: 1, name: "에코프로", cap: 230819, per: -1148.65, roe: -12.57, type: "B", detail: "양극재 영업손실 3145억. GP는 유지. 사이클릭 적자" },
   { rank: 2, name: "알테오젠", cap: 199577, per: 158.86, roe: 29.52, type: "흑자", detail: "ADC 플랫폼 라이선싱 흑자" },
   { rank: 3, name: "에코프로비엠", cap: 198097, per: 6328.12, roe: -6.26, type: "B", detail: "영업손실 402억이나 EBITDA 755억 흑자" },
@@ -263,12 +264,54 @@ function MomentumBadge({ m }) {
 export default function DeficitAnalysisPage() {
   const [activeTab, setActiveTab] = useState("top10");
   const [aiLoading, setAiLoading] = useState(false);
+  const [scanLoading, setScanLoading] = useState(false);
   const [aiResult, setAiResult] = useState(null);
   const [filterType, setFilterType] = useState("ALL");
   const [expandedRow, setExpandedRow] = useState(null);
   const [sortBy, setSortBy] = useState("rank");
   const [top10Data, setTop10Data] = useState(INITIAL_TOP10);
   const [lastUpdate, setLastUpdate] = useState("2026.03.06 (초기 수동 데이터)");
+  const [companies, setCompanies] = useState(SEED_COMPANIES);
+
+  // Supabase에서 기업 목록 로드
+  useEffect(() => {
+    async function loadCompanies() {
+      try {
+        const { data, error } = await supabase
+          .from("deficit_companies")
+          .select("*")
+          .order("rank", { ascending: true });
+        if (!error && data && data.length > 0) {
+          setCompanies(data);
+          setLastUpdate(data[0]?.updated_at?.split("T")[0] || lastUpdate);
+        }
+      } catch (e) {
+        console.log("Supabase 로드 실패, 시드 데이터 사용");
+      }
+    }
+    loadCompanies();
+  }, []);
+
+  // 150종목 스캔
+  const handleScan = useCallback(async () => {
+    setScanLoading(true);
+    setAiResult(null);
+    try {
+      setAiResult("🔍 코스닥 시총 상위 150개 종목 스캔 중... (3단계 × 50개씩, 약 2~3분 소요)");
+      const res = await fetch("/api/deficit-scan", { method: "POST" });
+      const data = await res.json();
+      if (data.ok && data.companies) {
+        setCompanies(data.companies);
+        setLastUpdate(data.updatedAt?.split("T")[0] || new Date().toISOString().split("T")[0]);
+        setAiResult(`✅ 스캔 완료! ${data.count}개 종목 로드됨` + (data.errors?.length ? `\n⚠️ 일부 오류: ${data.errors.join(", ")}` : ""));
+      } else {
+        setAiResult(`❌ 스캔 실패: ${data.error || "알 수 없는 오류"}`);
+      }
+    } catch (e) {
+      setAiResult("❌ 스캔 오류: " + e.message);
+    }
+    setScanLoading(false);
+  }, []);
 
   // ETF 스코어를 top10 변경 시 자동 재계산
   const etfScored = useMemo(() => calcETFScores(top10Data), [top10Data]);
@@ -334,11 +377,11 @@ export default function DeficitAnalysisPage() {
   }, []);
 
   const typeDistribution = {};
-  COMPANIES.forEach((c) => {
+  companies.forEach((c) => {
     typeDistribution[c.type] = (typeDistribution[c.type] || 0) + 1;
   });
 
-  const filtered = filterType === "ALL" ? COMPANIES : COMPANIES.filter((c) => c.type === filterType);
+  const filtered = filterType === "ALL" ? companies : companies.filter((c) => c.type === filterType);
   const sorted = [...filtered].sort((a, b) => {
     if (sortBy === "rank") return a.rank - b.rank;
     if (sortBy === "cap") return b.cap - a.cap;
@@ -361,13 +404,22 @@ export default function DeficitAnalysisPage() {
             </h1>
             <p className="text-xs text-[#5A6478] mt-1">코스닥 시총 상위 150개 · 적자유형 분류 → 펀더멘탈(80) + 모멘텀(20) 스코어링 → 가중 ETF 매칭 · <span className="text-[#4EA8FF] font-mono">최종 업데이트: {lastUpdate}</span></p>
           </div>
-          <button onClick={handleAiUpdate} disabled={aiLoading}
-            className="px-5 py-2.5 rounded-lg border border-[#4EA8FF50] font-bold text-sm text-[#4EA8FF] transition
-                       bg-gradient-to-br from-[#0D2847] to-[#132E52]
-                       hover:from-[#133058] hover:to-[#1A3D6A] hover:border-[#4EA8FF] hover:shadow-[0_0_20px_#4EA8FF30]
-                       disabled:opacity-50 disabled:cursor-wait flex items-center gap-2">
-            {aiLoading ? "⚡ AI 분석 중..." : "⚡ AI 업데이트"}
-          </button>
+          <div className="flex gap-2">
+            <button onClick={handleScan} disabled={scanLoading || aiLoading}
+              className="px-4 py-2.5 rounded-lg border border-[#FFB80050] font-bold text-sm text-[#FFB800] transition
+                         bg-gradient-to-br from-[#2D1F00] to-[#3D2A00]
+                         hover:border-[#FFB800] hover:shadow-[0_0_20px_#FFB80030]
+                         disabled:opacity-50 disabled:cursor-wait flex items-center gap-2">
+              {scanLoading ? "🔍 스캔 중..." : "🔍 150종목 스캔"}
+            </button>
+            <button onClick={handleAiUpdate} disabled={aiLoading || scanLoading}
+              className="px-4 py-2.5 rounded-lg border border-[#4EA8FF50] font-bold text-sm text-[#4EA8FF] transition
+                         bg-gradient-to-br from-[#0D2847] to-[#132E52]
+                         hover:from-[#133058] hover:to-[#1A3D6A] hover:border-[#4EA8FF] hover:shadow-[0_0_20px_#4EA8FF30]
+                         disabled:opacity-50 disabled:cursor-wait flex items-center gap-2">
+              {aiLoading ? "⚡ AI 분석 중..." : "⚡ Top10 업데이트"}
+            </button>
+          </div>
         </div>
         <div className="h-0.5 bg-gradient-to-r from-transparent via-[#4EA8FF] to-transparent opacity-60" />
       </div>
@@ -395,7 +447,7 @@ export default function DeficitAnalysisPage() {
       <div className="flex gap-2 px-7 pb-4 overflow-x-auto">
         {[
           { id: "top10", label: "🎯 위험대비 수익 Top 10" },
-          { id: "all", label: "📊 전체 50종목" },
+          { id: "all", label: `📊 전체 ${companies.length}종목` },
           { id: "etf", label: "💼 ETF 매칭" },
           { id: "framework", label: "📋 적자유형 프레임워크" },
         ].map((t) => (
@@ -485,7 +537,7 @@ export default function DeficitAnalysisPage() {
               <button onClick={() => setFilterType("ALL")}
                 className={`px-3 py-1 rounded-full text-[11px] font-semibold border transition
                   ${filterType === "ALL" ? "bg-[#4EA8FF20] text-[#4EA8FF] border-[#4EA8FF60]" : "bg-transparent text-[#8892A4] border-[#1E2636]"}`}>
-                전체 ({COMPANIES.length})
+                전체 ({companies.length})
               </button>
               {Object.entries(DEFICIT_TYPES).map(([key, val]) => (
                 <button key={key} onClick={() => setFilterType(key)}
@@ -633,7 +685,7 @@ export default function DeficitAnalysisPage() {
                   {key === "E" && "회계상 흑자이나 대규모 Capex로 현금 유출. 성장 Capex vs 유지보수 Capex 구분이 핵심. 투자 사이클 완료 시 현금흐름 폭발적 개선. 반도체 설비투자기에 전형적."}
                 </div>
                 <div className="mt-2 text-[11px] text-[#5A6478]">
-                  해당 기업: {COMPANIES.filter((c) => c.type === key).map((c) => c.name).join(", ") || "해당 없음 (코스닥 시총 상위 150 내)"}
+                  해당 기업: {companies.filter((c) => c.type === key).map((c) => c.name).join(", ") || "해당 없음 (코스닥 시총 상위 150 내)"}
                 </div>
               </div>
             ))}
