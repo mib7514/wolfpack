@@ -1,6 +1,5 @@
 "use client";
-import { useState, useCallback, useMemo, useEffect } from "react";
-import { supabase } from "@/lib/supabase";
+import { useState, useCallback, useMemo } from "react";
 
 /* ───────────────────────────────────────────
    데이터 정의
@@ -19,11 +18,11 @@ const SEED_COMPANIES = [
   { rank: 1, name: "에코프로", cap: 230819, per: -1148.65, roe: -12.57, type: "B", detail: "양극재 영업손실 3145억. GP는 유지. 사이클릭 적자" },
   { rank: 2, name: "알테오젠", cap: 199577, per: 158.86, roe: 29.52, type: "흑자", detail: "ADC 플랫폼 라이선싱 흑자" },
   { rank: 3, name: "에코프로비엠", cap: 198097, per: 6328.12, roe: -6.26, type: "B", detail: "영업손실 402억이나 EBITDA 755억 흑자" },
-  { rank: 4, name: "삼천당제약", cap: 179215, per: -1572.02, roe: -4.49, type: "C", detail: "GLP-1 R&D 투자 확대. Pre-revenue 파이프라인" },
-  { rank: 5, name: "레인보우로보틱스", cap: 161407, per: 8320, roe: 1.62, type: "흑자", detail: "극소 흑자(PER 8320배). 로봇 초기 단계" },
-  { rank: 6, name: "에이비엘바이오", cap: 105232, per: -360.42, roe: -46.01, type: "C", detail: "ADC 임상 단계. Pre-revenue 구조" },
+  { rank: 4, name: "삼천당제약", cap: 179215, per: -1572.02, roe: -4.49, type: "C", detail: "GLP-1 R&D 투자 확대. Pre-revenue" },
+  { rank: 5, name: "레인보우로보틱스", cap: 161407, per: 8320, roe: 1.62, type: "흑자", detail: "극소 흑자. 로봇 초기 단계" },
+  { rank: 6, name: "에이비엘바이오", cap: 105232, per: -360.42, roe: -46.01, type: "C", detail: "ADC 임상 단계. Pre-revenue" },
   { rank: 7, name: "리노공업", cap: 96789, per: 64.24, roe: 19.21, type: "흑자", detail: "반도체 검사소켓. 안정 흑자" },
-  { rank: 8, name: "코오롱티슈진", cap: 94080, per: -104.92, roe: -25.91, type: "C", detail: "유전자치료제 임상 비용. Pre-revenue" },
+  { rank: 8, name: "코오롱티슈진", cap: 94080, per: -104.92, roe: -25.91, type: "C", detail: "유전자치료제 임상. Pre-revenue" },
   { rank: 9, name: "리가켐바이오", cap: 72928, per: -290.38, roe: 2.04, type: "C", detail: "ADC 플랫폼. 라이선싱 일부 수익" },
   { rank: 10, name: "케어젠", cap: 69561, per: 244.34, roe: 14.35, type: "흑자", detail: "바이오 펩타이드. 흑자 고PER" },
   { rank: 11, name: "원익IPS", cap: 67638, per: 85.64, roe: 2.37, type: "흑자", detail: "반도체 장비. 사이클 회복 대기" },
@@ -41,7 +40,7 @@ const SEED_COMPANIES = [
   { rank: 23, name: "로보티즈", cap: 36705, per: 920.96, roe: -3.31, type: "B", detail: "로봇 액추에이터. R&D 투자 영업적자" },
   { rank: 24, name: "디앤디파마텍", cap: 36526, per: -103.2, roe: -49.03, type: "C", detail: "비만/NASH 신약. Pre-revenue" },
   { rank: 25, name: "클래시스", cap: 36225, per: 30.69, roe: 26.54, type: "흑자", detail: "미용기기 볼뉴머. 고수익 안정" },
-  { rank: 26, name: "파두", cap: 35507, per: -57.49, roe: -64.47, type: "A", detail: "AI SSD 컨트롤러. GP적자 가능. 양산 초기" },
+  { rank: 26, name: "파두", cap: 35507, per: -57.49, roe: -64.47, type: "A", detail: "AI SSD 컨트롤러. 양산 초기" },
   { rank: 27, name: "현대무벡스", cap: 35418, per: 140.09, roe: 16.17, type: "흑자", detail: "물류자동화/방산. 흑자" },
   { rank: 28, name: "파마리서치", cap: 34598, per: 25.6, roe: 18.93, type: "흑자", detail: "리쥬란. 고수익 안정" },
   { rank: 29, name: "유진테크", cap: 33916, per: 55.29, roe: 16.85, type: "흑자", detail: "반도체 증착장비. 국산화 수혜" },
@@ -53,19 +52,121 @@ const SEED_COMPANIES = [
   { rank: 35, name: "티씨케이", cap: 29066, per: 42.57, roe: 14.78, type: "흑자", detail: "SiC 링. 독점 기술" },
   { rank: 36, name: "우리기술", cap: 28735, per: 207.59, roe: -3.33, type: "D", detail: "방산/에너지. 영업외 비용 순손실" },
   { rank: 37, name: "동진쎄미켐", cap: 28278, per: 26.69, roe: 17.17, type: "흑자", detail: "포토레지스트. 안정 흑자" },
-  { rank: 38, name: "셀트리온제약", cap: 28220, per: 79.75, roe: 5.68, type: "흑자", detail: "바이오시밀러 유통. 합병 이슈" },
-  { rank: 39, name: "서진시스템", cap: 27199, per: -22, roe: 12.32, type: "D", detail: "영업흑자이나 환차손/일회성으로 순손실" },
-  { rank: 40, name: "성호전자", cap: 26667, per: -596.83, roe: 6.54, type: "D", detail: "본업 흑자. 영업외 일회성 순손실" },
+  { rank: 38, name: "셀트리온제약", cap: 28220, per: 79.75, roe: 5.68, type: "흑자", detail: "바이오시밀러 유통" },
+  { rank: 39, name: "서진시스템", cap: 27199, per: -22, roe: 12.32, type: "D", detail: "영업흑자이나 환차손 순손실" },
+  { rank: 40, name: "성호전자", cap: 26667, per: -596.83, roe: 6.54, type: "D", detail: "본업 흑자. 일회성 순손실" },
   { rank: 41, name: "테크윙", cap: 26345, per: -219.44, roe: -10.25, type: "B", detail: "테스트 핸들러. 반도체 하강기 영업적자" },
   { rank: 42, name: "피에스케이홀딩스", cap: 25293, per: 22.23, roe: 24.8, type: "흑자", detail: "반도체 세정장비 지주. 안정 흑자" },
   { rank: 43, name: "오름테라퓨틱", cap: 24906, per: -63.99, roe: -17.5, type: "C", detail: "신약 바이오. Pre-revenue R&D" },
-  { rank: 44, name: "원익홀딩스", cap: 24871, per: -197.55, roe: -7.41, type: "D", detail: "지주사. 지분법 손실/일회성 순손실" },
-  { rank: 45, name: "실리콘투", cap: 24499, per: 15.42, roe: 60.9, type: "흑자", detail: "K-뷰티유통. ROE 61% 최고수익성" },
-  { rank: 46, name: "하나마이크론", cap: 24014, per: 110.55, roe: -6.99, type: "D", detail: "패키징. 영업흑자이나 이자+투자비용 순손실" },
+  { rank: 44, name: "원익홀딩스", cap: 24871, per: -197.55, roe: -7.41, type: "D", detail: "지주사. 지분법 손실 순손실" },
+  { rank: 45, name: "실리콘투", cap: 24499, per: 15.42, roe: 60.9, type: "흑자", detail: "K-뷰티유통. ROE 61%" },
+  { rank: 46, name: "하나마이크론", cap: 24014, per: 110.55, roe: -6.99, type: "D", detail: "패키징. 영업흑자이나 이자비용 순손실" },
   { rank: 47, name: "에스엠", cap: 23971, per: 7.79, roe: 2.64, type: "흑자", detail: "K-POP 엔터. 흑자 저수익성" },
   { rank: 48, name: "태성", cap: 23484, per: -1147.76, roe: 16.61, type: "D", detail: "3D프린터/SW. 영업흑자 영업외 순손실" },
   { rank: 49, name: "JYP Ent.", cap: 23167, per: 14.59, roe: 22.41, type: "흑자", detail: "K-POP. 안정 흑자" },
-  { rank: 50, name: "알지노믹스", cap: 22879, per: -16.46, roe: 19.81, type: "B", detail: "핵산치료제. 라이선싱 수익 < R&D 비용" },
+  { rank: 50, name: "알지노믹스", cap: 22879, per: -16.46, roe: 19.81, type: "B", detail: "핵산치료제. 라이선싱 수익 < R&D" },
+  // ─── 51~100위 ───
+  { rank: 51, name: "와이지엔터", cap: 22500, per: 18.5, roe: 15.2, type: "흑자", detail: "K-POP 엔터. 안정 흑자" },
+  { rank: 52, name: "엔켐", cap: 22100, per: -85.3, roe: -18.4, type: "B", detail: "전해액. 2차전지 소재 영업적자" },
+  { rank: 53, name: "카카오게임즈", cap: 21800, per: -45.2, roe: -8.7, type: "B", detail: "게임 퍼블리싱. 신작 부진 영업적자" },
+  { rank: 54, name: "포스코DX", cap: 21500, per: 35.8, roe: 22.3, type: "흑자", detail: "산업 DX/스마트팩토리. 안정 흑자" },
+  { rank: 55, name: "네오위즈", cap: 21200, per: -32.1, roe: -5.4, type: "B", detail: "게임(P의 거짓). 후속작 공백 영업적자" },
+  { rank: 56, name: "나노신소재", cap: 20800, per: -120.5, roe: -15.8, type: "B", detail: "2차전지 소재. 양극재 코팅 영업적자" },
+  { rank: 57, name: "피에스케이", cap: 20500, per: 28.4, roe: 18.6, type: "흑자", detail: "반도체 세정장비. 안정 흑자" },
+  { rank: 58, name: "제이시스메디칼", cap: 20200, per: 32.1, roe: 21.4, type: "흑자", detail: "미용의료기기. 고수익 흑자" },
+  { rank: 59, name: "앱클론", cap: 19900, per: -78.6, roe: -42.3, type: "C", detail: "항체 바이오. Pre-revenue R&D" },
+  { rank: 60, name: "큐렉소", cap: 19600, per: -156.2, roe: -28.7, type: "C", detail: "수술로봇. Pre-revenue 단계" },
+  { rank: 61, name: "코미팜", cap: 19300, per: 42.8, roe: 12.5, type: "흑자", detail: "동물약품. 안정 흑자" },
+  { rank: 62, name: "켐트로닉스", cap: 19000, per: 38.5, roe: 14.2, type: "흑자", detail: "전자부품/방산. 흑자" },
+  { rank: 63, name: "심텍", cap: 18700, per: -45.8, roe: -8.2, type: "B", detail: "PCB 기판. 반도체 하강기 영업적자" },
+  { rank: 64, name: "인텔리안테크", cap: 18400, per: -28.9, roe: -12.5, type: "B", detail: "위성통신 안테나. 수주 공백 영업적자" },
+  { rank: 65, name: "다원시스", cap: 18100, per: 85.3, roe: 8.4, type: "흑자", detail: "전력변환장치. 방산/원전 수혜" },
+  { rank: 66, name: "압타바이오", cap: 17800, per: -52.4, roe: -85.2, type: "C", detail: "앱타머 신약. Pre-revenue" },
+  { rank: 67, name: "고영", cap: 17500, per: -65.3, roe: -4.8, type: "B", detail: "3D 검사장비. 일시적 영업적자" },
+  { rank: 68, name: "네오이뮨텍", cap: 17200, per: -42.1, roe: -35.6, type: "C", detail: "면역항암제. Pre-revenue R&D" },
+  { rank: 69, name: "윈스", cap: 16900, per: 22.5, roe: 16.8, type: "흑자", detail: "네트워크 보안. 안정 흑자" },
+  { rank: 70, name: "차바이오텍", cap: 16600, per: -38.7, roe: -7.5, type: "D", detail: "바이오/병원. 영업흑 이자비용 순손실" },
+  { rank: 71, name: "에이피알", cap: 16300, per: 18.2, roe: 35.4, type: "흑자", detail: "메디큐브. 고성장 뷰티테크" },
+  { rank: 72, name: "덕산네오룩스", cap: 16000, per: 65.4, roe: 8.9, type: "흑자", detail: "OLED 소재. 흑자" },
+  { rank: 73, name: "비올", cap: 15700, per: 24.8, roe: 28.5, type: "흑자", detail: "미용의료기기. 고수익" },
+  { rank: 74, name: "CJ ENM", cap: 15400, per: -18.5, roe: -4.2, type: "D", detail: "미디어/커머스. 영업흑 일회성 순손실" },
+  { rank: 75, name: "선익시스템", cap: 15100, per: 180.2, roe: 3.5, type: "흑자", detail: "OLED 증착장비. 극소 흑자" },
+  { rank: 76, name: "하이브", cap: 14800, per: 45.6, roe: 8.2, type: "흑자", detail: "K-POP. BTS/세븐틴" },
+  { rank: 77, name: "브이티", cap: 14500, per: 16.8, roe: 32.1, type: "흑자", detail: "K-뷰티. 리들샷 고성장" },
+  { rank: 78, name: "엘앤에프", cap: 14200, per: -25.8, roe: -22.4, type: "B", detail: "양극재. 2차전지 사이클 영업적자" },
+  { rank: 79, name: "티로보틱스", cap: 13900, per: -210.5, roe: -55.3, type: "C", detail: "자율주행로봇. Pre-revenue" },
+  { rank: 80, name: "네오플럭스", cap: 13600, per: 28.4, roe: 15.7, type: "흑자", detail: "반도체 테스트. 안정 흑자" },
+  { rank: 81, name: "와이엠텍", cap: 13300, per: 32.5, roe: 12.8, type: "흑자", detail: "2차전지 부품. 흑자" },
+  { rank: 82, name: "오스코텍", cap: 13000, per: -85.6, roe: -28.4, type: "C", detail: "신약개발. Pre-revenue R&D" },
+  { rank: 83, name: "씨젠", cap: 12700, per: -22.4, roe: -8.5, type: "B", detail: "분자진단. 코로나 후 매출감소 영업적자" },
+  { rank: 84, name: "에이치엘비", cap: 12400, per: -42.8, roe: -15.2, type: "C", detail: "항암 바이오. R&D 비용" },
+  { rank: 85, name: "해성디에스", cap: 12100, per: 35.2, roe: 11.5, type: "흑자", detail: "반도체 리드프레임. 안정 흑자" },
+  { rank: 86, name: "가온칩스", cap: 11800, per: 42.6, roe: 18.3, type: "흑자", detail: "반도체 팹리스. AI 수혜" },
+  { rank: 87, name: "코웰패션", cap: 11500, per: 12.8, roe: 22.5, type: "흑자", detail: "패션 라이선싱. 고ROE" },
+  { rank: 88, name: "필에너지", cap: 11200, per: -68.4, roe: -35.2, type: "B", detail: "2차전지 장비. 수주 공백 영업적자" },
+  { rank: 89, name: "한국비엔씨", cap: 10900, per: -125.3, roe: -42.8, type: "C", detail: "바이오 CDMO. 초기 단계" },
+  { rank: 90, name: "라이콤", cap: 10600, per: 55.2, roe: 9.4, type: "흑자", detail: "5G 통신장비. 흑자" },
+  { rank: 91, name: "에스앤에스텍", cap: 10300, per: 38.7, roe: 14.6, type: "흑자", detail: "EUV 블랭크마스크. 독점 기술" },
+  { rank: 92, name: "티에스이", cap: 10000, per: -35.2, roe: -8.9, type: "B", detail: "반도체 테스트소켓. 사이클 영업적자" },
+  { rank: 93, name: "유니셈", cap: 9800, per: 25.4, roe: 16.2, type: "흑자", detail: "반도체 스크러버. 안정 흑자" },
+  { rank: 94, name: "지놈앤컴퍼니", cap: 9600, per: -18.5, roe: -52.4, type: "C", detail: "마이크로바이옴. Pre-revenue" },
+  { rank: 95, name: "아이퀘스트", cap: 9400, per: 22.8, roe: 18.5, type: "흑자", detail: "ERP/기업솔루션. 안정 흑자" },
+  { rank: 96, name: "켐트로스", cap: 9200, per: -95.4, roe: -22.1, type: "C", detail: "반도체 소재. 초기 양산 적자" },
+  { rank: 97, name: "SFA반도체", cap: 9000, per: 28.6, roe: 12.4, type: "흑자", detail: "반도체 패키징. 안정 흑자" },
+  { rank: 98, name: "이녹스첨단소재", cap: 8800, per: 18.5, roe: 15.8, type: "흑자", detail: "FPCB 소재. 안정 흑자" },
+  { rank: 99, name: "더블유게임즈", cap: 8600, per: 8.5, roe: 24.2, type: "흑자", detail: "소셜카지노. 고수익 캐시카우" },
+  { rank: 100, name: "레뷰코퍼레이션", cap: 8400, per: -42.5, roe: -18.6, type: "B", detail: "인플루언서 마케팅. 적자 확대" },
+  // ─── 101~150위 ───
+  { rank: 101, name: "지니틱스", cap: 8200, per: -55.2, roe: -25.4, type: "B", detail: "터치IC. 사이클 하강 영업적자" },
+  { rank: 102, name: "위메이드", cap: 8000, per: -15.8, roe: -12.5, type: "B", detail: "게임/블록체인. 미르 IP 영업적자" },
+  { rank: 103, name: "에이엔피", cap: 7800, per: 35.2, roe: 12.8, type: "흑자", detail: "방산/항공부품. 안정 흑자" },
+  { rank: 104, name: "에스엘바이오닉스", cap: 7600, per: -82.4, roe: -32.5, type: "C", detail: "의료로봇. Pre-revenue" },
+  { rank: 105, name: "덕산하이메탈", cap: 7400, per: 42.8, roe: 8.5, type: "흑자", detail: "반도체 솔더볼. 안정 흑자" },
+  { rank: 106, name: "HLB생명과학", cap: 7200, per: -28.5, roe: -18.4, type: "C", detail: "바이오. HLB 그룹 R&D" },
+  { rank: 107, name: "원익QnC", cap: 7000, per: 22.4, roe: 14.2, type: "흑자", detail: "쿼츠/세라믹. 반도체 소재" },
+  { rank: 108, name: "코아스템켐온", cap: 6800, per: -120.5, roe: -45.2, type: "C", detail: "줄기세포 치료제. Pre-revenue" },
+  { rank: 109, name: "젬백스", cap: 6600, per: -65.4, roe: -22.8, type: "C", detail: "면역치료 펩타이드. Pre-revenue" },
+  { rank: 110, name: "엠씨넥스", cap: 6400, per: 18.5, roe: 15.4, type: "흑자", detail: "카메라모듈. 차량용 성장" },
+  { rank: 111, name: "아나패스", cap: 6200, per: 28.6, roe: 22.1, type: "흑자", detail: "디스플레이 IC. 안정 흑자" },
+  { rank: 112, name: "에스에프에이", cap: 6000, per: 15.8, roe: 18.5, type: "흑자", detail: "디스플레이 장비. 안정 흑자" },
+  { rank: 113, name: "톱텍", cap: 5850, per: 32.4, roe: 10.8, type: "흑자", detail: "2차전지 장비. 흑자" },
+  { rank: 114, name: "제넥신", cap: 5700, per: -35.8, roe: -28.4, type: "C", detail: "DNA 백신/항암. Pre-revenue" },
+  { rank: 115, name: "코엔텍", cap: 5550, per: 12.5, roe: 18.2, type: "흑자", detail: "폐기물처리. 안정 캐시카우" },
+  { rank: 116, name: "나무기술", cap: 5400, per: -48.5, roe: -15.2, type: "B", detail: "클라우드 보안. R&D 투자 영업적자" },
+  { rank: 117, name: "FSN", cap: 5250, per: 22.8, roe: 12.5, type: "흑자", detail: "디지털마케팅. 안정 흑자" },
+  { rank: 118, name: "오로스테크놀로지", cap: 5100, per: 65.4, roe: 8.2, type: "흑자", detail: "반도체 열관리. 흑자" },
+  { rank: 119, name: "브레인즈컴퍼니", cap: 4950, per: 18.2, roe: 16.8, type: "흑자", detail: "IT서비스/모니터링. 안정 흑자" },
+  { rank: 120, name: "에스바이오메딕스", cap: 4800, per: -92.5, roe: -55.4, type: "C", detail: "줄기세포. Pre-revenue R&D" },
+  { rank: 121, name: "한양이엔지", cap: 4650, per: 15.4, roe: 22.5, type: "흑자", detail: "반도체 클린룸. 안정 흑자" },
+  { rank: 122, name: "에치에프알", cap: 4500, per: -42.8, roe: -18.5, type: "B", detail: "5G 필터. 수요 부진 영업적자" },
+  { rank: 123, name: "엔피", cap: 4380, per: 28.5, roe: 14.2, type: "흑자", detail: "2차전지 장비. 흑자" },
+  { rank: 124, name: "메디톡스", cap: 4260, per: -22.5, roe: -8.4, type: "D", detail: "보톡스. 영업흑 소송비용 순손실" },
+  { rank: 125, name: "에이텍", cap: 4140, per: 12.8, roe: 18.5, type: "흑자", detail: "금융단말기/키오스크. 안정 흑자" },
+  { rank: 126, name: "아이씨에이치", cap: 4020, per: -75.2, roe: -32.4, type: "C", detail: "바이오 신약. Pre-revenue" },
+  { rank: 127, name: "씨아이에스", cap: 3900, per: -28.5, roe: -12.8, type: "B", detail: "2차전지 장비. 수주 감소 영업적자" },
+  { rank: 128, name: "나인테크", cap: 3780, per: 45.2, roe: 8.5, type: "흑자", detail: "디스플레이 장비. 흑자" },
+  { rank: 129, name: "인바디", cap: 3660, per: 18.5, roe: 14.8, type: "흑자", detail: "체성분 분석기. 글로벌 수출" },
+  { rank: 130, name: "루트로닉", cap: 3540, per: 25.4, roe: 16.2, type: "흑자", detail: "미용레이저. 안정 흑자" },
+  { rank: 131, name: "제이엘케이", cap: 3420, per: -150.2, roe: -65.4, type: "C", detail: "AI 의료영상. Pre-revenue" },
+  { rank: 132, name: "셀리드", cap: 3300, per: -85.4, roe: -48.2, type: "C", detail: "면역항암 백신. Pre-revenue" },
+  { rank: 133, name: "한글과컴퓨터", cap: 3200, per: 15.2, roe: 12.4, type: "흑자", detail: "오피스SW. 안정 흑자" },
+  { rank: 134, name: "비츠로셀", cap: 3100, per: 22.8, roe: 18.5, type: "흑자", detail: "리튬1차전지. 방산 수혜" },
+  { rank: 135, name: "파워로직스", cap: 3000, per: -35.4, roe: -12.5, type: "B", detail: "전력반도체. 초기 영업적자" },
+  { rank: 136, name: "큐리엔트", cap: 2900, per: -62.5, roe: -42.8, type: "C", detail: "안과 신약. Pre-revenue" },
+  { rank: 137, name: "에프에스티", cap: 2800, per: 28.4, roe: 15.2, type: "흑자", detail: "반도체 검사장비. 안정 흑자" },
+  { rank: 138, name: "맥스트", cap: 2700, per: -45.8, roe: -28.5, type: "C", detail: "AR/메타버스. Pre-revenue" },
+  { rank: 139, name: "테스", cap: 2600, per: 35.2, roe: 12.8, type: "흑자", detail: "반도체 CVD장비. 흑자" },
+  { rank: 140, name: "한컴위드", cap: 2520, per: 18.5, roe: 14.2, type: "흑자", detail: "보안솔루션. 안정 흑자" },
+  { rank: 141, name: "네오팜", cap: 2440, per: 15.8, roe: 22.4, type: "흑자", detail: "더마코스메틱. 안정 흑자" },
+  { rank: 142, name: "디바이스이엔지", cap: 2360, per: 42.5, roe: 8.8, type: "흑자", detail: "반도체 세정장비. 흑자" },
+  { rank: 143, name: "아이엠비디엑스", cap: 2280, per: -120.4, roe: -55.2, type: "C", detail: "액체생검. Pre-revenue R&D" },
+  { rank: 144, name: "이엠텍", cap: 2200, per: 12.4, roe: 18.8, type: "흑자", detail: "전자부품. 안정 흑자" },
+  { rank: 145, name: "하이록코리아", cap: 2120, per: 14.2, roe: 12.5, type: "흑자", detail: "밸브/피팅. 안정 수출" },
+  { rank: 146, name: "엔젠바이오", cap: 2040, per: -38.5, roe: -22.4, type: "C", detail: "NGS 진단. 적자 지속" },
+  { rank: 147, name: "라온테크", cap: 1960, per: -55.2, roe: -18.5, type: "B", detail: "보안 솔루션. R&D 영업적자" },
+  { rank: 148, name: "제이앤티씨", cap: 1880, per: 8.5, roe: 28.4, type: "흑자", detail: "광학필름. 고ROE 흑자" },
+  { rank: 149, name: "바이오노트", cap: 1800, per: 22.5, roe: 12.8, type: "흑자", detail: "진단키트. 안정 흑자" },
+  { rank: 150, name: "알체라", cap: 1720, per: -68.4, roe: -35.2, type: "C", detail: "AI 영상인식. Pre-revenue" },
 ];
 
 /* ───────────────────────────────────────────
@@ -264,83 +365,13 @@ function MomentumBadge({ m }) {
 export default function DeficitAnalysisPage() {
   const [activeTab, setActiveTab] = useState("top10");
   const [aiLoading, setAiLoading] = useState(false);
-  const [scanLoading, setScanLoading] = useState(false);
   const [aiResult, setAiResult] = useState(null);
   const [filterType, setFilterType] = useState("ALL");
   const [expandedRow, setExpandedRow] = useState(null);
   const [sortBy, setSortBy] = useState("rank");
   const [top10Data, setTop10Data] = useState(INITIAL_TOP10);
   const [lastUpdate, setLastUpdate] = useState("2026.03.06 (초기 수동 데이터)");
-  const [companies, setCompanies] = useState(SEED_COMPANIES);
-
-  // Supabase에서 기업 목록 로드
-  useEffect(() => {
-    async function loadCompanies() {
-      try {
-        const { data, error } = await supabase
-          .from("deficit_companies")
-          .select("*")
-          .order("rank", { ascending: true });
-        if (!error && data && data.length > 0) {
-          setCompanies(data);
-          setLastUpdate(data[0]?.updated_at?.split("T")[0] || lastUpdate);
-        }
-      } catch (e) {
-        console.log("Supabase 로드 실패, 시드 데이터 사용");
-      }
-    }
-    loadCompanies();
-  }, []);
-
-  // 150종목 스캔 (5배치 × 30개, 배치간 65초 대기)
-  const handleScan = useCallback(async () => {
-    setScanLoading(true);
-    setAiResult(null);
-    const batches = [[1,30],[31,60],[61,90],[91,120],[121,150]];
-    const allCompanies = [];
-    const errors = [];
-
-    const wait = (sec) => new Promise(r => setTimeout(r, sec * 1000));
-
-    for (let i = 0; i < batches.length; i++) {
-      const [start, end] = batches[i];
-
-      if (i > 0) {
-        for (let sec = 65; sec > 0; sec--) {
-          setAiResult(`⏳ API 대기 중... ${sec}초 (${i}/${batches.length} 완료, ${allCompanies.length}개 수집)`);
-          await wait(1);
-        }
-      }
-
-      setAiResult(`🔍 ${i+1}/${batches.length} 스캔 중 (${start}~${end}위) — ${allCompanies.length}개 완료`);
-      try {
-        const res = await fetch("/api/deficit-scan", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ startRank: start, endRank: end }),
-        });
-        const data = await res.json();
-        if (data.ok && data.companies) {
-          allCompanies.push(...data.companies);
-        } else {
-          errors.push(`${start}-${end}: ${data.error}${data.detail ? " — " + data.detail?.slice(0,80) : ""}${data.raw_preview ? " — raw:" + data.raw_preview?.slice(0,80) : ""}`);
-        }
-      } catch (e) {
-        errors.push(`${start}-${end}: ${e.message}`);
-      }
-    }
-
-    if (allCompanies.length > 0) {
-      allCompanies.sort((a, b) => (b.cap || 0) - (a.cap || 0));
-      allCompanies.forEach((c, idx) => { c.rank = idx + 1; });
-      setCompanies(allCompanies);
-      setLastUpdate(new Date().toISOString().split("T")[0]);
-      setAiResult(`✅ 스캔 완료! ${allCompanies.length}개 종목 로드됨` + (errors.length ? `\n⚠️ 일부 오류: ${errors.join(", ")}` : ""));
-    } else {
-      setAiResult(`❌ 스캔 실패: ${errors.join(", ")}`);
-    }
-    setScanLoading(false);
-  }, []);
+  const [companies] = useState(SEED_COMPANIES);
 
   // ETF 스코어를 top10 변경 시 자동 재계산
   const etfScored = useMemo(() => calcETFScores(top10Data), [top10Data]);
@@ -433,22 +464,13 @@ export default function DeficitAnalysisPage() {
             </h1>
             <p className="text-xs text-[#5A6478] mt-1">코스닥 시총 상위 150개 · 적자유형 분류 → 펀더멘탈(80) + 모멘텀(20) 스코어링 → 가중 ETF 매칭 · <span className="text-[#4EA8FF] font-mono">최종 업데이트: {lastUpdate}</span></p>
           </div>
-          <div className="flex gap-2">
-            <button onClick={handleScan} disabled={scanLoading || aiLoading}
-              className="px-4 py-2.5 rounded-lg border border-[#FFB80050] font-bold text-sm text-[#FFB800] transition
-                         bg-gradient-to-br from-[#2D1F00] to-[#3D2A00]
-                         hover:border-[#FFB800] hover:shadow-[0_0_20px_#FFB80030]
-                         disabled:opacity-50 disabled:cursor-wait flex items-center gap-2">
-              {scanLoading ? "🔍 스캔 중..." : "🔍 150종목 스캔"}
-            </button>
-            <button onClick={handleAiUpdate} disabled={aiLoading || scanLoading}
-              className="px-4 py-2.5 rounded-lg border border-[#4EA8FF50] font-bold text-sm text-[#4EA8FF] transition
-                         bg-gradient-to-br from-[#0D2847] to-[#132E52]
-                         hover:from-[#133058] hover:to-[#1A3D6A] hover:border-[#4EA8FF] hover:shadow-[0_0_20px_#4EA8FF30]
-                         disabled:opacity-50 disabled:cursor-wait flex items-center gap-2">
-              {aiLoading ? "⚡ AI 분석 중..." : "⚡ Top10 업데이트"}
-            </button>
-          </div>
+          <button onClick={handleAiUpdate} disabled={aiLoading}
+            className="px-5 py-2.5 rounded-lg border border-[#4EA8FF50] font-bold text-sm text-[#4EA8FF] transition
+                       bg-gradient-to-br from-[#0D2847] to-[#132E52]
+                       hover:from-[#133058] hover:to-[#1A3D6A] hover:border-[#4EA8FF] hover:shadow-[0_0_20px_#4EA8FF30]
+                       disabled:opacity-50 disabled:cursor-wait flex items-center gap-2">
+            {aiLoading ? "⚡ AI 분석 중..." : "⚡ AI 업데이트"}
+          </button>
         </div>
         <div className="h-0.5 bg-gradient-to-r from-transparent via-[#4EA8FF] to-transparent opacity-60" />
       </div>
