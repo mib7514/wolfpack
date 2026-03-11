@@ -12,22 +12,13 @@ function calcKelly(wp, wlr) {
   return { full: +(k * 100).toFixed(1), half: +(k * 50).toFixed(1), quarter: +(k * 25).toFixed(1) };
 }
 
-// ── Constants ──
-const ST = {
-  WATCHING: { label: "Watching", icon: "👁", c: "#6b8aad" },
-  STALKING: { label: "Stalking", icon: "🐺", c: "#d4a843" },
-  ENTERED: { label: "Entered", icon: "⚡", c: "#4ade80" },
-  EXITED:  { label: "Exited",  icon: "🚪", c: "#94a3b8" },
-  KILLED:  { label: "Killed",  icon: "💀", c: "#ef4444" },
-};
-
 const CC = {
   BTC_TREASURY:"#f7931a",AI_INFRA:"#8b5cf6",AI_APP:"#a78bfa",BIOTECH:"#10b981",
   SPAC:"#f59e0b",IPO:"#ec4899",ROBOTICS:"#06b6d4",ENERGY:"#84cc16",
   FINTECH:"#3b82f6",CRYPTO:"#eab308",SEMI:"#6366f1",OTHER:"#6b7280",
 };
 
-// ── DB helpers ──
+// ── DB ──
 async function dbFetch() {
   const { data } = await supabase.from("radar_stocks").select("*").order("added_at", { ascending: false });
   return data || [];
@@ -43,46 +34,93 @@ async function dbDelete(id) {
   await supabase.from("radar_stocks").delete().eq("id", id);
 }
 
+// ── Score Color ──
+function sc(score) {
+  return score >= 70 ? "#4ade80" : score >= 40 ? "#d4a843" : "#ef4444";
+}
+
 // ── Score Ring ──
 function ScoreRing({ score, size = 44 }) {
   const r = (size - 6) / 2;
   const circ = 2 * Math.PI * r;
   const pct = Math.max(0, Math.min(100, score));
   const offset = circ * (1 - pct / 100);
-  const color = pct >= 70 ? "#4ade80" : pct >= 40 ? "#d4a843" : "#ef4444";
   return (
     <svg width={size} height={size} className="shrink-0">
       <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={3} />
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={3}
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={sc(pct)} strokeWidth={3}
         strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
         transform={`rotate(-90 ${size/2} ${size/2})`} style={{ transition: "stroke-dashoffset 0.5s" }} />
       <text x={size/2} y={size/2} textAnchor="middle" dominantBaseline="central"
-        fill={color} fontSize={size * 0.3} fontWeight={800} fontFamily="monospace">{Math.round(pct)}</text>
+        fill={sc(pct)} fontSize={size * 0.3} fontWeight={800} fontFamily="monospace">{Math.round(pct)}</text>
     </svg>
   );
 }
 
-// ── Indicator Score Slider ──
-function IndicatorRow({ ind, onChange }) {
-  const score = ind.score ?? 50;
-  const color = score >= 70 ? "#4ade80" : score >= 40 ? "#d4a843" : "#ef4444";
+// ── 총점 계산 ──
+function calcTotalScore(indicators) {
+  if (!indicators || indicators.length === 0) return 0;
+  let weightedSum = 0, totalWeight = 0;
+  for (const ind of indicators) {
+    const subs = ind.sub_indicators || [];
+    const indScore = subs.length > 0
+      ? subs.reduce((s, sub) => s + (sub.score ?? 50), 0) / subs.length
+      : (ind.score ?? 50);
+    weightedSum += indScore * (ind.weight || 1);
+    totalWeight += (ind.weight || 1);
+  }
+  return totalWeight > 0 ? Math.round(weightedSum / totalWeight) : 0;
+}
+
+// ── Momentum Bar ──
+function MomentumSection({ momentum }) {
+  if (!momentum) return null;
+  const m = momentum;
+  const pctHigh = m.high_52w > 0 ? ((m.current_price / m.high_52w) * 100).toFixed(1) : "—";
+  
   return (
-    <div className="flex items-center gap-3 py-2 border-b border-white/[0.04] last:border-0">
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] px-1.5 py-0.5 rounded font-mono"
-            style={{ background: ind.type === "auto" ? "#8b5cf620" : "#d4a84320", color: ind.type === "auto" ? "#8b5cf6" : "#d4a843" }}>
-            {ind.type === "auto" ? "AUTO" : "MANUAL"}
-          </span>
-          <span className="text-[11px] font-semibold text-slate-300 truncate">{ind.name}</span>
+    <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-4">
+      <div className="text-[11px] font-bold text-slate-400 tracking-wider font-mono mb-3">TECHNICAL MOMENTUM</div>
+      
+      {/* Price */}
+      <div className="flex justify-between items-center mb-3 pb-3 border-b border-white/[0.04]">
+        <div>
+          <div className="text-xl font-black font-mono text-slate-100">
+            {m.current_price?.toLocaleString() || "—"}
+          </div>
+          <div className="text-[9px] text-slate-600">52w High 대비 {pctHigh}%</div>
         </div>
-        <div className="text-[9px] text-slate-600 mt-0.5">목표: {ind.target} · 가중치 {ind.weight}%</div>
+        <div className="text-right text-[10px] text-slate-500">
+          52w High: {m.high_52w?.toLocaleString() || "—"}
+        </div>
       </div>
-      <input type="range" min={0} max={100} step={5} value={score}
-        onChange={(e) => onChange(parseInt(e.target.value))}
-        className="w-20 h-1 rounded appearance-none cursor-pointer"
-        style={{ accentColor: color, background: `linear-gradient(to right, ${color} ${score}%, #1a2030 ${score}%)` }} />
-      <span className="text-sm font-mono font-bold w-8 text-right" style={{ color }}>{score}</span>
+      
+      {/* MA Table */}
+      <div className="grid grid-cols-4 gap-2 mb-3">
+        {[
+          { label: "MA5", val: m.ma5 },
+          { label: "MA20", val: m.ma20 },
+          { label: "MA60", val: m.ma60 },
+          { label: "MA120", val: m.ma120 },
+        ].map(({ label, val }) => (
+          <div key={label} className="text-center bg-black/20 rounded-lg py-2">
+            <div className="text-[9px] text-slate-600 mb-0.5">{label}</div>
+            <div className="text-[11px] font-mono font-bold text-slate-300">
+              {val ? val.toLocaleString() : "—"}
+            </div>
+          </div>
+        ))}
+      </div>
+      
+      {/* Alignment & Trend */}
+      <div className="flex gap-2">
+        <div className={`flex-1 text-center py-1.5 rounded-lg text-[10px] font-bold ${m.ma_aligned ? "bg-green-500/10 text-green-400 border border-green-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20"}`}>
+          이평선 {m.ma_aligned ? "정배열 ✓" : "역배열 ✗"}
+        </div>
+        <div className={`flex-1 text-center py-1.5 rounded-lg text-[10px] font-bold ${m.ma120_trend === "up" ? "bg-green-500/10 text-green-400 border border-green-500/20" : m.ma120_trend === "down" ? "bg-red-500/10 text-red-400 border border-red-500/20" : "bg-slate-500/10 text-slate-400 border border-slate-500/20"}`}>
+          120일선 {m.ma120_trend === "up" ? "상승 ▲" : m.ma120_trend === "down" ? "하락 ▼" : "횡보 ─"}
+        </div>
+      </div>
     </div>
   );
 }
@@ -91,45 +129,48 @@ function IndicatorRow({ ind, onChange }) {
 function DetailPanel({ stock, onClose, onUpdate, onDelete }) {
   const thesis = stock.thesis_json || {};
   const indicators = stock.indicators || [];
-  const [localIndicators, setLocalIndicators] = useState(indicators);
-  const [showAddIndicator, setShowAddIndicator] = useState(false);
-  const [newInd, setNewInd] = useState({ name: "", type: "manual", target: "", weight: 10 });
+  const momentum = stock.momentum || null;
+  const [evaluating, setEvaluating] = useState(false);
+  const [evalResult, setEvalResult] = useState(null);
+  const totalScore = calcTotalScore(indicators);
 
-  useEffect(() => {
-    setLocalIndicators(stock.indicators || []);
-  }, [stock]);
-
-  const totalScore = localIndicators.length > 0
-    ? Math.round(localIndicators.reduce((s, i) => s + (i.score ?? 50) * (i.weight || 1), 0) / Math.max(1, localIndicators.reduce((s, i) => s + (i.weight || 1), 0)))
-    : 0;
-
-  const handleIndicatorChange = (idx, score) => {
-    const updated = [...localIndicators];
-    updated[idx] = { ...updated[idx], score };
-    setLocalIndicators(updated);
-    onUpdate({ ...stock, indicators: updated });
-    dbUpdate(stock.id, { indicators: updated });
-  };
-
-  const addIndicator = () => {
-    if (!newInd.name) return;
-    const updated = [...localIndicators, { ...newInd, score: 50 }];
-    setLocalIndicators(updated);
-    onUpdate({ ...stock, indicators: updated });
-    dbUpdate(stock.id, { indicators: updated });
-    setNewInd({ name: "", type: "manual", target: "", weight: 10 });
-    setShowAddIndicator(false);
-  };
-
-  const removeIndicator = (idx) => {
-    const updated = localIndicators.filter((_, i) => i !== idx);
-    setLocalIndicators(updated);
-    onUpdate({ ...stock, indicators: updated });
-    dbUpdate(stock.id, { indicators: updated });
-  };
+  const handleEvaluate = useCallback(async () => {
+    setEvaluating(true);
+    setEvalResult(null);
+    try {
+      const res = await fetch("/api/radar/evaluate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ticker: stock.ticker,
+          exchange: stock.exchange,
+          name: stock.name,
+          indicators: indicators,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const updated = {
+          ...stock,
+          indicators: data.indicators || indicators,
+          momentum: data.momentum || momentum,
+        };
+        onUpdate(updated);
+        dbUpdate(stock.id, {
+          indicators: data.indicators || indicators,
+          momentum: data.momentum || momentum,
+        });
+        setEvalResult(data.summary || "평가 완료");
+      } else {
+        setEvalResult("평가 실패");
+      }
+    } catch (e) {
+      setEvalResult("오류: " + e.message);
+    }
+    setEvaluating(false);
+  }, [stock, indicators, momentum, onUpdate]);
 
   const kelly = calcKelly(stock.kelly_win_prob, stock.kelly_wl_ratio);
-  const st = ST[stock.status] || ST.WATCHING;
 
   return (
     <div className="fixed inset-0 bg-black/85 z-50 flex justify-end" onClick={onClose}>
@@ -138,103 +179,94 @@ function DetailPanel({ stock, onClose, onUpdate, onDelete }) {
 
         {/* Header */}
         <div className="sticky top-0 z-10 bg-[#0d1220]/95 backdrop-blur-md border-b border-white/[0.04] p-5">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-3">
               <ScoreRing score={totalScore} size={52} />
               <div>
-                <div className="text-lg font-extrabold font-mono text-slate-100">{stock.ticker}</div>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-extrabold font-mono text-slate-100">{stock.ticker}</span>
+                  <span className="text-[8px] px-1.5 py-0.5 rounded-full font-semibold border"
+                    style={{ background: `${CC[stock.category || "OTHER"]}15`, color: CC[stock.category || "OTHER"], borderColor: `${CC[stock.category || "OTHER"]}33` }}>
+                    {stock.category || "OTHER"}
+                  </span>
+                </div>
                 <div className="text-[11px] text-slate-500">{stock.name} · {stock.exchange}</div>
               </div>
             </div>
             <button onClick={onClose} className="text-slate-600 hover:text-slate-300 text-xl">✕</button>
           </div>
-          <div className="text-[12px] text-slate-400 italic">{stock.thesis_oneliner || "—"}</div>
-
-          {/* Status buttons */}
-          <div className="flex gap-1.5 mt-3 flex-wrap">
-            {Object.entries(ST).map(([key, { label, icon, c }]) => (
-              <button key={key}
-                onClick={() => { onUpdate({ ...stock, status: key }); dbUpdate(stock.id, { status: key }); }}
-                className="px-2 py-1 rounded-md text-[10px] font-semibold border transition-all"
-                style={{
-                  borderColor: stock.status === key ? c : `${c}22`,
-                  background: stock.status === key ? `${c}15` : "transparent",
-                  color: stock.status === key ? c : "#4a5568",
-                }}>{icon} {label}</button>
-            ))}
-          </div>
+          <div className="text-[12px] text-amber-400/80 italic">{stock.thesis_oneliner || "—"}</div>
         </div>
 
         <div className="p-5 space-y-5">
 
-          {/* Score Summary */}
+          {/* Score + Evaluate */}
           <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-4 text-center">
             <div className="text-[10px] text-slate-600 tracking-wider font-mono mb-2">MONITORING SCORE</div>
-            <div className="text-4xl font-black font-mono" style={{ color: totalScore >= 70 ? "#4ade80" : totalScore >= 40 ? "#d4a843" : "#ef4444" }}>
+            <div className="text-4xl font-black font-mono" style={{ color: sc(totalScore) }}>
               {totalScore}<span className="text-lg opacity-50">/100</span>
             </div>
-            <div className="text-[10px] text-slate-600 mt-1">{localIndicators.length}개 지표 · 가중평균</div>
+            <div className="text-[10px] text-slate-600 mt-1">{indicators.length}개 지표 · 가중평균</div>
+            <button onClick={handleEvaluate} disabled={evaluating}
+              className="mt-3 px-5 py-2 rounded-lg text-xs font-bold bg-amber-600/20 text-amber-500 border border-amber-500/30 hover:bg-amber-600/30 transition disabled:opacity-40">
+              {evaluating ? "🔍 AI 평가 중..." : "🔄 AI 자동 평가"}
+            </button>
+            {evalResult && <div className="mt-2 text-[10px] text-slate-400">{evalResult}</div>}
           </div>
 
           {/* Monitoring Indicators */}
           <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-[11px] font-bold text-slate-400 tracking-wider font-mono">MONITORING INDICATORS</div>
-              <button onClick={() => setShowAddIndicator(!showAddIndicator)}
-                className="text-[10px] px-2 py-1 rounded border border-amber-500/30 text-amber-500 hover:bg-amber-500/10 transition">
-                + 추가
-              </button>
-            </div>
-
-            {showAddIndicator && (
-              <div className="bg-black/30 rounded-lg p-3 mb-3 space-y-2">
-                <input value={newInd.name} onChange={e => setNewInd(p => ({...p, name: e.target.value}))}
-                  placeholder="지표명 (예: 매출 성장률)"
-                  className="w-full px-2 py-1.5 bg-black/40 border border-white/10 rounded text-xs text-slate-200 outline-none" />
-                <div className="flex gap-2">
-                  <select value={newInd.type} onChange={e => setNewInd(p => ({...p, type: e.target.value}))}
-                    className="px-2 py-1.5 bg-black/40 border border-white/10 rounded text-xs text-slate-300 outline-none">
-                    <option value="auto">Auto</option>
-                    <option value="manual">Manual</option>
-                  </select>
-                  <input value={newInd.target} onChange={e => setNewInd(p => ({...p, target: e.target.value}))}
-                    placeholder="목표 (예: >20%)"
-                    className="flex-1 px-2 py-1.5 bg-black/40 border border-white/10 rounded text-xs text-slate-200 outline-none" />
-                  <input type="number" value={newInd.weight} onChange={e => setNewInd(p => ({...p, weight: parseInt(e.target.value)||10}))}
-                    className="w-16 px-2 py-1.5 bg-black/40 border border-white/10 rounded text-xs text-slate-200 outline-none"
-                    placeholder="가중치" />
-                </div>
-                <button onClick={addIndicator}
-                  className="w-full py-1.5 rounded text-xs font-bold bg-amber-600/20 text-amber-500 border border-amber-500/30 hover:bg-amber-600/30">
-                  등록
-                </button>
-              </div>
-            )}
-
-            {localIndicators.length === 0 ? (
-              <div className="text-center py-6 text-slate-600 text-xs">
-                등록된 모니터링 지표가 없습니다
-              </div>
+            <div className="text-[11px] font-bold text-slate-400 tracking-wider font-mono mb-3">MONITORING INDICATORS</div>
+            {indicators.length === 0 ? (
+              <div className="text-center py-4 text-slate-600 text-xs">AI 자동 평가를 실행하면 지표가 생성됩니다</div>
             ) : (
-              localIndicators.map((ind, i) => (
-                <div key={i} className="group relative">
-                  <IndicatorRow ind={ind} onChange={(score) => handleIndicatorChange(i, score)} />
-                  <button onClick={() => removeIndicator(i)}
-                    className="absolute right-0 top-1 text-[8px] text-red-400/40 hover:text-red-400 opacity-0 group-hover:opacity-100 transition">✕</button>
-                </div>
-              ))
+              indicators.map((ind, i) => {
+                const subs = ind.sub_indicators || [];
+                const indScore = subs.length > 0
+                  ? Math.round(subs.reduce((s, sub) => s + (sub.score ?? 50), 0) / subs.length)
+                  : (ind.score ?? 50);
+                return (
+                  <div key={i} className="mb-3 last:mb-0">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[11px] font-bold text-slate-300">{ind.name}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[9px] text-slate-600">w:{ind.weight}%</span>
+                        <span className="text-sm font-mono font-bold" style={{ color: sc(indScore) }}>{indScore}</span>
+                      </div>
+                    </div>
+                    {/* Score bar */}
+                    <div className="h-1.5 bg-white/[0.04] rounded-full mb-2 overflow-hidden">
+                      <div className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${indScore}%`, background: sc(indScore) }} />
+                    </div>
+                    {/* Sub indicators */}
+                    {subs.map((sub, j) => (
+                      <div key={j} className="flex items-center gap-2 py-1 pl-3 text-[10px] border-l-2 border-white/[0.04]">
+                        <span className="flex-1 text-slate-500">{sub.name}</span>
+                        <span className="text-slate-600 text-[9px]">{sub.current || "—"}</span>
+                        <span className="font-mono font-bold w-6 text-right" style={{ color: sc(sub.score ?? 50) }}>
+                          {sub.score ?? "—"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })
             )}
           </div>
 
+          {/* Momentum */}
+          <MomentumSection momentum={momentum} />
+
           {/* Thesis */}
           <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-4 space-y-3">
-            <div className="text-[11px] font-bold text-slate-400 tracking-wider font-mono mb-2">THESIS</div>
+            <div className="text-[11px] font-bold text-slate-400 tracking-wider font-mono mb-2">INVESTMENT THESIS</div>
             {[
+              { label: "🎯 CORE THESIS", color: "#d4a843", text: thesis.core_thesis },
               { label: "▲ BULL CASE", color: "#4ade80", text: thesis.bull_case },
               { label: "▼ BEAR CASE", color: "#ef4444", text: thesis.bear_case },
-              { label: "⚡ CATALYSTS", color: "#d4a843", text: thesis.catalysts },
-              { label: "📊 KEY METRICS", color: "#8b5cf6", text: thesis.key_metrics },
-              { label: "🎯 ENTRY / EXIT", color: "#06b6d4", text: thesis.entry_exit },
+              { label: "⚡ CATALYSTS", color: "#a78bfa", text: thesis.catalysts },
+              { label: "📊 KEY METRICS", color: "#06b6d4", text: thesis.key_metrics },
             ].map(({ label, color, text }) => text && (
               <div key={label}>
                 <div className="text-[10px] font-bold mb-1" style={{ color }}>{label}</div>
@@ -248,9 +280,9 @@ function DetailPanel({ stock, onClose, onUpdate, onDelete }) {
             <div className="text-[11px] font-bold text-slate-400 tracking-wider font-mono mb-2">KELLY CRITERION</div>
             <div className="flex gap-4 text-center">
               {[
-                { label: "Full Kelly", value: kelly.full },
-                { label: "Half Kelly", value: kelly.half },
-                { label: "Quarter Kelly", value: kelly.quarter },
+                { label: "Full", value: kelly.full },
+                { label: "Half", value: kelly.half },
+                { label: "Quarter", value: kelly.quarter },
               ].map(({ label, value }) => (
                 <div key={label} className="flex-1 bg-black/20 rounded-lg py-2">
                   <div className="text-lg font-mono font-bold text-amber-500">{value}%</div>
@@ -258,13 +290,10 @@ function DetailPanel({ stock, onClose, onUpdate, onDelete }) {
                 </div>
               ))}
             </div>
-            <div className="text-[9px] text-slate-600 mt-2 text-center font-mono">
-              Win Prob: {((stock.kelly_win_prob || 0.5) * 100).toFixed(0)}% · W/L Ratio: {(stock.kelly_wl_ratio || 2.0).toFixed(1)}x
-            </div>
           </div>
 
           {/* Delete */}
-          <div className="flex justify-end">
+          <div className="flex justify-end pt-2">
             <button onClick={() => { onDelete(stock.id); dbDelete(stock.id); onClose(); }}
               className="px-4 py-2 rounded-md text-xs border border-red-500/20 text-red-400 hover:bg-red-500/10 transition">
               종목 삭제
@@ -278,12 +307,9 @@ function DetailPanel({ stock, onClose, onUpdate, onDelete }) {
 
 // ── Stock Card ──
 function StockCard({ stock, onClick }) {
-  const st = ST[stock.status] || ST.WATCHING;
   const cat = stock.category || "OTHER";
   const indicators = stock.indicators || [];
-  const totalScore = indicators.length > 0
-    ? Math.round(indicators.reduce((s, i) => s + (i.score ?? 50) * (i.weight || 1), 0) / Math.max(1, indicators.reduce((s, i) => s + (i.weight || 1), 0)))
-    : 0;
+  const totalScore = calcTotalScore(indicators);
 
   return (
     <div onClick={onClick}
@@ -294,24 +320,30 @@ function StockCard({ stock, onClick }) {
           <span className="text-[14px] font-extrabold text-slate-100 font-mono">{stock.ticker}</span>
           <span className="text-[8px] px-1.5 py-0.5 rounded-full font-semibold border"
             style={{ background: `${CC[cat]}15`, color: CC[cat], borderColor: `${CC[cat]}33` }}>{cat}</span>
-          <span className="text-[8px] px-1.5 py-0.5 rounded-full font-semibold"
-            style={{ background: `${st.c}15`, color: st.c }}>{st.icon} {st.label}</span>
         </div>
         <div className="text-[11px] text-slate-500 mt-0.5 truncate">{stock.thesis_oneliner || "—"}</div>
       </div>
-      <div className="text-[10px] text-slate-600">▶</div>
+      <div className="text-right shrink-0">
+        {stock.momentum?.current_price && (
+          <div className="text-[11px] font-mono font-bold text-slate-300">
+            {stock.momentum.current_price.toLocaleString()}
+          </div>
+        )}
+        <div className="text-[9px] text-slate-600">
+          {indicators.length > 0 ? `${indicators.length}개 지표` : "미평가"}
+        </div>
+      </div>
     </div>
   );
 }
 
-// ── Main Page ──
+// ── Main ──
 export default function RadarPage() {
   const [stocks, setStocks] = useState([]);
   const [selectedStock, setSelectedStock] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [searchResult, setSearchResult] = useState(null);
-  const [sFilter, setSFilter] = useState("ALL");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { dbFetch().then(d => { setStocks(d); setLoading(false); }); }, []);
@@ -327,10 +359,10 @@ export default function RadarPage() {
         body: JSON.stringify({ query: searchQuery.trim() }),
       });
       if (res.ok) {
-        const data = await res.json();
-        setSearchResult(data);
+        setSearchResult(await res.json());
       } else {
-        setSearchResult({ error: "검색 실패" });
+        const err = await res.json();
+        setSearchResult({ error: err.error || "검색 실패" });
       }
     } catch (e) {
       setSearchResult({ error: e.message });
@@ -344,18 +376,22 @@ export default function RadarPage() {
       exchange: result.exchange || "NYSE",
       name: result.name || result.ticker,
       category: result.category || "OTHER",
-      status: "WATCHING",
+      status: "ACTIVE",
       thesis_oneliner: result.thesis_oneliner || "",
-      thesis_json: {
+      thesis_json: result.thesis_detail || {
+        core_thesis: result.core_thesis || "",
         bull_case: result.bull_case || "",
         bear_case: result.bear_case || "",
         catalysts: result.catalysts || "",
         key_metrics: result.key_metrics || "",
-        entry_exit: result.entry_exit || "",
       },
-      indicators: (result.suggested_indicators || []).map(ind => ({ ...ind, score: 50 })),
-      kelly_win_prob: result.win_prob || 0.5,
-      kelly_wl_ratio: result.wl_ratio || 2.0,
+      indicators: (result.monitoring_indicators || []).map(ind => ({
+        ...ind,
+        sub_indicators: (ind.sub_indicators || []).map(s => ({ ...s })),
+      })),
+      momentum: result.momentum || null,
+      kelly_win_prob: result.kelly_win_prob || 0.5,
+      kelly_wl_ratio: result.kelly_wl_ratio || 2.0,
     };
     const saved = await dbInsert(row);
     if (saved) {
@@ -365,31 +401,24 @@ export default function RadarPage() {
     }
   }, []);
 
-  const filtered = stocks.filter(s => sFilter === "ALL" || s.status === sFilter);
-  const counts = stocks.reduce((a, s) => { a[s.status] = (a[s.status] || 0) + 1; return a; }, {});
   const existingTickers = new Set(stocks.map(s => s.ticker));
 
   return (
     <div className="min-h-screen bg-[#0a0e18] text-slate-200">
       <header className="sticky top-0 z-40 border-b border-white/[0.04] bg-[#0a0e18]/95 backdrop-blur-md">
         <div className="max-w-2xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <Link href="/" className="text-[10px] text-slate-600 hover:text-slate-400 transition-colors">← Control Tower</Link>
-              <h1 className="text-lg font-extrabold font-mono text-amber-500 tracking-[3px] mt-1">🐺 WOLF RADAR</h1>
-              <p className="text-[11px] text-slate-600 mt-0.5">종목 검색 · 등록 · 모니터링 · {stocks.length}개 추적 중</p>
-            </div>
+          <div className="mb-3">
+            <Link href="/" className="text-[10px] text-slate-600 hover:text-slate-400 transition-colors">← Control Tower</Link>
+            <h1 className="text-lg font-extrabold font-mono text-amber-500 tracking-[3px] mt-1">🐺 WOLF RADAR</h1>
+            <p className="text-[11px] text-slate-600 mt-0.5">종목 검색 · AI 분석 · 모니터링 스코어링 · {stocks.length}개 추적 중</p>
           </div>
 
-          {/* Search Bar */}
+          {/* Search */}
           <div className="flex gap-2 mb-3">
-            <input
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
+            <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
               onKeyDown={e => e.key === "Enter" && handleSearch()}
-              placeholder="종목명 또는 티커 검색... (예: TSLA, 삼성전자, NVDA)"
-              className="flex-1 px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl text-sm text-slate-200 outline-none focus:border-amber-500/50 transition-colors placeholder:text-slate-700"
-            />
+              placeholder="종목명/티커 검색 (TSLA, 삼성전자, 9618.HK, MiniMax...)"
+              className="flex-1 px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl text-sm text-slate-200 outline-none focus:border-amber-500/50 transition-colors placeholder:text-slate-700" />
             <button onClick={handleSearch} disabled={searching || !searchQuery.trim()}
               className="px-5 py-2.5 rounded-xl text-xs font-extrabold font-mono tracking-wider disabled:opacity-40"
               style={{ background: "linear-gradient(135deg,#d4a843,#b8860b)", color: "#0a0e18" }}>
@@ -399,8 +428,8 @@ export default function RadarPage() {
 
           {/* Search Result */}
           {searching && (
-            <div className="text-center py-4 text-amber-500 text-sm animate-pulse font-mono">
-              AI가 종목을 분석하고 있습니다...
+            <div className="text-center py-6 text-amber-500 text-sm animate-pulse font-mono">
+              AI가 종목을 분석하고 모니터링 지표를 생성하고 있습니다...
             </div>
           )}
 
@@ -420,51 +449,48 @@ export default function RadarPage() {
                   </button>
                 )}
               </div>
-              <div className="text-[12px] text-amber-400/80 italic mb-2">{searchResult.thesis_oneliner}</div>
-              <div className="grid grid-cols-2 gap-2 text-[10px]">
-                {searchResult.bull_case && (
-                  <div className="bg-green-500/5 border border-green-500/10 rounded p-2">
-                    <div className="text-green-400 font-bold mb-1">▲ Bull Case</div>
-                    <div className="text-slate-400 leading-relaxed">{searchResult.bull_case?.slice(0, 120)}...</div>
-                  </div>
-                )}
-                {searchResult.bear_case && (
-                  <div className="bg-red-500/5 border border-red-500/10 rounded p-2">
-                    <div className="text-red-400 font-bold mb-1">▼ Bear Case</div>
-                    <div className="text-slate-400 leading-relaxed">{searchResult.bear_case?.slice(0, 120)}...</div>
-                  </div>
-                )}
-              </div>
-              {searchResult.suggested_indicators && (
-                <div className="mt-2 text-[9px] text-slate-600">
-                  추천 모니터링 지표: {searchResult.suggested_indicators.map(i => i.name).join(" · ")}
+              <div className="text-[12px] text-amber-400/80 italic mb-3">{searchResult.thesis_oneliner}</div>
+
+              {/* Preview thesis */}
+              {searchResult.thesis_detail?.core_thesis && (
+                <div className="text-[10px] text-slate-400 leading-relaxed mb-2 bg-black/20 rounded-lg p-2.5">
+                  {searchResult.thesis_detail.core_thesis.slice(0, 200)}...
+                </div>
+              )}
+
+              {/* Preview indicators */}
+              {searchResult.monitoring_indicators && (
+                <div className="flex flex-wrap gap-1.5">
+                  {searchResult.monitoring_indicators.map((ind, i) => {
+                    const avg = ind.sub_indicators?.length > 0
+                      ? Math.round(ind.sub_indicators.reduce((s, sub) => s + (sub.score || 50), 0) / ind.sub_indicators.length) : 50;
+                    return (
+                      <div key={i} className="flex items-center gap-1 text-[9px] px-2 py-1 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                        <span className="text-slate-500">{ind.name}</span>
+                        <span className="font-mono font-bold" style={{ color: sc(avg) }}>{avg}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Momentum preview */}
+              {searchResult.momentum && (
+                <div className="flex gap-2 mt-2 text-[9px]">
+                  <span className="text-slate-600">현재가: {searchResult.momentum.current_price?.toLocaleString()}</span>
+                  <span className={searchResult.momentum.ma_aligned ? "text-green-400" : "text-red-400"}>
+                    {searchResult.momentum.ma_aligned ? "이평선 정배열 ✓" : "이평선 역배열"}
+                  </span>
+                  <span className={searchResult.momentum.ma120_trend === "up" ? "text-green-400" : "text-slate-500"}>
+                    120MA {searchResult.momentum.ma120_trend}
+                  </span>
                 </div>
               )}
             </div>
           )}
 
           {searchResult?.error && (
-            <div className="text-center py-3 text-red-400 text-xs">{searchResult.error}</div>
-          )}
-
-          {/* Status Filters */}
-          {stocks.length > 0 && (
-            <div className="flex gap-1.5 flex-wrap">
-              <button onClick={() => setSFilter("ALL")}
-                className={`px-3 py-1 rounded-full text-[10px] font-semibold border transition-all ${sFilter === "ALL" ? "border-slate-400/20 bg-slate-400/10 text-slate-300" : "border-white/[0.04] text-slate-600"}`}>
-                ALL ({stocks.length})</button>
-              {Object.entries(ST).map(([key, { icon, c }]) => (
-                counts[key] ? (
-                  <button key={key} onClick={() => setSFilter(sFilter === key ? "ALL" : key)}
-                    className="px-3 py-1 rounded-full text-[10px] font-semibold border transition-all"
-                    style={{
-                      borderColor: sFilter === key ? `${c}55` : "rgba(255,255,255,0.04)",
-                      background: sFilter === key ? `${c}12` : "transparent",
-                      color: sFilter === key ? c : "#4a5568",
-                    }}>{icon} {counts[key]}</button>
-                ) : null
-              ))}
-            </div>
+            <div className="text-center py-3 text-red-400 text-xs mb-2">{searchResult.error}</div>
           )}
         </div>
       </header>
@@ -477,13 +503,12 @@ export default function RadarPage() {
             <div className="text-6xl">🐺</div>
             <div className="text-center font-mono text-slate-500 leading-relaxed">
               Wolf Radar 활성화 대기 중<br />
-              <span className="text-xs text-slate-600">위 검색창에서 종목을 검색하여 등록하세요</span>
+              <span className="text-xs text-slate-600">위 검색창에서 종목을 검색하여 등록하세요</span><br />
+              <span className="text-[10px] text-slate-700">US, KR, HK, JP 등 글로벌 주식 검색 가능</span>
             </div>
           </div>
-        ) : filtered.length === 0 ? (
-          <div className="text-center py-16 text-slate-600 text-sm">필터 조건에 맞는 종목 없음</div>
         ) : (
-          filtered.map(s => (
+          stocks.map(s => (
             <StockCard key={s.id} stock={s} onClick={() => setSelectedStock(s)} />
           ))
         )}
