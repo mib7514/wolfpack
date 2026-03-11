@@ -227,78 +227,91 @@ const INITIAL_TOP10 = TOP10_DEFICIT.map((c) => {
 const ETF_DATA = [
   {
     name: "KODEX 코스닥150", code: "229200", aum: "7.5조", fee: "0.20%",
-    note: "코스닥 대표 150종목. 시총 가중. 패시브",
+    note: "코스닥 대표 150종목 패시브. 시총 가중. B/D/E 전종목 자연 편입",
     holdings: [
-      { name: "에코프로", weight: 8.2 },
-      { name: "에코프로비엠", weight: 7.0 },
-      { name: "로보티즈", weight: 1.3 },
-      { name: "테크윙", weight: 0.9 },
-      { name: "서진시스템", weight: 1.0 },
-      { name: "원익홀딩스", weight: 0.9 },
-      { name: "하나마이크론", weight: 0.8 },
-      { name: "성호전자", weight: 0.9 },
-      { name: "태성", weight: 0.8 },
-      { name: "알지노믹스", weight: 0.8 },
+      { name: "에코프로", weight: 8.2 }, { name: "에코프로비엠", weight: 7.0 },
+      { name: "로보티즈", weight: 1.3 }, { name: "테크윙", weight: 0.9 },
+      { name: "서진시스템", weight: 1.0 }, { name: "원익홀딩스", weight: 0.9 },
+      { name: "하나마이크론", weight: 0.8 }, { name: "성호전자", weight: 0.9 },
+      { name: "태성", weight: 0.8 }, { name: "알지노믹스", weight: 0.8 },
+      { name: "엔켐", weight: 0.7 }, { name: "카카오게임즈", weight: 0.7 },
+      { name: "나노신소재", weight: 0.5 }, { name: "심텍", weight: 0.5 },
+      { name: "인텔리안테크", weight: 0.5 }, { name: "고영", weight: 0.4 },
+      { name: "차바이오텍", weight: 0.3 }, { name: "엘앤에프", weight: 0.6 },
+      { name: "우리기술", weight: 0.3 }, { name: "CJ ENM", weight: 0.3 },
+      { name: "씨젠", weight: 0.3 }, { name: "필에너지", weight: 0.2 },
+      { name: "티에스이", weight: 0.2 }, { name: "네오위즈", weight: 0.2 },
+      { name: "위메이드", weight: 0.2 }, { name: "씨아이에스", weight: 0.1 },
+    ],
+  },
+  {
+    name: "TIGER 코스닥150", code: "232080", aum: "1.3조", fee: "0.19%",
+    note: "KODEX와 동일 지수. 최저 보수 패시브. B/D/E 전종목 자연 편입",
+    holdings: [
+      { name: "에코프로", weight: 8.2 }, { name: "에코프로비엠", weight: 7.0 },
+      { name: "로보티즈", weight: 1.3 }, { name: "테크윙", weight: 0.9 },
+      { name: "서진시스템", weight: 1.0 }, { name: "원익홀딩스", weight: 0.9 },
+      { name: "하나마이크론", weight: 0.8 }, { name: "성호전자", weight: 0.9 },
+      { name: "태성", weight: 0.8 }, { name: "알지노믹스", weight: 0.8 },
+      { name: "엔켐", weight: 0.7 }, { name: "카카오게임즈", weight: 0.7 },
+      { name: "나노신소재", weight: 0.5 }, { name: "심텍", weight: 0.5 },
+      { name: "인텔리안테크", weight: 0.5 }, { name: "고영", weight: 0.4 },
+      { name: "차바이오텍", weight: 0.3 }, { name: "엘앤에프", weight: 0.6 },
+      { name: "우리기술", weight: 0.3 }, { name: "CJ ENM", weight: 0.3 },
+      { name: "씨젠", weight: 0.3 }, { name: "필에너지", weight: 0.2 },
+      { name: "티에스이", weight: 0.2 }, { name: "네오위즈", weight: 0.2 },
+      { name: "위메이드", weight: 0.2 }, { name: "씨아이에스", weight: 0.1 },
     ],
   },
   {
     name: "TIME 코스닥액티브", code: "신규", aum: "4,770억(첫날)", fee: "0.80%",
-    note: "🆕 3/10 상장. 타임폴리오. Core(대형주)+Satellite(테마). 50종목. 2차전지·바이오 중심",
+    note: "🆕 3/10 상장. 타임폴리오. Core+Satellite. 50종목. 2차전지·바이오 중심",
     holdings: [
-      { name: "에코프로", weight: 9.76 },
-      { name: "에코프로비엠", weight: 6.89 },
-      { name: "알지노믹스", weight: 2.2 },
-      { name: "로보티즈", weight: 1.8 },
+      { name: "에코프로", weight: 9.76 }, { name: "에코프로비엠", weight: 6.89 },
+      { name: "알지노믹스", weight: 2.2 }, { name: "로보티즈", weight: 1.8 },
+      { name: "서진시스템", weight: 0.9 }, { name: "성호전자", weight: 0.7 },
+      { name: "태성", weight: 0.6 }, { name: "테크윙", weight: 0.7 },
+      { name: "하나마이크론", weight: 0.5 }, { name: "원익홀딩스", weight: 0.5 },
+      { name: "엘앤에프", weight: 1.5 }, { name: "나노신소재", weight: 0.8 },
     ],
   },
   {
     name: "KoAct 코스닥액티브", code: "신규", aum: "5,950억(첫날)", fee: "0.50%",
     note: "🆕 3/10 상장. 삼성액티브. 성장주70%+가치주30%. 57종목. 공격적 종목 발굴",
     holdings: [
-      { name: "성호전자", weight: 8.74 },
-      { name: "로보티즈", weight: 3.0 },
-      { name: "테크윙", weight: 2.0 },
-      { name: "서진시스템", weight: 1.5 },
+      { name: "성호전자", weight: 8.74 }, { name: "로보티즈", weight: 3.0 },
+      { name: "테크윙", weight: 2.0 }, { name: "서진시스템", weight: 1.5 },
+      { name: "에코프로비엠", weight: 2.5 }, { name: "에코프로", weight: 2.0 },
+      { name: "인텔리안테크", weight: 3.0 }, { name: "고영", weight: 1.5 },
+      { name: "심텍", weight: 1.0 }, { name: "엘앤에프", weight: 1.0 },
+      { name: "하나마이크론", weight: 1.0 }, { name: "원익홀딩스", weight: 0.8 },
+      { name: "태성", weight: 0.5 }, { name: "위메이드", weight: 0.5 },
     ],
   },
   {
     name: "KODEX 2차전지산업", code: "305720", aum: "8,500억", fee: "0.45%",
-    note: "2차전지 밸류체인 25종목. 최대 편입 20% 캡",
+    note: "2차전지 밸류체인 25종목. B유형 사이클 턴어라운드 집중",
     holdings: [
-      { name: "에코프로비엠", weight: 12.5 },
-      { name: "에코프로", weight: 8.0 },
-    ],
-  },
-  {
-    name: "TIGER 코스닥150", code: "232080", aum: "1.3조", fee: "0.19%",
-    note: "KODEX와 동일 지수. 수수료 최저 수준 패시브",
-    holdings: [
-      { name: "에코프로", weight: 8.2 },
-      { name: "에코프로비엠", weight: 7.0 },
-      { name: "로보티즈", weight: 1.3 },
-      { name: "테크윙", weight: 0.9 },
-      { name: "서진시스템", weight: 1.0 },
-      { name: "원익홀딩스", weight: 0.9 },
-      { name: "하나마이크론", weight: 0.8 },
-      { name: "성호전자", weight: 0.9 },
-      { name: "태성", weight: 0.8 },
-      { name: "알지노믹스", weight: 0.8 },
+      { name: "에코프로비엠", weight: 12.5 }, { name: "에코프로", weight: 8.0 },
+      { name: "엘앤에프", weight: 5.0 }, { name: "나노신소재", weight: 2.0 },
+      { name: "엔켐", weight: 3.0 }, { name: "필에너지", weight: 1.5 },
+      { name: "씨아이에스", weight: 1.0 },
     ],
   },
   {
     name: "KODEX 코스닥150IT", code: "261060", aum: "1,100억", fee: "0.25%",
-    note: "코스닥 IT 섹터 집중. 반도체/전자 비중 높음",
+    note: "코스닥 IT 섹터 집중. B/D유형 반도체장비 밀집",
     holdings: [
-      { name: "테크윙", weight: 3.8 },
-      { name: "서진시스템", weight: 3.5 },
-      { name: "하나마이크론", weight: 3.2 },
-      { name: "원익홀딩스", weight: 3.0 },
-      { name: "태성", weight: 2.8 },
+      { name: "테크윙", weight: 3.8 }, { name: "서진시스템", weight: 3.5 },
+      { name: "하나마이크론", weight: 3.2 }, { name: "원익홀딩스", weight: 3.0 },
+      { name: "태성", weight: 2.8 }, { name: "성호전자", weight: 2.0 },
+      { name: "심텍", weight: 1.8 }, { name: "고영", weight: 1.5 },
+      { name: "인텔리안테크", weight: 1.2 }, { name: "티에스이", weight: 1.0 },
     ],
   },
   {
     name: "TIGER 코리아휴머노이드로봇", code: "490600", aum: "2,800억", fee: "0.45%",
-    note: "휴머노이드 로봇 산업 집중. 레인보우로보틱스 15.7%",
+    note: "휴머노이드 로봇 산업 집중. B유형 로보티즈 10.9%",
     holdings: [
       { name: "로보티즈", weight: 10.9 },
     ],
@@ -312,36 +325,56 @@ const ETF_DATA = [
   },
   {
     name: "KoAct AI인프라액티브", code: "KoAct", aum: "2,100억", fee: "0.50%",
-    note: "삼성액티브. AI 인프라 핵심 기업. 반도체 장비·소재 집중",
+    note: "삼성액티브. AI 인프라 핵심. B/D유형 반도체장비 집중",
     holdings: [
-      { name: "테크윙", weight: 4.5 },
-      { name: "서진시스템", weight: 2.8 },
-      { name: "하나마이크론", weight: 2.2 },
+      { name: "테크윙", weight: 4.5 }, { name: "서진시스템", weight: 2.8 },
+      { name: "하나마이크론", weight: 2.2 }, { name: "고영", weight: 2.0 },
+      { name: "심텍", weight: 1.5 }, { name: "원익홀딩스", weight: 1.0 },
     ],
   },
   {
     name: "PLUS 코스닥150액티브", code: "신규(3/17)", aum: "상장 예정", fee: "0.15%",
-    note: "🔜 3/17 상장 예정. 한화. 코스닥150 기반 네거티브 스크리닝+30종목 집중. 최저 보수",
+    note: "🔜 3/17 상장 예정. 한화. 코스닥150 네거티브 스크리닝+30종목 압축. 최저 보수",
     holdings: [
-      { name: "에코프로", weight: 7.0 },
-      { name: "에코프로비엠", weight: 6.0 },
-      { name: "로보티즈", weight: 1.5 },
-      { name: "테크윙", weight: 1.0 },
+      { name: "에코프로", weight: 7.0 }, { name: "에코프로비엠", weight: 6.0 },
+      { name: "로보티즈", weight: 1.5 }, { name: "테크윙", weight: 1.0 },
+      { name: "서진시스템", weight: 1.5 }, { name: "성호전자", weight: 1.0 },
+      { name: "하나마이크론", weight: 0.8 }, { name: "태성", weight: 0.8 },
+      { name: "엘앤에프", weight: 1.2 }, { name: "원익홀딩스", weight: 0.5 },
     ],
   },
 ];
 
-// ETF 가중노출도 계산 (top10 리스트를 파라미터로 받아 동적 계산)
-function calcETFScores(top10Scored) {
+// ETF B/D/E 비대칭매력 노출도 계산 — 150종목 전체 대상
+function calcETFScores(allCompanies) {
+  const bdeCompanies = allCompanies.filter(c => c.type === "B" || c.type === "D" || c.type === "E");
+  const bdeNames = new Set(bdeCompanies.map(c => c.name));
+
   return ETF_DATA.map((etf) => {
-    const top10Names = new Set(top10Scored.map((c) => c.name));
-    const matchedHoldings = etf.holdings.filter((h) => top10Names.has(h.name));
-    const totalExposure = matchedHoldings.reduce((sum, h) => sum + h.weight, 0);
-    const qualityExposure = matchedHoldings.reduce((sum, h) => {
-      const comp = top10Scored.find((c) => c.name === h.name);
-      return sum + h.weight * (comp ? comp.totalScore / 100 : 0);
-    }, 0);
-    return { ...etf, matchedHoldings, totalExposure: Math.round(totalExposure * 10) / 10, qualityExposure: Math.round(qualityExposure * 10) / 10, matchCount: matchedHoldings.length };
+    // ETF 편입종목 중 B/D/E 유형만 필터
+    const matchedHoldings = (etf.holdings || [])
+      .filter(h => bdeNames.has(h.name))
+      .map(h => {
+        const comp = bdeCompanies.find(c => c.name === h.name);
+        return { ...h, type: comp?.type, detail: comp?.detail };
+      });
+
+    const bdeExposure = Math.round(matchedHoldings.reduce((s, h) => s + h.weight, 0) * 10) / 10;
+    const bdeCount = matchedHoldings.length;
+
+    // 유형별 노출도
+    const byType = { B: 0, D: 0, E: 0 };
+    matchedHoldings.forEach(h => { if (byType[h.type] !== undefined) byType[h.type] += h.weight; });
+    Object.keys(byType).forEach(k => { byType[k] = Math.round(byType[k] * 10) / 10; });
+
+    return {
+      ...etf,
+      matchedHoldings,
+      totalExposure: bdeExposure,
+      bdeCount,
+      byType,
+      matchCount: bdeCount,
+    };
   }).sort((a, b) => b.totalExposure - a.totalExposure);
 }
 
@@ -411,8 +444,8 @@ export default function DeficitAnalysisPage() {
   const [lastUpdate, setLastUpdate] = useState("2026.03.06 (초기 수동 데이터)");
   const [companies] = useState(SEED_COMPANIES);
 
-  // ETF 스코어를 top10 변경 시 자동 재계산
-  const etfScored = useMemo(() => calcETFScores(top10Data), [top10Data]);
+  // ETF B/D/E 노출도 — 150종목 전체 대상 계산
+  const etfScored = useMemo(() => calcETFScores(companies), [companies]);
 
   const handleAiUpdate = useCallback(async () => {
     setAiLoading(true);
@@ -685,28 +718,30 @@ export default function DeficitAnalysisPage() {
         {activeTab === "etf" && (
           <div>
             <div className="bg-[#111827] border border-[#1E2636] rounded-lg p-5 mb-4">
-              <div className="text-sm font-bold text-[#4EA8FF] mb-2">ETF 가중 노출도 매칭</div>
+              <div className="text-sm font-bold text-[#4EA8FF] mb-2">ETF 비대칭매력(B/D/E) 노출도 매칭</div>
               <div className="text-xs text-[#8892A4] leading-relaxed">
-                단순 편입 종목 수가 아니라 <span className="text-[#FFB800] font-bold">Top10 적자기업에 실질적으로 몇 %나 노출되는지</span>를 기준으로 순위화.
-                1억 투자 시 Top10 기업에 합산 얼마나 배분되는지 = <span className="text-[#4EA8FF] font-bold">가중 노출도</span>.
-                추가로 종목별 스코어를 반영한 <span className="text-[#00CC66] font-bold">품질 가중 노출도</span>도 함께 표시.
+                150종목 중 <span className="text-[#FFB800] font-bold">비대칭 수익 기회가 큰 B·D·E 유형</span>에 실질적으로 몇 %나 노출되는지 기준으로 순위화.
+                B=영업적자(GP흑) · D=순손실(OP흑) · E=FCF적자(NI흑) — 턴어라운드 시 리레이팅 기대가 큰 유형.
+                <span className="text-[#4EA8FF] font-bold">B/D/E 노출도</span> = ETF 편입종목 중 B/D/E 기업 비중 합산.
               </div>
             </div>
 
             <div className="bg-[#111827] border border-[#1E2636] rounded-lg overflow-hidden">
               {/* 헤더 */}
               <div className="grid gap-3 px-4 py-3 text-[11px] font-bold text-[#6B7894] border-b-2 border-[#1E2636]"
-                style={{ gridTemplateColumns: "2fr 80px 80px 70px 60px 3fr" }}>
+                style={{ gridTemplateColumns: "2fr 80px 60px 60px 60px 70px 60px 3fr" }}>
                 <span>ETF명</span>
-                <span className="text-center">가중노출</span>
-                <span className="text-center">품질가중</span>
+                <span className="text-center">B/D/E 노출</span>
+                <span className="text-center">B형</span>
+                <span className="text-center">D형</span>
+                <span className="text-center">E형</span>
                 <span className="text-center">AUM</span>
                 <span className="text-center">보수</span>
-                <span>편입 종목 (비중%)</span>
+                <span>B/D/E 편입종목 (비중%)</span>
               </div>
               {etfScored.map((etf) => (
-                <div key={etf.code} className="grid gap-3 px-4 py-3.5 border-b border-[#1E2636] items-center text-xs hover:bg-[#1A2030] transition"
-                  style={{ gridTemplateColumns: "2fr 80px 80px 70px 60px 3fr" }}>
+                <div key={etf.code || etf.name} className="grid gap-3 px-4 py-3.5 border-b border-[#1E2636] items-center text-xs hover:bg-[#1A2030] transition"
+                  style={{ gridTemplateColumns: "2fr 80px 60px 60px 60px 70px 60px 3fr" }}>
                   <div>
                     <div className="font-bold text-sm">{etf.name}</div>
                     <div className="text-[10px] text-[#5A6478] font-mono">{etf.code}</div>
@@ -715,17 +750,17 @@ export default function DeficitAnalysisPage() {
                     <span className={`font-mono text-lg font-black ${etf.totalExposure >= 15 ? "text-[#FFB800]" : etf.totalExposure >= 5 ? "text-[#4EA8FF]" : "text-[#5A6478]"}`}>
                       {etf.totalExposure}%
                     </span>
+                    <div className="text-[9px] text-[#5A6478]">{etf.bdeCount}종목</div>
                   </div>
-                  <div className="text-center">
-                    <span className="font-mono text-sm font-bold text-[#00CC66]">{etf.qualityExposure}</span>
-                  </div>
+                  <div className="text-center font-mono text-sm font-bold text-[#FFB800]">{etf.byType?.B || 0}%</div>
+                  <div className="text-center font-mono text-sm font-bold text-[#4EA8FF]">{etf.byType?.D || 0}%</div>
+                  <div className="text-center font-mono text-sm font-bold text-[#888]">{etf.byType?.E || 0}%</div>
                   <div className="text-center font-mono text-[#8892A4]">{etf.aum}</div>
                   <div className="text-center font-mono text-[#8892A4]">{etf.fee}</div>
                   <div>
                     <div className="flex flex-wrap gap-1 mb-1">
                       {etf.matchedHoldings.sort((a, b) => b.weight - a.weight).map((h) => {
-                        const comp = top10Data.find((c) => c.name === h.name);
-                        const dt = comp ? DEFICIT_TYPES[comp.type] : DEFICIT_TYPES["흑자"];
+                        const dt = DEFICIT_TYPES[h.type] || DEFICIT_TYPES["흑자"];
                         return (
                           <span key={h.name} className="text-[10px] px-1.5 py-0.5 rounded font-mono"
                             style={{ background: dt.bg, color: dt.color, border: `1px solid ${dt.color}30` }}>
@@ -742,12 +777,12 @@ export default function DeficitAnalysisPage() {
 
             {/* 전략 제안 */}
             <div className="bg-[#111827] border border-[#1E2636] rounded-lg p-5 mt-4">
-              <div className="text-sm font-bold text-[#FFB800] mb-2">💡 전략 제안</div>
+              <div className="text-sm font-bold text-[#FFB800] mb-2">💡 B/D/E 비대칭매력 투자 전략</div>
               <div className="text-xs text-[#8892A4] leading-relaxed space-y-1">
-                <p><strong className="text-[#E0E4EC]">Core (50%)</strong>: KODEX/TIGER 코스닥150 — 가중노출 22.6%. 10종목 전부 자연 편입. 최저 보수</p>
-                <p><strong className="text-[#E0E4EC]">Active (30%)</strong>: TIME 코스닥액티브 or KoAct 코스닥액티브 — 에코프로 9.8% 오버웨이트(TIME) 또는 성호전자 8.7% 집중(KoAct). 운용역 재량 알파 기대</p>
-                <p><strong className="text-[#E0E4EC]">Satellite (10%)</strong>: KODEX 2차전지산업 — 에코프로+비엠 합산 20.5%. B유형 사이클 턴어라운드 베팅</p>
-                <p><strong className="text-[#E0E4EC]">Alpha (10%)</strong>: 서진시스템·태성 직접 매수 — D유형 고점수 종목. 액티브 ETF에서도 비중 부족한 종목 오버웨이트</p>
+                <p><strong className="text-[#E0E4EC]">Core (50%)</strong>: KODEX/TIGER 코스닥150 — B/D/E 26종목 자연 편입(약 28%). 최저 보수로 광범위 노출</p>
+                <p><strong className="text-[#E0E4EC]">Active (30%)</strong>: TIME or KoAct 코스닥액티브 — 운용역이 B유형(에코프로·엘앤에프) 오버웨이트. 턴어라운드 타이밍 재량</p>
+                <p><strong className="text-[#E0E4EC]">Theme (10%)</strong>: KODEX 2차전지산업(B유형 33%) or 코스닥150IT(D유형 집중) — 특정 적자유형 집중 베팅</p>
+                <p><strong className="text-[#E0E4EC]">Alpha (10%)</strong>: D유형(서진시스템·태성) 직접 매수 — 영업흑자+일회성 적자, ETF 비중 부족 종목 오버웨이트</p>
               </div>
             </div>
           </div>
