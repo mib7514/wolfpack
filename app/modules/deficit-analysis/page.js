@@ -292,23 +292,43 @@ export default function DeficitAnalysisPage() {
     loadCompanies();
   }, []);
 
-  // 150종목 스캔
+  // 150종목 스캔 (3배치 × 50개)
   const handleScan = useCallback(async () => {
     setScanLoading(true);
     setAiResult(null);
-    try {
-      setAiResult("🔍 코스닥 시총 상위 150개 종목 스캔 중... (3단계 × 50개씩, 약 2~3분 소요)");
-      const res = await fetch("/api/deficit-scan", { method: "POST" });
-      const data = await res.json();
-      if (data.ok && data.companies) {
-        setCompanies(data.companies);
-        setLastUpdate(data.updatedAt?.split("T")[0] || new Date().toISOString().split("T")[0]);
-        setAiResult(`✅ 스캔 완료! ${data.count}개 종목 로드됨` + (data.errors?.length ? `\n⚠️ 일부 오류: ${data.errors.join(", ")}` : ""));
-      } else {
-        setAiResult(`❌ 스캔 실패: ${data.error || "알 수 없는 오류"}`);
+    const batches = [[1, 50], [51, 100], [101, 150]];
+    const allCompanies = [];
+    const errors = [];
+
+    for (let i = 0; i < batches.length; i++) {
+      const [start, end] = batches[i];
+      setAiResult(`🔍 스캔 중... ${i + 1}/3 단계 (${start}~${end}위) — ${allCompanies.length}개 완료`);
+      try {
+        const res = await fetch("/api/deficit-scan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ startRank: start, endRank: end }),
+        });
+        const data = await res.json();
+        if (data.ok && data.companies) {
+          allCompanies.push(...data.companies);
+        } else {
+          errors.push(`${start}-${end}: ${data.error || "실패"}`);
+        }
+      } catch (e) {
+        errors.push(`${start}-${end}: ${e.message}`);
       }
-    } catch (e) {
-      setAiResult("❌ 스캔 오류: " + e.message);
+    }
+
+    if (allCompanies.length > 0) {
+      // 시총 기준 재정렬
+      allCompanies.sort((a, b) => (b.cap || 0) - (a.cap || 0));
+      allCompanies.forEach((c, idx) => { c.rank = idx + 1; });
+      setCompanies(allCompanies);
+      setLastUpdate(new Date().toISOString().split("T")[0]);
+      setAiResult(`✅ 스캔 완료! ${allCompanies.length}개 종목 로드됨` + (errors.length ? `\n⚠️ 일부 오류: ${errors.join(", ")}` : ""));
+    } else {
+      setAiResult(`❌ 스캔 실패: ${errors.join(", ")}`);
     }
     setScanLoading(false);
   }, []);
