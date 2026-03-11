@@ -24,7 +24,8 @@ async function dbFetch() {
   return data || [];
 }
 async function dbInsert(stock) {
-  const { data } = await supabase.from("radar_stocks").insert(stock).select().single();
+  const { data, error } = await supabase.from("radar_stocks").insert(stock).select().single();
+  if (error) { console.error("dbInsert error:", error); return { __error: error.message }; }
   return data;
 }
 async function dbUpdate(id, updates) {
@@ -370,34 +371,51 @@ export default function RadarPage() {
     setSearching(false);
   }, [searchQuery]);
 
+  const [registerError, setRegisterError] = useState(null);
+
   const handleRegister = useCallback(async (result) => {
-    const row = {
-      ticker: result.ticker,
-      exchange: result.exchange || "NYSE",
-      name: result.name || result.ticker,
-      category: result.category || "OTHER",
-      status: "ACTIVE",
-      thesis_oneliner: result.thesis_oneliner || "",
-      thesis_json: result.thesis_detail || {
-        core_thesis: result.core_thesis || "",
-        bull_case: result.bull_case || "",
-        bear_case: result.bear_case || "",
-        catalysts: result.catalysts || "",
-        key_metrics: result.key_metrics || "",
-      },
-      indicators: (result.monitoring_indicators || []).map(ind => ({
-        ...ind,
-        sub_indicators: (ind.sub_indicators || []).map(s => ({ ...s })),
-      })),
-      momentum: result.momentum || null,
-      kelly_win_prob: result.kelly_win_prob || 0.5,
-      kelly_wl_ratio: result.kelly_wl_ratio || 2.0,
-    };
-    const saved = await dbInsert(row);
-    if (saved) {
-      setStocks(prev => [saved, ...prev]);
-      setSearchResult(null);
-      setSearchQuery("");
+    setRegisterError(null);
+    try {
+      const row = {
+        ticker: result.ticker,
+        exchange: result.exchange || "NYSE",
+        name: result.name || result.ticker,
+        category: result.category || "OTHER",
+        status: "WATCHING",
+        thesis_oneliner: (result.thesis_oneliner || "").slice(0, 200),
+        thesis_json: JSON.parse(JSON.stringify(result.thesis_detail || {
+          core_thesis: result.core_thesis || "",
+          bull_case: result.bull_case || "",
+          bear_case: result.bear_case || "",
+          catalysts: result.catalysts || "",
+          key_metrics: result.key_metrics || "",
+        })),
+        indicators: JSON.parse(JSON.stringify(
+          (result.monitoring_indicators || []).map(ind => ({
+            name: ind.name || "", weight: ind.weight || 10,
+            sub_indicators: (ind.sub_indicators || []).map(s => ({
+              name: s.name || "", target: s.target || "", current: s.current || "", score: s.score ?? 50,
+            })),
+          }))
+        )),
+        momentum: result.momentum ? JSON.parse(JSON.stringify(result.momentum)) : null,
+        kelly_win_prob: result.kelly_win_prob || 0.5,
+        kelly_wl_ratio: result.kelly_wl_ratio || 2.0,
+      };
+      const saved = await dbInsert(row);
+      if (saved?.__error) {
+        setRegisterError("저장 오류: " + saved.__error);
+        return;
+      }
+      if (saved) {
+        setStocks(prev => [saved, ...prev]);
+        setSearchResult(null);
+        setSearchQuery("");
+      } else {
+        setRegisterError("저장 실패: 응답 없음");
+      }
+    } catch (e) {
+      setRegisterError("등록 오류: " + e.message);
     }
   }, []);
 
@@ -491,6 +509,10 @@ export default function RadarPage() {
 
           {searchResult?.error && (
             <div className="text-center py-3 text-red-400 text-xs mb-2">{searchResult.error}</div>
+          )}
+
+          {registerError && (
+            <div className="text-center py-3 text-red-400 text-xs mb-2 bg-red-500/5 rounded-lg">{registerError}</div>
           )}
         </div>
       </header>
