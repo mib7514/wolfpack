@@ -1,17 +1,70 @@
 import { NextResponse } from "next/server";
 
-function extractJSON(text) {
-  if (!text) return null;
-  try {
-    return JSON.parse(text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim());
-  } catch {}
-  const matches = text.match(/\{[\s\S]*\}/g);
-  if (matches) {
-    for (const m of matches.sort((a, b) => b.length - a.length)) {
-      try { return JSON.parse(m); } catch {}
+// Web search 응답에서 JSON 추출 — 여러 전략 시도
+function extractJSON(rawContent) {
+  if (!rawContent) return null;
+
+  // 전략 1: content 배열에서 각 text 블록을 개별 시도
+  if (Array.isArray(rawContent)) {
+    for (const block of rawContent) {
+      if (block.type === "text" && block.text) {
+        const result = parseJSONFromText(block.text);
+        if (result) return result;
+      }
     }
+    // 전략 2: 모든 text 블록을 합쳐서 시도
+    const allText = rawContent.filter(b => b.type === "text").map(b => b.text).join("\n");
+    return parseJSONFromText(allText);
+  }
+
+  // 문자열인 경우
+  if (typeof rawContent === "string") {
+    return parseJSONFromText(rawContent);
   }
   return null;
+}
+
+function parseJSONFromText(text) {
+  if (!text) return null;
+  // 1) 코드펜스 제거 후 직접 파싱
+  try {
+    const clean = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+    return JSON.parse(clean);
+  } catch {}
+
+  // 2) 밸런스드 브레이스 매칭으로 가장 큰 JSON 객체 추출
+  let maxObj = null;
+  let maxLen = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "{") {
+      let depth = 0;
+      let inStr = false;
+      let esc = false;
+      for (let j = i; j < text.length; j++) {
+        const ch = text[j];
+        if (esc) { esc = false; continue; }
+        if (ch === "\\") { esc = true; continue; }
+        if (ch === '"' && !esc) { inStr = !inStr; continue; }
+        if (inStr) continue;
+        if (ch === "{") depth++;
+        if (ch === "}") depth--;
+        if (depth === 0) {
+          const candidate = text.slice(i, j + 1);
+          if (candidate.length > maxLen) {
+            try {
+              const parsed = JSON.parse(candidate);
+              if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+                maxObj = parsed;
+                maxLen = candidate.length;
+              }
+            } catch {}
+          }
+          break;
+        }
+      }
+    }
+  }
+  return maxObj;
 }
 
 export const dynamic = "force-dynamic";
@@ -34,7 +87,7 @@ Also find:
 - When the first cut is expected
 - Any recent notable Fed speaker comments (last 2-4 weeks)
 
-Respond ONLY in JSON (no markdown, no backticks):
+IMPORTANT: Respond with ONLY a JSON object. No explanations, no markdown. Just the raw JSON:
 {
   "current_rate": "425-450",
   "meetings": [
@@ -51,15 +104,12 @@ Respond ONLY in JSON (no markdown, no backticks):
   ],
   "cuts_priced_2026": 2,
   "first_cut_expected": "Jun 2026",
-  "commentary": "한국어로 2-3문장 시장 코멘터리. 채권 PM 관점에서 핵심 내용.",
+  "commentary": "한국어로 2-3문장 시장 코멘터리",
   "risks": ["리스크1", "리스크2", "리스크3"],
   "recent_fed_speakers": [
     {"name": "이름", "date": "2026-MM-DD", "message": "한국어 요약"}
   ]
-}
-
-Use exact range format like "350-375", "325-350", "300-325" etc.
-Percentages should sum to ~100 for each meeting.`;
+}`;
 
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -70,7 +120,7 @@ Percentages should sum to ~100 for each meeting.`;
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-20250514",
-        max_tokens: 8000,
+        max_tokens: 16000,
         tools: [{ type: "web_search_20250305", name: "web_search" }],
         messages: [{ role: "user", content: prompt }],
       }),
@@ -78,17 +128,20 @@ Percentages should sum to ~100 for each meeting.`;
 
     if (!res.ok) {
       const errText = await res.text();
-      console.error("Anthropic API error:", res.status, errText);
       return NextResponse.json({ error: `Anthropic API ${res.status}: ${errText.slice(0, 200)}` }, { status: 500 });
     }
 
     const data = await res.json();
-    const rawText = (data.content?.filter((b) => b.type === "text") || []).map((b) => b.text).join("\n");
-    const parsed = extractJSON(rawText);
+    // content 배열 자체를 전달 — 각 블록별로 JSON 추출 시도
+    const parsed = extractJSON(data.content);
 
     if (!parsed) {
-      console.error("JSON parse failed. Raw:", rawText.slice(0, 500));
-      return NextResponse.json({ error: "AI 응답을 JSON으로 파싱할 수 없습니다", raw: rawText.slice(0, 300) }, { status: 500 });
+      const rawText = (data.content?.filter(b => b.type === "text") || []).map(b => b.text).join("\n");
+      return NextResponse.json({
+        error: "AI 응답을 JSON으로 파싱할 수 없습니다",
+        raw: rawText.slice(0, 500),
+        stop_reason: data.stop_reason,
+      }, { status: 500 });
     }
 
     const now = new Date().toISOString();
@@ -110,7 +163,7 @@ Percentages should sum to ~100 for each meeting.`;
       updated_at: now,
     };
 
-    // Supabase save (best-effort)
+    // Supabase save
     try {
       const sbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
       const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -118,11 +171,10 @@ Percentages should sum to ~100 for each meeting.`;
         const { createClient } = await import("@supabase/supabase-js");
         const sb = createClient(sbUrl, sbKey);
         await sb.from("fedwatch_data").upsert({ id: "latest", data: result, updated_at: now });
-        const today = now.split("T")[0];
         await sb.from("fedwatch_snapshots").insert({
           data: {
-            date: today,
-            meetings: (parsed.meetings || []).map((m) => ({
+            date: now.split("T")[0],
+            meetings: (parsed.meetings || []).map(m => ({
               date: m.date, label: m.label,
               expected_rate: m.expected_rate || 0, cut_prob: m.cut_prob || 0,
             })),
@@ -135,7 +187,6 @@ Percentages should sum to ~100 for each meeting.`;
 
     return NextResponse.json(result);
   } catch (err) {
-    console.error("FedWatch update error:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
