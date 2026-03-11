@@ -292,23 +292,37 @@ export default function DeficitAnalysisPage() {
     loadCompanies();
   }, []);
 
-  // 150종목 스캔 (3배치 × 50개)
+  // 150종목 스캔 (5배치 × 30개, 배치간 65초 대기)
   const handleScan = useCallback(async () => {
     setScanLoading(true);
     setAiResult(null);
-    const batches = [[1, 50], [51, 100], [101, 150]];
+    const batches = [[1,30],[31,60],[61,90],[91,120],[121,150]];
     const allCompanies = [];
     const errors = [];
 
+    const wait = (sec) => new Promise(r => setTimeout(r, sec * 1000));
+
     for (let i = 0; i < batches.length; i++) {
       const [start, end] = batches[i];
-      setAiResult(`🔍 스캔 중... ${i + 1}/3 단계 (${start}~${end}위) — ${allCompanies.length}개 완료`);
+
+      if (i > 0) {
+        for (let sec = 65; sec > 0; sec--) {
+          setAiResult(`⏳ API 대기 중... ${sec}초 (${i}/${batches.length} 완료, ${allCompanies.length}개 수집)`);
+          await wait(1);
+        }
+      }
+
+      setAiResult(`🔍 ${i+1}/${batches.length} 스캔 중 (${start}~${end}위) — ${allCompanies.length}개 완료`);
       try {
         const res = await fetch("/api/deficit-scan", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ startRank: start, endRank: end }),
         });
+        if (!res.ok) {
+          errors.push(`${start}-${end}: HTTP ${res.status}`);
+          continue;
+        }
         const data = await res.json();
         if (data.ok && data.companies) {
           allCompanies.push(...data.companies);
@@ -321,7 +335,6 @@ export default function DeficitAnalysisPage() {
     }
 
     if (allCompanies.length > 0) {
-      // 시총 기준 재정렬
       allCompanies.sort((a, b) => (b.cap || 0) - (a.cap || 0));
       allCompanies.forEach((c, idx) => { c.rank = idx + 1; });
       setCompanies(allCompanies);
