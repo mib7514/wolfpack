@@ -227,8 +227,7 @@ const INITIAL_TOP10 = TOP10_DEFICIT.map((c) => {
 const ETF_DATA = [
   {
     name: "KODEX 코스닥150", code: "229200", aum: "7.5조", fee: "0.20%",
-    note: "코스닥 대표 150종목. 시총 가중",
-    // 코스닥150 전체 시총 대비 Top10 종목 비중 (유동시총 추산)
+    note: "코스닥 대표 150종목. 시총 가중. 패시브",
     holdings: [
       { name: "에코프로", weight: 8.2 },
       { name: "에코프로비엠", weight: 7.0 },
@@ -243,8 +242,28 @@ const ETF_DATA = [
     ],
   },
   {
+    name: "TIME 코스닥액티브", code: "신규", aum: "4,770억(첫날)", fee: "0.80%",
+    note: "🆕 3/10 상장. 타임폴리오. Core(대형주)+Satellite(테마). 50종목. 2차전지·바이오 중심",
+    holdings: [
+      { name: "에코프로", weight: 9.76 },
+      { name: "에코프로비엠", weight: 6.89 },
+      { name: "알지노믹스", weight: 2.2 },
+      { name: "로보티즈", weight: 1.8 },
+    ],
+  },
+  {
+    name: "KoAct 코스닥액티브", code: "신규", aum: "5,950억(첫날)", fee: "0.50%",
+    note: "🆕 3/10 상장. 삼성액티브. 성장주70%+가치주30%. 57종목. 공격적 종목 발굴",
+    holdings: [
+      { name: "성호전자", weight: 8.74 },
+      { name: "로보티즈", weight: 3.0 },
+      { name: "테크윙", weight: 2.0 },
+      { name: "서진시스템", weight: 1.5 },
+    ],
+  },
+  {
     name: "KODEX 2차전지산업", code: "305720", aum: "8,500억", fee: "0.45%",
-    note: "2차전지 밸류체인 25종목. 키워드+시총 가중. 최대 편입 20% 캡",
+    note: "2차전지 밸류체인 25종목. 최대 편입 20% 캡",
     holdings: [
       { name: "에코프로비엠", weight: 12.5 },
       { name: "에코프로", weight: 8.0 },
@@ -252,7 +271,7 @@ const ETF_DATA = [
   },
   {
     name: "TIGER 코스닥150", code: "232080", aum: "1.3조", fee: "0.19%",
-    note: "KODEX와 동일 지수. 수수료 소폭 저렴",
+    note: "KODEX와 동일 지수. 수수료 최저 수준 패시브",
     holdings: [
       { name: "에코프로", weight: 8.2 },
       { name: "에코프로비엠", weight: 7.0 },
@@ -289,6 +308,25 @@ const ETF_DATA = [
     note: "코스닥 바이오 섹터 집중",
     holdings: [
       { name: "알지노믹스", weight: 2.5 },
+    ],
+  },
+  {
+    name: "KoAct AI인프라액티브", code: "KoAct", aum: "2,100억", fee: "0.50%",
+    note: "삼성액티브. AI 인프라 핵심 기업. 반도체 장비·소재 집중",
+    holdings: [
+      { name: "테크윙", weight: 4.5 },
+      { name: "서진시스템", weight: 2.8 },
+      { name: "하나마이크론", weight: 2.2 },
+    ],
+  },
+  {
+    name: "PLUS 코스닥150액티브", code: "신규(3/17)", aum: "상장 예정", fee: "0.15%",
+    note: "🔜 3/17 상장 예정. 한화. 코스닥150 기반 네거티브 스크리닝+30종목 집중. 최저 보수",
+    holdings: [
+      { name: "에코프로", weight: 7.0 },
+      { name: "에코프로비엠", weight: 6.0 },
+      { name: "로보티즈", weight: 1.5 },
+      { name: "테크윙", weight: 1.0 },
     ],
   },
 ];
@@ -706,9 +744,10 @@ export default function DeficitAnalysisPage() {
             <div className="bg-[#111827] border border-[#1E2636] rounded-lg p-5 mt-4">
               <div className="text-sm font-bold text-[#FFB800] mb-2">💡 전략 제안</div>
               <div className="text-xs text-[#8892A4] leading-relaxed space-y-1">
-                <p><strong className="text-[#E0E4EC]">Core (60%)</strong>: KODEX/TIGER 코스닥150 — 가중노출 22.6%. 10종목 전부 자연 편입</p>
-                <p><strong className="text-[#E0E4EC]">Satellite (25%)</strong>: KODEX 2차전지산업 — 에코프로+비엠 합산 20.5%. B유형 집중 베팅</p>
-                <p><strong className="text-[#E0E4EC]">Alpha (15%)</strong>: 서진시스템·태성 직접 매수 — D유형 고점수 종목 오버웨이트. 코스닥150 편입비중(0.8~1.0%)으로는 부족</p>
+                <p><strong className="text-[#E0E4EC]">Core (50%)</strong>: KODEX/TIGER 코스닥150 — 가중노출 22.6%. 10종목 전부 자연 편입. 최저 보수</p>
+                <p><strong className="text-[#E0E4EC]">Active (30%)</strong>: TIME 코스닥액티브 or KoAct 코스닥액티브 — 에코프로 9.8% 오버웨이트(TIME) 또는 성호전자 8.7% 집중(KoAct). 운용역 재량 알파 기대</p>
+                <p><strong className="text-[#E0E4EC]">Satellite (10%)</strong>: KODEX 2차전지산업 — 에코프로+비엠 합산 20.5%. B유형 사이클 턴어라운드 베팅</p>
+                <p><strong className="text-[#E0E4EC]">Alpha (10%)</strong>: 서진시스템·태성 직접 매수 — D유형 고점수 종목. 액티브 ETF에서도 비중 부족한 종목 오버웨이트</p>
               </div>
             </div>
           </div>
