@@ -319,15 +319,11 @@ export default function DeficitAnalysisPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ startRank: start, endRank: end }),
         });
-        if (!res.ok) {
-          errors.push(`${start}-${end}: HTTP ${res.status}`);
-          continue;
-        }
         const data = await res.json();
         if (data.ok && data.companies) {
           allCompanies.push(...data.companies);
         } else {
-          errors.push(`${start}-${end}: ${data.error || "실패"}`);
+          errors.push(`${start}-${end}: ${data.error}${data.detail ? " — " + data.detail?.slice(0,80) : ""}${data.raw_preview ? " — raw:" + data.raw_preview?.slice(0,80) : ""}`);
         }
       } catch (e) {
         errors.push(`${start}-${end}: ${e.message}`);
