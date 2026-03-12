@@ -15,6 +15,7 @@ const STAGES = [
   { key: 'extinct', label: '소멸', emoji: '💀', color: '#6b7280', desc: '영향력 없음' },
 ];
 const STAGE_MULT = { birth: 0.4, strengthen: 0.8, peak: 1.0, weaken: 0.5, extinct: 0.1 };
+const MOMENTUM = { birth: 1.3, strengthen: 1.15, peak: 1.0, weaken: -0.5, extinct: -0.8 };
 const IMPACT_MAP = {
   2: { label: '강한 긍정', color: '#22c55e', symbol: '▲▲' },
   1: { label: '약한 긍정', color: '#86efac', symbol: '▲' },
@@ -224,9 +225,10 @@ export default function NarrativeTrackerPage() {
       const w = weights[n.id] || 0;
       (n.assets || []).forEach(a => {
         if (!m[a.asset]) m[a.asset] = { asset: a.asset, total: 0, sources: [] };
-        const wi = a.impact * w * 100;
+        const momentum = MOMENTUM[n.stage] || 1.0;
+        const wi = a.impact * w * momentum * 100;
         m[a.asset].total += wi;
-        m[a.asset].sources.push({ name: n.name, impact: a.impact, weight: w, weighted: wi, stage: n.stage, reason: a.reason || '' });
+        m[a.asset].sources.push({ name: n.name, impact: a.impact, weight: w, weighted: wi, stage: n.stage, reason: a.reason || '', momentum });
       });
     }); return m;
   }, [narratives, weights]);
