@@ -4,8 +4,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
 
 // ═══════════════════════════════════════════════════════════════════════
-// 🐺 NARRATIVE ALPHA TRACKER v2 — AI-Powered
-// 내러티브 이름만 입력하면 AI가 전부 분석
+// 🐺 NARRATIVE ALPHA TRACKER v2 — AI-Powered + Admin PIN Protection
 // ═══════════════════════════════════════════════════════════════════════
 
 const STAGES = [
@@ -15,9 +14,7 @@ const STAGES = [
   { key: 'weaken', label: '약화', emoji: '📉', color: '#a78bfa', desc: '반론 등장' },
   { key: 'extinct', label: '소멸', emoji: '💀', color: '#6b7280', desc: '영향력 없음' },
 ];
-
 const STAGE_MULT = { birth: 0.4, strengthen: 0.8, peak: 1.0, weaken: 0.5, extinct: 0.1 };
-
 const IMPACT_MAP = {
   2: { label: '강한 긍정', color: '#22c55e', symbol: '▲▲' },
   1: { label: '약한 긍정', color: '#86efac', symbol: '▲' },
@@ -25,7 +22,6 @@ const IMPACT_MAP = {
   '-1': { label: '약한 부정', color: '#fca5a5', symbol: '▼' },
   '-2': { label: '강한 부정', color: '#ef4444', symbol: '▼▼' },
 };
-
 const C = {
   bg: '#0a0e17', card: '#111827', border: '#1e293b',
   accent: '#f59e0b', green: '#22c55e', red: '#ef4444',
@@ -38,7 +34,6 @@ const calcScore = (n) => {
   const { marketImpact = 5, mediaIntensity = 5, dataSupport = 5, duration = 5, connectivity = 0 } = n;
   return Math.round((marketImpact * 0.30 + mediaIntensity * 0.20 + dataSupport * 0.25 + duration * 0.10 + connectivity * 0.15) * 10 * m);
 };
-
 const kellyF = (p, b) => b <= 0 ? 0 : Math.max(0, Math.min(1, (p * b - (1 - p)) / b));
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -48,16 +43,65 @@ export default function NarrativeTrackerPage() {
   const [tab, setTab] = useState('dashboard');
   const [narratives, setNarratives] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  // Input state
   const [inputName, setInputName] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
   const [aiResult, setAiResult] = useState(null);
   const [editingId, setEditingId] = useState(null);
-
-  // Reanalyze state
   const [reanalyzing, setReanalyzing] = useState(null);
 
+  // ─── Admin PIN ─────────────────────────────────────────────────────
+  const [adminPin, setAdminPin] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pinError, setPinError] = useState('');
+  const [pendingAction, setPendingAction] = useState(null);
+
+  // 세션에서 PIN 복원
+  useEffect(() => {
+    const saved = sessionStorage.getItem('wolfpack_admin_pin');
+    if (saved) { setAdminPin(saved); setIsAdmin(true); }
+  }, []);
+
+  const verifyPin = async (pin) => {
+    // PIN을 서버에 보내서 검증 (간단한 테스트 호출)
+    try {
+      const res = await fetch('/api/narrative-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin },
+        body: JSON.stringify({ narrativeName: '__pin_check__', existingNarratives: [] }),
+      });
+      // 401이면 PIN 틀림, 400이면 PIN은 맞지만 이름 검증 실패 = PIN 정상
+      if (res.status === 401) return false;
+      return true; // 400 or 200 = PIN 통과
+    } catch { return false; }
+  };
+
+  const handlePinSubmit = async () => {
+    setPinError('');
+    const ok = await verifyPin(adminPin);
+    if (ok) {
+      setIsAdmin(true);
+      sessionStorage.setItem('wolfpack_admin_pin', adminPin);
+      setShowPinModal(false);
+      if (pendingAction) { pendingAction(); setPendingAction(null); }
+    } else {
+      setPinError('PIN이 일치하지 않습니다');
+    }
+  };
+
+  const requireAdmin = (action) => {
+    if (isAdmin) { action(); return; }
+    setPendingAction(() => action);
+    setShowPinModal(true);
+  };
+
+  const logout = () => {
+    setIsAdmin(false);
+    setAdminPin('');
+    sessionStorage.removeItem('wolfpack_admin_pin');
+  };
+
+  // ─── Data ──────────────────────────────────────────────────────────
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
@@ -78,123 +122,86 @@ export default function NarrativeTrackerPage() {
     setLoading(false);
   };
 
-  // ─── AI Analysis ───────────────────────────────────────────────────
-  const runAI = async (name, isReanalyze = false) => {
-    if (isReanalyze) setReanalyzing(name);
-    else setAnalyzing(true);
-
+  // ─── AI (PIN 필요) ─────────────────────────────────────────────────
+  const callAI = async (name) => {
     try {
       const res = await fetch('/api/narrative-ai', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-pin': adminPin,
+        },
         body: JSON.stringify({ narrativeName: name, existingNarratives: narratives }),
       });
       const data = await res.json();
-      if (data.success) {
-        if (isReanalyze) return data.analysis;
-        setAiResult(data.analysis);
-      } else {
-        alert('AI 분석 실패: ' + (data.error || '알 수 없는 오류'));
-      }
-    } catch (e) {
-      alert('AI 호출 오류: ' + e.message);
-    }
-    if (isReanalyze) setReanalyzing(null);
-    else setAnalyzing(false);
+      if (res.status === 401) { setIsAdmin(false); sessionStorage.removeItem('wolfpack_admin_pin'); alert('인증이 만료되었습니다. 다시 PIN을 입력해주세요.'); return null; }
+      if (data.success) return data.analysis;
+      alert('AI 분석 실패: ' + (data.error || ''));
+    } catch (e) { alert('AI 호출 오류: ' + e.message); }
     return null;
   };
 
-  // ─── Save ──────────────────────────────────────────────────────────
+  const runAnalysis = async () => {
+    setAnalyzing(true);
+    const result = await callAI(inputName);
+    if (result) setAiResult(result);
+    setAnalyzing(false);
+  };
+
   const saveNarrative = async () => {
     if (!aiResult) return;
     const connScore = narratives.filter(n => n.id !== editingId).reduce((acc, n) => {
       const shared = (aiResult.assets || []).filter(a => (n.assets || []).some(na => na.asset === a.asset));
       return acc + (shared.length > 0 ? Math.min(10, shared.length * 2) : 0);
     }, 0);
-    const connectivity = Math.min(10, connScore);
-
     const record = {
       id: editingId || `n_${Date.now()}`,
-      name: inputName,
-      description: aiResult.description,
-      category: aiResult.category,
-      stage: aiResult.stage,
-      stageReasoning: aiResult.stageReasoning || '',
-      marketImpact: aiResult.scoring?.marketImpact || 5,
-      mediaIntensity: aiResult.scoring?.mediaIntensity || 5,
-      dataSupport: aiResult.scoring?.dataSupport || 5,
-      duration: aiResult.scoring?.duration || 5,
-      connectivity,
-      indicators: JSON.stringify(aiResult.indicators || []),
-      assets: JSON.stringify(aiResult.assets || []),
-      scoring: JSON.stringify(aiResult.scoring || {}),
-      kelly: JSON.stringify(aiResult.kelly || {}),
-      kellyProb: aiResult.kelly?.prob || 55,
-      kellyOdds: aiResult.kelly?.odds || 2.0,
+      name: inputName, description: aiResult.description, category: aiResult.category,
+      stage: aiResult.stage, stageReasoning: aiResult.stageReasoning || '',
+      marketImpact: aiResult.scoring?.marketImpact || 5, mediaIntensity: aiResult.scoring?.mediaIntensity || 5,
+      dataSupport: aiResult.scoring?.dataSupport || 5, duration: aiResult.scoring?.duration || 5,
+      connectivity: Math.min(10, connScore),
+      indicators: JSON.stringify(aiResult.indicators || []), assets: JSON.stringify(aiResult.assets || []),
+      scoring: JSON.stringify(aiResult.scoring || {}), kelly: JSON.stringify(aiResult.kelly || {}),
+      kellyProb: aiResult.kelly?.prob || 55, kellyOdds: aiResult.kelly?.odds || 2.0,
       updated_at: new Date().toISOString(),
     };
     record.score = calcScore(record);
-
     try {
       const sb = createClient();
-      if (editingId) {
-        await sb.from('narratives').update(record).eq('id', editingId);
-      } else {
-        await sb.from('narratives').insert(record);
-      }
-    } catch (e) { console.log('DB save skipped:', e); }
-
-    if (editingId) {
-      setNarratives(p => p.map(n => n.id === editingId ? { ...record, indicators: aiResult.indicators, assets: aiResult.assets, scoring: aiResult.scoring, kelly: aiResult.kelly } : n));
-    } else {
-      setNarratives(p => [...p, { ...record, indicators: aiResult.indicators, assets: aiResult.assets, scoring: aiResult.scoring, kelly: aiResult.kelly }]);
-    }
-    setInputName('');
-    setAiResult(null);
-    setEditingId(null);
-    setTab('dashboard');
+      if (editingId) await sb.from('narratives').update(record).eq('id', editingId);
+      else await sb.from('narratives').insert(record);
+    } catch (e) {}
+    const parsed = { ...record, indicators: aiResult.indicators, assets: aiResult.assets, scoring: aiResult.scoring, kelly: aiResult.kelly };
+    if (editingId) setNarratives(p => p.map(n => n.id === editingId ? parsed : n));
+    else setNarratives(p => [...p, parsed]);
+    setInputName(''); setAiResult(null); setEditingId(null); setTab('dashboard');
   };
 
   const reanalyze = async (n) => {
     setReanalyzing(n.id);
-    const analysis = await runAI(n.name, true);
+    const analysis = await callAI(n.name);
     if (analysis) {
       const connectivity = narratives.filter(x => x.id !== n.id).reduce((acc, x) => {
         const shared = (analysis.assets || []).filter(a => (x.assets || []).some(xa => xa.asset === a.asset));
         return acc + (shared.length > 0 ? Math.min(10, shared.length * 2) : 0);
       }, 0);
       const updated = {
-        ...n,
-        description: analysis.description,
-        category: analysis.category,
-        stage: analysis.stage,
-        stageReasoning: analysis.stageReasoning || '',
-        marketImpact: analysis.scoring?.marketImpact || 5,
-        mediaIntensity: analysis.scoring?.mediaIntensity || 5,
-        dataSupport: analysis.scoring?.dataSupport || 5,
-        duration: analysis.scoring?.duration || 5,
+        ...n, description: analysis.description, category: analysis.category,
+        stage: analysis.stage, stageReasoning: analysis.stageReasoning || '',
+        marketImpact: analysis.scoring?.marketImpact || 5, mediaIntensity: analysis.scoring?.mediaIntensity || 5,
+        dataSupport: analysis.scoring?.dataSupport || 5, duration: analysis.scoring?.duration || 5,
         connectivity: Math.min(10, connectivity),
-        indicators: analysis.indicators || [],
-        assets: analysis.assets || [],
-        scoring: analysis.scoring || {},
-        kelly: analysis.kelly || {},
-        kellyProb: analysis.kelly?.prob || 55,
-        kellyOdds: analysis.kelly?.odds || 2.0,
+        indicators: analysis.indicators || [], assets: analysis.assets || [],
+        scoring: analysis.scoring || {}, kelly: analysis.kelly || {},
+        kellyProb: analysis.kelly?.prob || 55, kellyOdds: analysis.kelly?.odds || 2.0,
         updated_at: new Date().toISOString(),
       };
       updated.score = calcScore(updated);
-
       try {
         const sb = createClient();
-        await sb.from('narratives').update({
-          ...updated,
-          indicators: JSON.stringify(updated.indicators),
-          assets: JSON.stringify(updated.assets),
-          scoring: JSON.stringify(updated.scoring),
-          kelly: JSON.stringify(updated.kelly),
-        }).eq('id', n.id);
-      } catch (e) { console.log('Update skipped:', e); }
-
+        await sb.from('narratives').update({ ...updated, indicators: JSON.stringify(updated.indicators), assets: JSON.stringify(updated.assets), scoring: JSON.stringify(updated.scoring), kelly: JSON.stringify(updated.kelly) }).eq('id', n.id);
+      } catch (e) {}
       setNarratives(p => p.map(x => x.id === n.id ? updated : x));
     }
     setReanalyzing(null);
@@ -209,11 +216,8 @@ export default function NarrativeTrackerPage() {
   const totalScore = useMemo(() => narratives.reduce((s, n) => s + (n.score || 0), 0), [narratives]);
   const weights = useMemo(() => {
     if (!totalScore) return {};
-    const w = {};
-    narratives.forEach(n => { w[n.id] = (n.score || 0) / totalScore; });
-    return w;
+    const w = {}; narratives.forEach(n => { w[n.id] = (n.score || 0) / totalScore; }); return w;
   }, [narratives, totalScore]);
-
   const assetMap = useMemo(() => {
     const m = {};
     narratives.forEach(n => {
@@ -224,17 +228,38 @@ export default function NarrativeTrackerPage() {
         m[a.asset].total += wi;
         m[a.asset].sources.push({ name: n.name, impact: a.impact, weight: w, weighted: wi, stage: n.stage, reason: a.reason || '' });
       });
-    });
-    return m;
+    }); return m;
   }, [narratives, weights]);
-
-  const sortedAssets = useMemo(() =>
-    Object.values(assetMap).sort((a, b) => Math.abs(b.total) - Math.abs(a.total)),
-  [assetMap]);
+  const sortedAssets = useMemo(() => Object.values(assetMap).sort((a, b) => Math.abs(b.total) - Math.abs(a.total)), [assetMap]);
 
   // ═══════════════════════════════════════════════════════════════════
   return (
     <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: "'Pretendard', -apple-system, 'Noto Sans KR', sans-serif" }}>
+      {/* PIN Modal */}
+      {showPinModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => { setShowPinModal(false); setPendingAction(null); }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 32, width: 360, textAlign: 'center' }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>🔐</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 4 }}>관리자 인증</div>
+            <div style={{ fontSize: 12, color: C.dim, marginBottom: 20 }}>AI 기능은 관리자만 사용할 수 있습니다</div>
+            <input
+              type="password"
+              value={adminPin}
+              onChange={e => setAdminPin(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handlePinSubmit(); }}
+              placeholder="관리자 PIN 입력"
+              autoFocus
+              style={{ width: '100%', padding: '12px 16px', borderRadius: 10, border: `1px solid ${pinError ? C.red : C.inputB}`, background: C.input, color: C.text, fontSize: 15, outline: 'none', textAlign: 'center', letterSpacing: 8, fontWeight: 700, boxSizing: 'border-box' }}
+            />
+            {pinError && <div style={{ fontSize: 12, color: C.red, marginTop: 8 }}>{pinError}</div>}
+            <button onClick={handlePinSubmit} style={{ marginTop: 16, width: '100%', padding: '12px', borderRadius: 10, border: 'none', background: C.accent, color: '#000', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
+              확인
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div style={{ padding: '20px 28px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
@@ -246,9 +271,21 @@ export default function NarrativeTrackerPage() {
           </div>
           <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>내러티브 이름만 입력 → AI가 분석 · 스코어링 · 자산매핑 · 투자 아이디어 자동 생성</div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <Pill color={C.green}>{narratives.length}개 내러티브</Pill>
           <Pill color={C.accent}>{Object.keys(assetMap).length}개 자산</Pill>
+          {/* Admin indicator */}
+          {isAdmin ? (
+            <button onClick={logout} title="관리자 로그아웃" style={{ background: 'none', border: `1px solid ${C.green}44`, borderRadius: 8, padding: '4px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ fontSize: 12 }}>🔓</span>
+              <span style={{ fontSize: 10, color: C.green, fontWeight: 600 }}>ADMIN</span>
+            </button>
+          ) : (
+            <button onClick={() => setShowPinModal(true)} title="관리자 로그인" style={{ background: 'none', border: `1px solid ${C.muted}44`, borderRadius: 8, padding: '4px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ fontSize: 12 }}>🔒</span>
+              <span style={{ fontSize: 10, color: C.muted, fontWeight: 600 }}>GUEST</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -264,8 +301,7 @@ export default function NarrativeTrackerPage() {
             <button key={t.key} onClick={() => setTab(t.key)} style={{
               flex: 1, padding: '10px 8px', borderRadius: 8, border: 'none',
               background: tab === t.key ? C.accent : 'transparent',
-              color: tab === t.key ? '#000' : C.dim,
-              fontWeight: 600, fontSize: 13, cursor: 'pointer',
+              color: tab === t.key ? '#000' : C.dim, fontWeight: 600, fontSize: 13, cursor: 'pointer',
             }}>{t.label}</button>
           ))}
         </div>
@@ -274,8 +310,8 @@ export default function NarrativeTrackerPage() {
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '20px 24px' }}>
         {loading ? <div style={{ textAlign: 'center', padding: 60, color: C.dim }}>로딩 중...</div> : (
           <>
-            {tab === 'dashboard' && <Dashboard narratives={narratives} weights={weights} assetMap={assetMap} onReanalyze={reanalyze} onDelete={deleteN} reanalyzing={reanalyzing} onGoInput={() => setTab('input')} />}
-            {tab === 'input' && <InputTab inputName={inputName} setInputName={setInputName} analyzing={analyzing} aiResult={aiResult} onAnalyze={() => runAI(inputName)} onSave={saveNarrative} onReset={() => { setAiResult(null); setInputName(''); setEditingId(null); }} />}
+            {tab === 'dashboard' && <Dashboard narratives={narratives} weights={weights} assetMap={assetMap} onReanalyze={(n) => requireAdmin(() => reanalyze(n))} onDelete={(id) => requireAdmin(() => deleteN(id))} reanalyzing={reanalyzing} onGoInput={() => setTab('input')} isAdmin={isAdmin} />}
+            {tab === 'input' && <InputTab inputName={inputName} setInputName={setInputName} analyzing={analyzing} aiResult={aiResult} onAnalyze={() => requireAdmin(runAnalysis)} onSave={saveNarrative} onReset={() => { setAiResult(null); setInputName(''); setEditingId(null); }} isAdmin={isAdmin} />}
             {tab === 'assets' && <AssetsTab sortedAssets={sortedAssets} />}
             {tab === 'ideas' && <IdeasTab narratives={narratives} weights={weights} sortedAssets={sortedAssets} />}
           </>
@@ -290,7 +326,7 @@ export default function NarrativeTrackerPage() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// SHARED COMPONENTS
+// SHARED
 // ═══════════════════════════════════════════════════════════════════════
 function Pill({ children, color = '#f59e0b', style }) {
   return <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, background: color + '22', color, border: `1px solid ${color}44`, ...style }}>{children}</span>;
@@ -309,12 +345,11 @@ function Btn({ children, onClick, primary, small, disabled, danger, style }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// TAB: INPUT — 이름만 입력, AI가 전부 분석
+// TAB: INPUT
 // ═══════════════════════════════════════════════════════════════════════
-function InputTab({ inputName, setInputName, analyzing, aiResult, onAnalyze, onSave, onReset }) {
+function InputTab({ inputName, setInputName, analyzing, aiResult, onAnalyze, onSave, onReset, isAdmin }) {
   return (
     <div style={{ display: 'grid', gap: 20 }}>
-      {/* Name Input */}
       <Card title="🐺 내러티브 입력" subtitle="이름만 입력하세요. AI가 나머지를 전부 분석합니다.">
         <div style={{ display: 'flex', gap: 12 }}>
           <input value={inputName} onChange={e => setInputName(e.target.value)}
@@ -326,12 +361,16 @@ function InputTab({ inputName, setInputName, analyzing, aiResult, onAnalyze, onS
               padding: '14px 28px', borderRadius: 10, border: 'none',
               background: analyzing ? '#374151' : `linear-gradient(135deg, ${C.accent}, #f97316)`,
               color: analyzing ? C.dim : '#000', fontWeight: 700, fontSize: 14,
-              cursor: analyzing ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
-              minWidth: 140,
+              cursor: (!inputName.trim() || analyzing) ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', minWidth: 140,
             }}>
-            {analyzing ? '🔄 분석 중...' : '🤖 AI 분석'}
+            {analyzing ? '🔄 분석 중...' : isAdmin ? '🤖 AI 분석' : '🔐 AI 분석'}
           </button>
         </div>
+        {!isAdmin && !analyzing && (
+          <div style={{ marginTop: 10, padding: '8px 12px', background: C.bg, borderRadius: 8, fontSize: 11, color: C.muted, display: 'flex', alignItems: 'center', gap: 6 }}>
+            🔒 AI 분석은 관리자 인증이 필요합니다. 오른쪽 위 자물쇠 버튼으로 로그인하세요.
+          </div>
+        )}
         {analyzing && (
           <div style={{ marginTop: 16, padding: 16, background: C.bg, borderRadius: 10, textAlign: 'center' }}>
             <div style={{ fontSize: 24, marginBottom: 8 }}>🧠</div>
@@ -341,49 +380,27 @@ function InputTab({ inputName, setInputName, analyzing, aiResult, onAnalyze, onS
         )}
       </Card>
 
-      {/* AI Result Preview */}
       {aiResult && (
         <>
-          <Card title="✅ AI 분석 결과" subtitle="검토 후 저장하세요. 수정이 필요하면 다시 분석할 수 있습니다.">
-            {/* Description */}
+          <Card title="✅ AI 분석 결과" subtitle="검토 후 저장하세요">
             <div style={{ padding: 14, background: C.bg, borderRadius: 10, marginBottom: 14 }}>
               <div style={{ fontSize: 11, color: C.dim, marginBottom: 4 }}>📝 설명</div>
               <div style={{ fontSize: 13, color: C.text, lineHeight: 1.6 }}>{aiResult.description}</div>
             </div>
-
-            {/* Stage & Category */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
               <div style={{ padding: 14, background: C.bg, borderRadius: 10 }}>
-                <div style={{ fontSize: 11, color: C.dim, marginBottom: 6 }}>🔄 라이프사이클 단계</div>
-                {(() => {
-                  const s = STAGES.find(x => x.key === aiResult.stage);
-                  return (
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 24 }}>{s?.emoji}</span>
-                        <span style={{ fontSize: 18, fontWeight: 800, color: s?.color }}>{s?.label}</span>
-                      </div>
-                      <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{aiResult.stageReasoning}</div>
-                    </div>
-                  );
-                })()}
+                <div style={{ fontSize: 11, color: C.dim, marginBottom: 6 }}>🔄 라이프사이클</div>
+                {(() => { const s = STAGES.find(x => x.key === aiResult.stage); return (<div><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ fontSize: 24 }}>{s?.emoji}</span><span style={{ fontSize: 18, fontWeight: 800, color: s?.color }}>{s?.label}</span></div><div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{aiResult.stageReasoning}</div></div>); })()}
               </div>
               <div style={{ padding: 14, background: C.bg, borderRadius: 10 }}>
                 <div style={{ fontSize: 11, color: C.dim, marginBottom: 6 }}>📂 카테고리</div>
                 <div style={{ fontSize: 18, fontWeight: 800, color: '#818cf8' }}>{aiResult.category}</div>
               </div>
             </div>
-
-            {/* Scoring */}
             <div style={{ padding: 14, background: C.bg, borderRadius: 10, marginBottom: 14 }}>
               <div style={{ fontSize: 11, color: C.dim, marginBottom: 8 }}>📊 스코어링</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                {[
-                  { key: 'marketImpact', label: '시장 충격도', weight: '30%' },
-                  { key: 'mediaIntensity', label: '미디어 강도', weight: '20%' },
-                  { key: 'dataSupport', label: '데이터 뒷받침', weight: '25%' },
-                  { key: 'duration', label: '지속 기간', weight: '10%' },
-                ].map(item => (
+                {[{ key: 'marketImpact', label: '시장 충격도', weight: '30%' }, { key: 'mediaIntensity', label: '미디어 강도', weight: '20%' }, { key: 'dataSupport', label: '데이터 뒷받침', weight: '25%' }, { key: 'duration', label: '지속 기간', weight: '10%' }].map(item => (
                   <div key={item.key} style={{ padding: 10, background: C.card, borderRadius: 8 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                       <span style={{ fontSize: 11, color: C.dim }}>{item.label} ({item.weight})</span>
@@ -397,28 +414,19 @@ function InputTab({ inputName, setInputName, analyzing, aiResult, onAnalyze, onS
                 ))}
               </div>
             </div>
-
-            {/* Indicators */}
             <div style={{ padding: 14, background: C.bg, borderRadius: 10, marginBottom: 14 }}>
               <div style={{ fontSize: 11, color: C.dim, marginBottom: 8 }}>🔬 핵심 추적 지표</div>
               {(aiResult.indicators || []).map((ind, i) => {
-                const sigColor = ind.currentSignal === 'positive' ? C.green : ind.currentSignal === 'negative' ? C.red : C.muted;
+                const sc = ind.currentSignal === 'positive' ? C.green : ind.currentSignal === 'negative' ? C.red : C.muted;
                 return (
                   <div key={i} style={{ display: 'flex', gap: 10, padding: '8px 0', borderBottom: i < aiResult.indicators.length - 1 ? `1px solid ${C.border}` : 'none', alignItems: 'center' }}>
                     <span style={{ width: 20, fontSize: 12, color: C.muted, textAlign: 'right' }}>{i + 1}.</span>
-                    <div style={{ flex: 1 }}>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{ind.name}</span>
-                      <div style={{ fontSize: 11, color: C.dim, marginTop: 1 }}>{ind.description}</div>
-                    </div>
-                    <Pill color={sigColor} style={{ fontSize: 10 }}>
-                      {ind.currentSignal === 'positive' ? '긍정' : ind.currentSignal === 'negative' ? '부정' : '중립'}
-                    </Pill>
+                    <div style={{ flex: 1 }}><span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{ind.name}</span><div style={{ fontSize: 11, color: C.dim, marginTop: 1 }}>{ind.description}</div></div>
+                    <Pill color={sc} style={{ fontSize: 10 }}>{ind.currentSignal === 'positive' ? '긍정' : ind.currentSignal === 'negative' ? '부정' : '중립'}</Pill>
                   </div>
                 );
               })}
             </div>
-
-            {/* Assets */}
             <div style={{ padding: 14, background: C.bg, borderRadius: 10 }}>
               <div style={{ fontSize: 11, color: C.dim, marginBottom: 8 }}>🎯 영향 자산 Top 5</div>
               {(aiResult.assets || []).map((a, i) => {
@@ -426,18 +434,13 @@ function InputTab({ inputName, setInputName, analyzing, aiResult, onAnalyze, onS
                 return (
                   <div key={i} style={{ display: 'flex', gap: 10, padding: '8px 0', borderBottom: i < aiResult.assets.length - 1 ? `1px solid ${C.border}` : 'none', alignItems: 'center' }}>
                     <span style={{ fontSize: 16, fontWeight: 800, color: imp.color }}>{imp.symbol}</span>
-                    <div style={{ flex: 1 }}>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{a.asset}</span>
-                      <div style={{ fontSize: 11, color: C.dim, marginTop: 1 }}>{a.reason}</div>
-                    </div>
+                    <div style={{ flex: 1 }}><span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{a.asset}</span><div style={{ fontSize: 11, color: C.dim, marginTop: 1 }}>{a.reason}</div></div>
                     <Pill color={imp.color}>{imp.label}</Pill>
                   </div>
                 );
               })}
             </div>
           </Card>
-
-          {/* Actions */}
           <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
             <Btn onClick={onReset}>초기화</Btn>
             <Btn onClick={() => { setAiResult(null); }} style={{ borderColor: C.accent + '44', color: C.accent }}>🔄 다시 분석</Btn>
@@ -452,21 +455,17 @@ function InputTab({ inputName, setInputName, analyzing, aiResult, onAnalyze, onS
 // ═══════════════════════════════════════════════════════════════════════
 // TAB: DASHBOARD
 // ═══════════════════════════════════════════════════════════════════════
-function Dashboard({ narratives, weights, assetMap, onReanalyze, onDelete, reanalyzing, onGoInput }) {
+function Dashboard({ narratives, weights, assetMap, onReanalyze, onDelete, reanalyzing, onGoInput, isAdmin }) {
   if (narratives.length === 0) return (
     <Card style={{ textAlign: 'center', padding: 60 }}>
       <div style={{ fontSize: 48, marginBottom: 12 }}>📡</div>
       <div style={{ fontSize: 16, fontWeight: 600, color: C.text, marginBottom: 8 }}>등록된 내러티브가 없습니다</div>
-      <div style={{ fontSize: 13, color: C.dim, marginBottom: 20 }}>내러티브 입력 탭에서 이름만 입력하면 AI가 분석합니다</div>
       <Btn primary onClick={onGoInput}>첫 내러티브 등록하기</Btn>
     </Card>
   );
-
   const sorted = [...narratives].sort((a, b) => (b.score || 0) - (a.score || 0));
-
   return (
     <div style={{ display: 'grid', gap: 20 }}>
-      {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
         {[
           { label: '추적 중', val: narratives.length, unit: '개', color: C.accent },
@@ -481,40 +480,23 @@ function Dashboard({ narratives, weights, assetMap, onReanalyze, onDelete, reana
           </div>
         ))}
       </div>
-
-      {/* Lifecycle */}
       <Card title="🔄 라이프사이클 분포">
         <div style={{ display: 'grid', gap: 8 }}>
           {STAGES.map(s => {
             const cnt = narratives.filter(n => n.stage === s.key).length;
             const pct = (cnt / narratives.length) * 100;
-            return (
-              <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 18 }}>{s.emoji}</span>
-                <span style={{ fontSize: 12, color: C.dim, width: 36 }}>{s.label}</span>
-                <div style={{ flex: 1, height: 8, background: C.input, borderRadius: 4, overflow: 'hidden' }}>
-                  <div style={{ width: `${pct}%`, height: '100%', background: s.color, borderRadius: 4, transition: 'width 0.5s' }} />
-                </div>
-                <span style={{ fontSize: 12, fontWeight: 700, color: s.color, width: 20, textAlign: 'right' }}>{cnt}</span>
-              </div>
-            );
+            return (<div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span style={{ fontSize: 18 }}>{s.emoji}</span><span style={{ fontSize: 12, color: C.dim, width: 36 }}>{s.label}</span><div style={{ flex: 1, height: 8, background: C.input, borderRadius: 4, overflow: 'hidden' }}><div style={{ width: `${pct}%`, height: '100%', background: s.color, borderRadius: 4 }} /></div><span style={{ fontSize: 12, fontWeight: 700, color: s.color, width: 20, textAlign: 'right' }}>{cnt}</span></div>);
           })}
         </div>
       </Card>
-
-      {/* Scoreboard */}
-      <Card title="📋 내러티브 스코어보드" subtitle="점수 높은 순 · AI 자동 스코어링 · 🔄 버튼으로 재분석">
+      <Card title="📋 내러티브 스코어보드" subtitle={isAdmin ? "🔓 관리자 모드 · 재분석/삭제 가능" : "🔒 읽기 전용 · 관리자 인증 시 편집 가능"}>
         <div style={{ display: 'grid', gap: 10 }}>
           {sorted.map((n, i) => {
             const stage = STAGES.find(s => s.key === n.stage);
             const w = weights[n.id] || 0;
-            const isReanalyzing = reanalyzing === n.id;
+            const isR = reanalyzing === n.id;
             return (
-              <div key={n.id} style={{
-                padding: '16px 20px', background: C.bg, borderRadius: 10,
-                border: `1px solid ${i === 0 ? C.accent + '66' : C.border}`,
-                opacity: isReanalyzing ? 0.6 : 1, transition: 'opacity 0.3s',
-              }}>
+              <div key={n.id} style={{ padding: '16px 20px', background: C.bg, borderRadius: 10, border: `1px solid ${i === 0 ? C.accent + '66' : C.border}`, opacity: isR ? 0.6 : 1 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 18, fontWeight: 900, color: i === 0 ? C.accent : C.muted }}>#{i + 1}</span>
@@ -523,25 +505,17 @@ function Dashboard({ narratives, weights, assetMap, onReanalyze, onDelete, reana
                     <Pill color="#818cf8">{n.category}</Pill>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <span style={{ fontSize: 26, fontWeight: 900, color: C.accent }}>{n.score}</span>
-                    <span style={{ fontSize: 11, color: C.muted }}>점</span>
+                    <span style={{ fontSize: 26, fontWeight: 900, color: C.accent }}>{n.score}</span><span style={{ fontSize: 11, color: C.muted }}>점</span>
                   </div>
                 </div>
                 <div style={{ fontSize: 12, color: C.dim, marginBottom: 8, lineHeight: 1.5 }}>{n.description}</div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-                  {(n.assets || []).map((a, j) => {
-                    const imp = IMPACT_MAP[a.impact] || IMPACT_MAP[0];
-                    return <Pill key={j} color={imp.color}>{imp.symbol} {a.asset}</Pill>;
-                  })}
+                  {(n.assets || []).map((a, j) => { const imp = IMPACT_MAP[a.impact] || IMPACT_MAP[0]; return <Pill key={j} color={imp.color}>{imp.symbol} {a.asset}</Pill>; })}
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 11, color: C.muted }}>
-                    비중 {(w * 100).toFixed(1)}% · 업데이트 {n.updated_at ? new Date(n.updated_at).toLocaleDateString('ko') : '-'}
-                  </span>
+                  <span style={{ fontSize: 11, color: C.muted }}>비중 {(w * 100).toFixed(1)}% · {n.updated_at ? new Date(n.updated_at).toLocaleDateString('ko') : ''}</span>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <Btn small onClick={() => onReanalyze(n)} disabled={isReanalyzing}>
-                      {isReanalyzing ? '분석중...' : '🔄 재분석'}
-                    </Btn>
+                    <Btn small onClick={() => onReanalyze(n)} disabled={isR}>{isR ? '분석중...' : '🔄 재분석'}</Btn>
                     <Btn small danger onClick={() => onDelete(n.id)}>삭제</Btn>
                   </div>
                 </div>
@@ -559,62 +533,30 @@ function Dashboard({ narratives, weights, assetMap, onReanalyze, onDelete, reana
 // ═══════════════════════════════════════════════════════════════════════
 function AssetsTab({ sortedAssets }) {
   if (sortedAssets.length === 0) return <Card style={{ textAlign: 'center', padding: 40 }}><div style={{ fontSize: 13, color: C.dim }}>내러티브를 등록하면 자산 영향도가 자동 분석됩니다</div></Card>;
-
   const pos = sortedAssets.filter(a => a.total > 0);
   const neg = sortedAssets.filter(a => a.total < 0);
-
   return (
     <div style={{ display: 'grid', gap: 20 }}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-        <Card title="🟢 긍정 영향 자산" subtitle="복수 내러티브 가중합산">
-          {pos.length === 0 ? <div style={{ fontSize: 12, color: C.dim }}>해당 없음</div> : pos.slice(0, 10).map((a, i) => (
-            <AssetRow key={a.asset} a={a} i={i} positive />
-          ))}
-        </Card>
-        <Card title="🔴 부정 영향 자산" subtitle="복수 내러티브 가중합산">
-          {neg.length === 0 ? <div style={{ fontSize: 12, color: C.dim }}>해당 없음</div> : neg.slice(0, 10).map((a, i) => (
-            <AssetRow key={a.asset} a={a} i={i} />
-          ))}
-        </Card>
+        <Card title="🟢 긍정 영향 자산">{pos.length === 0 ? <div style={{ fontSize: 12, color: C.dim }}>해당 없음</div> : pos.slice(0, 10).map((a, i) => <AssetRow key={a.asset} a={a} i={i} positive />)}</Card>
+        <Card title="🔴 부정 영향 자산">{neg.length === 0 ? <div style={{ fontSize: 12, color: C.dim }}>해당 없음</div> : neg.slice(0, 10).map((a, i) => <AssetRow key={a.asset} a={a} i={i} />)}</Card>
       </div>
-
       <Card title="📊 전체 자산 영향도">
         <div style={{ display: 'grid', gap: 4 }}>
           {sortedAssets.map(a => {
             const maxAbs = Math.max(...sortedAssets.map(x => Math.abs(x.total)), 1);
-            const pct = (Math.abs(a.total) / maxAbs) * 100;
-            const isPos = a.total >= 0;
-            return (
-              <div key={a.asset} style={{ display: 'grid', gridTemplateColumns: '110px 1fr 60px', alignItems: 'center', gap: 8, padding: '3px 0' }}>
-                <span style={{ fontSize: 11, color: C.dim, textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.asset}</span>
-                <div style={{ height: 14, background: C.input, borderRadius: 3, overflow: 'hidden', position: 'relative' }}>
-                  <div style={{ position: 'absolute', [isPos ? 'left' : 'right']: 0, top: 0, bottom: 0, width: `${Math.max(2, pct)}%`, background: isPos ? C.green : C.red, borderRadius: 3 }} />
-                </div>
-                <span style={{ fontSize: 11, fontWeight: 700, color: isPos ? C.green : C.red, textAlign: 'right' }}>{isPos ? '+' : ''}{a.total.toFixed(1)}</span>
-              </div>
-            );
+            const pct = (Math.abs(a.total) / maxAbs) * 100; const isPos = a.total >= 0;
+            return (<div key={a.asset} style={{ display: 'grid', gridTemplateColumns: '110px 1fr 60px', alignItems: 'center', gap: 8, padding: '3px 0' }}><span style={{ fontSize: 11, color: C.dim, textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.asset}</span><div style={{ height: 14, background: C.input, borderRadius: 3, overflow: 'hidden', position: 'relative' }}><div style={{ position: 'absolute', [isPos ? 'left' : 'right']: 0, top: 0, bottom: 0, width: `${Math.max(2, pct)}%`, background: isPos ? C.green : C.red, borderRadius: 3 }} /></div><span style={{ fontSize: 11, fontWeight: 700, color: isPos ? C.green : C.red, textAlign: 'right' }}>{isPos ? '+' : ''}{a.total.toFixed(1)}</span></div>);
           })}
         </div>
       </Card>
-
-      <Card title="🔎 자산별 내러티브 소스 분해">
+      <Card title="🔎 자산별 소스 분해">
         <div style={{ display: 'grid', gap: 8 }}>
           {sortedAssets.slice(0, 15).map(a => (
             <details key={a.asset} style={{ background: C.bg, borderRadius: 8, padding: '10px 14px' }}>
-              <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600, color: C.text, display: 'flex', justifyContent: 'space-between' }}>
-                <span>{a.asset}</span>
-                <span style={{ color: a.total >= 0 ? C.green : C.red, fontWeight: 800 }}>{a.total >= 0 ? '+' : ''}{a.total.toFixed(1)}</span>
-              </summary>
+              <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600, color: C.text, display: 'flex', justifyContent: 'space-between' }}><span>{a.asset}</span><span style={{ color: a.total >= 0 ? C.green : C.red, fontWeight: 800 }}>{a.total >= 0 ? '+' : ''}{a.total.toFixed(1)}</span></summary>
               <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
-                {a.sources.map((s, i) => (
-                  <div key={i} style={{ padding: '4px 0', fontSize: 12 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: C.dim }}>
-                      <span>{s.name} <Pill color={STAGES.find(x => x.key === s.stage)?.color}>{STAGES.find(x => x.key === s.stage)?.label}</Pill></span>
-                      <span>영향 {s.impact > 0 ? '+' : ''}{s.impact} × 비중 {(s.weight * 100).toFixed(1)}% = <b style={{ color: s.weighted >= 0 ? C.green : C.red }}>{s.weighted >= 0 ? '+' : ''}{s.weighted.toFixed(1)}</b></span>
-                    </div>
-                    {s.reason && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>→ {s.reason}</div>}
-                  </div>
-                ))}
+                {a.sources.map((s, i) => (<div key={i} style={{ padding: '4px 0', fontSize: 12 }}><div style={{ display: 'flex', justifyContent: 'space-between', color: C.dim }}><span>{s.name} <Pill color={STAGES.find(x => x.key === s.stage)?.color}>{STAGES.find(x => x.key === s.stage)?.label}</Pill></span><span>영향 {s.impact > 0 ? '+' : ''}{s.impact} × 비중 {(s.weight * 100).toFixed(1)}% = <b style={{ color: s.weighted >= 0 ? C.green : C.red }}>{s.weighted >= 0 ? '+' : ''}{s.weighted.toFixed(1)}</b></span></div>{s.reason && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>→ {s.reason}</div>}</div>))}
               </div>
             </details>
           ))}
@@ -623,124 +565,58 @@ function AssetsTab({ sortedAssets }) {
     </div>
   );
 }
-
 function AssetRow({ a, i, positive }) {
   const col = positive ? C.green : C.red;
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
-      <span style={{ fontSize: 12, fontWeight: 800, color: col, width: 20 }}>{i + 1}</span>
-      <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: C.text }}>{a.asset}</span>
-      <div style={{ width: 80, height: 6, background: C.input, borderRadius: 3, overflow: 'hidden' }}>
-        <div style={{ width: `${Math.min(100, Math.abs(a.total) * 2)}%`, height: '100%', background: col, borderRadius: 3 }} />
-      </div>
-      <span style={{ fontSize: 12, fontWeight: 700, color: col, width: 50, textAlign: 'right' }}>{positive ? '+' : ''}{a.total.toFixed(1)}</span>
-    </div>
-  );
+  return (<div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: `1px solid ${C.border}` }}><span style={{ fontSize: 12, fontWeight: 800, color: col, width: 20 }}>{i + 1}</span><span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: C.text }}>{a.asset}</span><div style={{ width: 80, height: 6, background: C.input, borderRadius: 3, overflow: 'hidden' }}><div style={{ width: `${Math.min(100, Math.abs(a.total) * 2)}%`, height: '100%', background: col, borderRadius: 3 }} /></div><span style={{ fontSize: 12, fontWeight: 700, color: col, width: 50, textAlign: 'right' }}>{positive ? '+' : ''}{a.total.toFixed(1)}</span></div>);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// TAB: INVESTMENT IDEAS (Kelly here)
+// TAB: IDEAS
 // ═══════════════════════════════════════════════════════════════════════
 function IdeasTab({ narratives, weights, sortedAssets }) {
   const active = narratives.filter(n => n.stage !== 'extinct');
-  if (active.length === 0) return <Card style={{ textAlign: 'center', padding: 40 }}><div style={{ fontSize: 13, color: C.dim }}>활성 내러티브를 먼저 등록하세요</div></Card>;
-
-  const stageAction = {
-    birth: '🔍 소규모 관찰 포지션 진입 고려',
-    strengthen: '📈 확신 시 포지션 확대',
-    peak: '⚖️ 기존 포지션 유지 또는 일부 익절',
-    weaken: '📉 포지션 축소 / 반대 포지션 탐색',
-  };
-
+  if (active.length === 0) return <Card style={{ textAlign: 'center', padding: 40 }}><div style={{ fontSize: 13, color: C.dim }}>활성 내러티브를 등록하세요</div></Card>;
+  const stageAction = { birth: '🔍 소규모 관찰 포지션 진입 고려', strengthen: '📈 확신 시 포지션 확대', peak: '⚖️ 기존 포지션 유지 또는 일부 익절', weaken: '📉 포지션 축소 / 반대 포지션 탐색' };
   return (
     <div style={{ display: 'grid', gap: 20 }}>
-      <Card title="💡 내러티브 기반 투자 아이디어" subtitle="AI 자동 분석 · 라이프사이클 + 켈리 공식 + 가중 영향도">
+      <Card title="💡 내러티브 기반 투자 아이디어" subtitle="AI 자동 분석 · 라이프사이클 + 켈리 + 가중 영향도">
         {active.sort((a, b) => (b.score || 0) - (a.score || 0)).map(n => {
           const stage = STAGES.find(s => s.key === n.stage);
           const kelly = n.kelly || {};
           const k = kellyF((kelly.prob || 55) / 100, kelly.odds || 2);
           const topA = (n.assets || []).sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact)).slice(0, 5);
-
           return (
             <div key={n.id} style={{ padding: 20, background: C.bg, borderRadius: 12, marginBottom: 12, border: `1px solid ${stage?.color}33` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <span style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{n.name}</span>
-                    <Pill color={stage?.color}>{stage?.emoji} {stage?.label}</Pill>
-                  </div>
-                  <div style={{ fontSize: 12, color: C.accent, fontWeight: 600 }}>→ {stageAction[n.stage] || ''}</div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 11, color: C.dim }}>점수</div>
-                  <div style={{ fontSize: 22, fontWeight: 900, color: C.accent }}>{n.score}</div>
-                </div>
+                <div><div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}><span style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{n.name}</span><Pill color={stage?.color}>{stage?.emoji} {stage?.label}</Pill></div><div style={{ fontSize: 12, color: C.accent, fontWeight: 600 }}>→ {stageAction[n.stage] || ''}</div></div>
+                <div style={{ textAlign: 'right' }}><div style={{ fontSize: 11, color: C.dim }}>점수</div><div style={{ fontSize: 22, fontWeight: 900, color: C.accent }}>{n.score}</div></div>
               </div>
-
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                {/* Assets */}
                 <div>
                   <div style={{ fontSize: 11, color: C.dim, marginBottom: 6 }}>주요 영향 자산</div>
-                  {topA.map((a, i) => {
-                    const imp = IMPACT_MAP[a.impact] || IMPACT_MAP[0];
-                    return (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12, color: C.text }}>
-                        <span>{a.asset}</span>
-                        <span style={{ color: imp.color, fontWeight: 600 }}>{imp.symbol} {imp.label}</span>
-                      </div>
-                    );
-                  })}
+                  {topA.map((a, i) => { const imp = IMPACT_MAP[a.impact] || IMPACT_MAP[0]; return (<div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12, color: C.text }}><span>{a.asset}</span><span style={{ color: imp.color, fontWeight: 600 }}>{imp.symbol} {imp.label}</span></div>); })}
                   {topA[0]?.reason && <div style={{ fontSize: 10, color: C.muted, marginTop: 4, fontStyle: 'italic' }}>→ {topA[0].reason}</div>}
                 </div>
-
-                {/* Kelly */}
                 <div>
                   <div style={{ fontSize: 11, color: C.dim, marginBottom: 6 }}>🎰 켈리 공식 (AI 추정)</div>
-                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 8 }}>
-                    승률 {kelly.prob || 55}% · 보상비 {kelly.odds || 2}x
-                  </div>
+                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 8 }}>승률 {kelly.prob || 55}% · 보상비 {kelly.odds || 2}x</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
-                    {[
-                      { label: '풀 켈리', val: k, color: C.red, note: '이론적 최적' },
-                      { label: '하프 켈리', val: k / 2, color: C.accent, note: '실전 권장' },
-                      { label: '쿼터 켈리', val: k / 4, color: C.green, note: '보수적' },
-                    ].map(x => (
-                      <div key={x.label} style={{ padding: 8, background: C.card, borderRadius: 6, textAlign: 'center' }}>
-                        <div style={{ fontSize: 10, color: C.dim }}>{x.label}</div>
-                        <div style={{ fontSize: 16, fontWeight: 800, color: x.color }}>{(x.val * 100).toFixed(1)}%</div>
-                        <div style={{ fontSize: 9, color: C.muted }}>{x.note}</div>
-                      </div>
+                    {[{ label: '풀 켈리', val: k, color: C.red, note: '이론적 최적' }, { label: '하프 켈리', val: k / 2, color: C.accent, note: '실전 권장' }, { label: '쿼터 켈리', val: k / 4, color: C.green, note: '보수적' }].map(x => (
+                      <div key={x.label} style={{ padding: 8, background: C.card, borderRadius: 6, textAlign: 'center' }}><div style={{ fontSize: 10, color: C.dim }}>{x.label}</div><div style={{ fontSize: 16, fontWeight: 800, color: x.color }}>{(x.val * 100).toFixed(1)}%</div><div style={{ fontSize: 9, color: C.muted }}>{x.note}</div></div>
                     ))}
                   </div>
-                  {kelly.reasoning && (
-                    <div style={{ fontSize: 10, color: C.muted, marginTop: 6, fontStyle: 'italic' }}>AI: {kelly.reasoning}</div>
-                  )}
+                  {kelly.reasoning && <div style={{ fontSize: 10, color: C.muted, marginTop: 6, fontStyle: 'italic' }}>AI: {kelly.reasoning}</div>}
                 </div>
               </div>
             </div>
           );
         })}
       </Card>
-
-      {/* Composite Heatmap */}
       <Card title="🗺️ 종합 자산 배분 시그널" subtitle="모든 활성 내러티브 가중 합산">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
           {sortedAssets.slice(0, 12).map(a => {
-            const intensity = Math.min(1, Math.abs(a.total) / 50);
-            const isPos = a.total >= 0;
-            return (
-              <div key={a.asset} style={{
-                padding: '14px 16px', borderRadius: 10,
-                background: isPos ? `rgba(34,197,94,${intensity * 0.25})` : `rgba(239,68,68,${intensity * 0.25})`,
-                border: `1px solid ${isPos ? `rgba(34,197,94,${intensity * 0.5})` : `rgba(239,68,68,${intensity * 0.5})`}`,
-              }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 4 }}>{a.asset}</div>
-                <div style={{ fontSize: 20, fontWeight: 900, color: isPos ? C.green : C.red }}>
-                  {isPos ? '▲' : '▼'} {Math.abs(a.total).toFixed(1)}
-                </div>
-                <div style={{ fontSize: 10, color: C.dim, marginTop: 2 }}>{a.sources.length}개 내러티브</div>
-              </div>
-            );
+            const intensity = Math.min(1, Math.abs(a.total) / 50); const isPos = a.total >= 0;
+            return (<div key={a.asset} style={{ padding: '14px 16px', borderRadius: 10, background: isPos ? `rgba(34,197,94,${intensity * 0.25})` : `rgba(239,68,68,${intensity * 0.25})`, border: `1px solid ${isPos ? `rgba(34,197,94,${intensity * 0.5})` : `rgba(239,68,68,${intensity * 0.5})`}` }}><div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 4 }}>{a.asset}</div><div style={{ fontSize: 20, fontWeight: 900, color: isPos ? C.green : C.red }}>{isPos ? '▲' : '▼'} {Math.abs(a.total).toFixed(1)}</div><div style={{ fontSize: 10, color: C.dim, marginTop: 2 }}>{a.sources.length}개 내러티브</div></div>);
           })}
         </div>
       </Card>
