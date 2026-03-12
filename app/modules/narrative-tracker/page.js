@@ -57,23 +57,20 @@ export default function NarrativeTrackerPage() {
   const [pinError, setPinError] = useState('');
   const [pendingAction, setPendingAction] = useState(null);
 
-  // 세션에서 PIN 복원
   useEffect(() => {
     const saved = sessionStorage.getItem('wolfpack_admin_pin');
     if (saved) { setAdminPin(saved); setIsAdmin(true); }
   }, []);
 
   const verifyPin = async (pin) => {
-    // PIN을 서버에 보내서 검증 (간단한 테스트 호출)
     try {
       const res = await fetch('/api/narrative-ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin },
         body: JSON.stringify({ narrativeName: '__pin_check__', existingNarratives: [] }),
       });
-      // 401이면 PIN 틀림, 400이면 PIN은 맞지만 이름 검증 실패 = PIN 정상
       if (res.status === 401) return false;
-      return true; // 400 or 200 = PIN 통과
+      return true;
     } catch { return false; }
   };
 
@@ -109,7 +106,8 @@ export default function NarrativeTrackerPage() {
     setLoading(true);
     try {
       const sb = createClient();
-      const { data } = await sb.from('narratives').select('*').order('score', { ascending: false });
+      const { data, error } = await sb.from('narratives').select('*').order('score', { ascending: false });
+      if (error) { console.error('DB 로드 오류:', error.message); }
       if (data) {
         setNarratives(data.map(d => ({
           ...d,
@@ -170,9 +168,11 @@ export default function NarrativeTrackerPage() {
     record.score = calcScore(record);
     try {
       const sb = createClient();
-      if (editingId) await sb.from('narratives').update(record).eq('id', editingId);
-      else await sb.from('narratives').insert(record);
-    } catch (e) {}
+      let result;
+      if (editingId) result = await sb.from('narratives').update(record).eq('id', editingId);
+      else result = await sb.from('narratives').insert(record);
+      if (result.error) { alert('DB 저장 오류: ' + result.error.message); return; }
+    } catch (e) { alert('DB 저장 오류: ' + e.message); return; }
     const parsed = { ...record, indicators: aiResult.indicators, assets: aiResult.assets, scoring: aiResult.scoring, kelly: aiResult.kelly };
     if (editingId) setNarratives(p => p.map(n => n.id === editingId ? parsed : n));
     else setNarratives(p => [...p, parsed]);
@@ -201,15 +201,20 @@ export default function NarrativeTrackerPage() {
       updated.score = calcScore(updated);
       try {
         const sb = createClient();
-        await sb.from('narratives').update({ ...updated, indicators: JSON.stringify(updated.indicators), assets: JSON.stringify(updated.assets), scoring: JSON.stringify(updated.scoring), kelly: JSON.stringify(updated.kelly) }).eq('id', n.id);
-      } catch (e) {}
+        const result = await sb.from('narratives').update({ ...updated, indicators: JSON.stringify(updated.indicators), assets: JSON.stringify(updated.assets), scoring: JSON.stringify(updated.scoring), kelly: JSON.stringify(updated.kelly) }).eq('id', n.id);
+        if (result.error) alert('DB 업데이트 오류: ' + result.error.message);
+      } catch (e) { alert('DB 업데이트 오류: ' + e.message); }
       setNarratives(p => p.map(x => x.id === n.id ? updated : x));
     }
     setReanalyzing(null);
   };
 
   const deleteN = async (id) => {
-    try { const sb = createClient(); await sb.from('narratives').delete().eq('id', id); } catch (e) {}
+    try {
+      const sb = createClient();
+      const result = await sb.from('narratives').delete().eq('id', id);
+      if (result.error) { alert('DB 삭제 오류: ' + result.error.message); return; }
+    } catch (e) { alert('DB 오류: ' + e.message); return; }
     setNarratives(p => p.filter(n => n.id !== id));
   };
 
@@ -237,7 +242,6 @@ export default function NarrativeTrackerPage() {
   // ═══════════════════════════════════════════════════════════════════
   return (
     <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: "'Pretendard', -apple-system, 'Noto Sans KR', sans-serif" }}>
-      {/* PIN Modal */}
       {showPinModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           onClick={() => { setShowPinModal(false); setPendingAction(null); }}>
@@ -245,24 +249,16 @@ export default function NarrativeTrackerPage() {
             <div style={{ fontSize: 32, marginBottom: 12 }}>🔐</div>
             <div style={{ fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 4 }}>관리자 인증</div>
             <div style={{ fontSize: 12, color: C.dim, marginBottom: 20 }}>AI 기능은 관리자만 사용할 수 있습니다</div>
-            <input
-              type="password"
-              value={adminPin}
-              onChange={e => setAdminPin(e.target.value)}
+            <input type="password" value={adminPin} onChange={e => setAdminPin(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') handlePinSubmit(); }}
-              placeholder="관리자 PIN 입력"
-              autoFocus
-              style={{ width: '100%', padding: '12px 16px', borderRadius: 10, border: `1px solid ${pinError ? C.red : C.inputB}`, background: C.input, color: C.text, fontSize: 15, outline: 'none', textAlign: 'center', letterSpacing: 8, fontWeight: 700, boxSizing: 'border-box' }}
-            />
+              placeholder="관리자 PIN 입력" autoFocus
+              style={{ width: '100%', padding: '12px 16px', borderRadius: 10, border: `1px solid ${pinError ? C.red : C.inputB}`, background: C.input, color: C.text, fontSize: 15, outline: 'none', textAlign: 'center', letterSpacing: 8, fontWeight: 700, boxSizing: 'border-box' }} />
             {pinError && <div style={{ fontSize: 12, color: C.red, marginTop: 8 }}>{pinError}</div>}
-            <button onClick={handlePinSubmit} style={{ marginTop: 16, width: '100%', padding: '12px', borderRadius: 10, border: 'none', background: C.accent, color: '#000', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
-              확인
-            </button>
+            <button onClick={handlePinSubmit} style={{ marginTop: 16, width: '100%', padding: '12px', borderRadius: 10, border: 'none', background: C.accent, color: '#000', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>확인</button>
           </div>
         </div>
       )}
 
-      {/* Header */}
       <div style={{ padding: '20px 28px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <a href="/" style={{ color: C.muted, fontSize: 12, textDecoration: 'none', display: 'block', marginBottom: 4 }}>← 컨트롤 타워</a>
@@ -276,22 +272,18 @@ export default function NarrativeTrackerPage() {
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <Pill color={C.green}>{narratives.length}개 내러티브</Pill>
           <Pill color={C.accent}>{Object.keys(assetMap).length}개 자산</Pill>
-          {/* Admin indicator */}
           {isAdmin ? (
             <button onClick={logout} title="관리자 로그아웃" style={{ background: 'none', border: `1px solid ${C.green}44`, borderRadius: 8, padding: '4px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ fontSize: 12 }}>🔓</span>
-              <span style={{ fontSize: 10, color: C.green, fontWeight: 600 }}>ADMIN</span>
+              <span style={{ fontSize: 12 }}>🔓</span><span style={{ fontSize: 10, color: C.green, fontWeight: 600 }}>ADMIN</span>
             </button>
           ) : (
             <button onClick={() => setShowPinModal(true)} title="관리자 로그인" style={{ background: 'none', border: `1px solid ${C.muted}44`, borderRadius: 8, padding: '4px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ fontSize: 12 }}>🔒</span>
-              <span style={{ fontSize: 10, color: C.muted, fontWeight: 600 }}>GUEST</span>
+              <span style={{ fontSize: 12 }}>🔒</span><span style={{ fontSize: 10, color: C.muted, fontWeight: 600 }}>GUEST</span>
             </button>
           )}
         </div>
       </div>
 
-      {/* Tabs */}
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '16px 24px 0' }}>
         <div style={{ display: 'flex', gap: 4, background: C.input, borderRadius: 10, padding: 4 }}>
           {[
