@@ -66,6 +66,16 @@ const MODULES = [
   },
   // ─── Layer 2: MARKET ───
   {
+    id: "narrative-tracker",
+    name: "내러티브 알파 트래커",
+    subtitle: "Narrative Alpha Tracker",
+    icon: "📡",
+    description: "금융시장 내러티브 추적 · 스코어링 · 자산영향도 · 켈리 투자 아이디어",
+    path: "/modules/narrative-tracker",
+    layer: "market",
+    status: "live",
+  },
+  {
     id: "consumer-sector",
     name: "소비주 모니터링",
     subtitle: "Consumer Sector Tracker",
