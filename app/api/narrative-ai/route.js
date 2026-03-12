@@ -5,13 +5,24 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export async function POST(request) {
   try {
+    // ─── 관리자 PIN 검증 ─────────────────────────────────
+    const adminPin = process.env.ADMIN_PIN;
+    const userPin = request.headers.get("x-admin-pin");
+
+    if (!adminPin || userPin !== adminPin) {
+      return NextResponse.json(
+        { error: "관리자 인증이 필요합니다" },
+        { status: 401 }
+      );
+    }
+    // ─────────────────────────────────────────────────────
+
     const { narrativeName, existingNarratives } = await request.json();
 
     if (!narrativeName) {
       return NextResponse.json({ error: "내러티브 이름이 필요합니다" }, { status: 400 });
     }
 
-    // Build context about existing narratives for connectivity analysis
     const existingContext = existingNarratives?.length > 0
       ? `\n\n현재 추적 중인 다른 내러티브들:\n${existingNarratives.map(n => `- ${n.name} (${n.stage} 단계, 자산: ${(n.assets || []).map(a => a.asset).join(', ')})`).join('\n')}`
       : '';
@@ -78,7 +89,6 @@ ${existingContext}
       .map(b => b.text)
       .join("");
 
-    // Parse JSON response
     const cleaned = text.replace(/```json|```/g, "").trim();
     const analysis = JSON.parse(cleaned);
 
