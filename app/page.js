@@ -207,6 +207,7 @@ const LAYERS = [
   { id: "credit", label: "Layer 3 · CREDIT", color: "#ef4444" },
   { id: "portfolio", label: "Layer 4 · PORTFOLIO", color: "#10b981" },
   { id: "fund-idea", label: "Layer 5 · FUND IDEA", color: "#a855f7" },
+  { id: "bcp", label: "Layer 6 · BEST CREDIT PLUS", color: "#ec4899" },  
 ];
 
 export default function ControlTower() {
