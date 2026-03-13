@@ -46,13 +46,13 @@ const MODULES = [
   },
   {
     id: "rate-scenario",
-    name: "금리 시나리오",
-    subtitle: "Rate Scenario Calculator",
+    name: "Duration Commander",
+    subtitle: "Rate Scenario · Kelly Duration · Narrative",
     icon: "⊿",
-    description: "확률가중 금리 전망 시뮬레이션",
+    description: "확률가중 금리시나리오 · 켈리 듀레이션 포지셔닝 · 내러티브 지표 추적",
     path: "/modules/rate-scenario",
     layer: "macro",
-    status: "planned",
+    status: "live",
   },
   {
     id: "employment-narrative",
