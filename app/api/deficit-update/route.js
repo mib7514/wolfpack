@@ -30,6 +30,14 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(req) {
+  // ─── 관리자 PIN 검증 ─────────────────────────────────
+  const adminPin = process.env.ADMIN_PIN;
+  const userPin = req.headers.get("x-admin-pin");
+  if (!adminPin || userPin !== adminPin) {
+    return NextResponse.json({ error: "관리자 인증이 필요합니다" }, { status: 401 });
+  }
+  // ─────────────────────────────────────────────────────
+
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ news: "⚠️ ANTHROPIC_API_KEY가 설정되지 않았습니다.", momentum: null });
