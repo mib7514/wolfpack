@@ -188,6 +188,17 @@ const MODULES = [
     layer: "fund-idea",
     status: "live",
   },
+  // ─── Layer 6: BEST CREDIT PLUS ───
+  {
+    id: "best-credit-plus",
+    name: "베스트크레딧플러스",
+    subtitle: "Best Credit Plus Fund Hub",
+    icon: "🐺",
+    description: "베스트크레딧플러스 펀드 전용 관리 레이어",
+    path: "/modules/best-credit-plus",
+    layer: "bcp",
+    status: "live",
+  },  
 ];
 
 const LAYERS = [
