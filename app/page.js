@@ -45,7 +45,7 @@ const MODULES = [
     status: "live",
   },
   {
-    id: "rate-scenario",
+    id: "duration-commander",
     name: "Duration Commander",
     subtitle: "Rate Scenario · Kelly Duration · Narrative",
     icon: "⊿",
@@ -148,14 +148,14 @@ const MODULES = [
     status: "live",
   },
   {
-  id: "wolf-radar",
-  name: "Wolf Radar",
-  subtitle: "성장주 발굴",
-  icon: "🐺",
-  description: "종목 검색 · AI thesis 생성 · 모니터링 지표 스코어링",
-  path: "/modules/radar",
-  layer: "portfolio",
-  status: "live",
+    id: "wolf-radar",
+    name: "Wolf Radar",
+    subtitle: "성장주 발굴",
+    icon: "🐺",
+    description: "종목 검색 · AI thesis 생성 · 모니터링 지표 스코어링",
+    path: "/modules/radar",
+    layer: "portfolio",
+    status: "live",
   },
   // ─── Layer 5: FUND IDEA ───
   {
@@ -188,17 +188,6 @@ const MODULES = [
     layer: "fund-idea",
     status: "live",
   },
-  // ─── Layer 6: BEST CREDIT PLUS ───
-  {
-    id: "best-credit-plus",
-    name: "베스트크레딧플러스",
-    subtitle: "Best Credit Plus Fund Hub",
-    icon: "🐺",
-    description: "베스트크레딧플러스 펀드 전용 관리 레이어",
-    path: "/modules/best-credit-plus",
-    layer: "bcp",
-    status: "live",
-  },  
 ];
 
 const LAYERS = [
@@ -207,7 +196,6 @@ const LAYERS = [
   { id: "credit", label: "Layer 3 · CREDIT", color: "#ef4444" },
   { id: "portfolio", label: "Layer 4 · PORTFOLIO", color: "#10b981" },
   { id: "fund-idea", label: "Layer 5 · FUND IDEA", color: "#a855f7" },
-  { id: "bcp", label: "Layer 6 · BEST CREDIT PLUS", color: "#ec4899" },  
 ];
 
 export default function ControlTower() {
