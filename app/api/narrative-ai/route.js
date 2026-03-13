@@ -89,8 +89,44 @@ ${existingContext}
       .map(b => b.text)
       .join("");
 
-    const cleaned = text.replace(/```json|```/g, "").trim();
-    const analysis = JSON.parse(cleaned);
+    // 견고한 JSON 추출 — 백틱 제거 후 중괄호 매칭
+    const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+    let analysis = null;
+
+    // 1차: 직접 파싱
+    try { analysis = JSON.parse(cleaned); } catch {}
+
+    // 2차: 첫 번째 완전한 JSON 객체 추출
+    if (!analysis) {
+      for (let i = 0; i < cleaned.length; i++) {
+        if (cleaned[i] === "{") {
+          let depth = 0, inStr = false, esc = false;
+          for (let j = i; j < cleaned.length; j++) {
+            const ch = cleaned[j];
+            if (esc) { esc = false; continue; }
+            if (ch === "\\") { esc = true; continue; }
+            if (ch === '"') { inStr = !inStr; continue; }
+            if (inStr) continue;
+            if (ch === "{") depth++;
+            if (ch === "}") {
+              depth--;
+              if (depth === 0) {
+                try { analysis = JSON.parse(cleaned.slice(i, j + 1)); } catch {}
+                break;
+              }
+            }
+          }
+          if (analysis) break;
+        }
+      }
+    }
+
+    if (!analysis) {
+      return NextResponse.json(
+        { error: "AI 응답을 JSON으로 파싱할 수 없습니다. 다시 시도해주세요." },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ success: true, analysis });
   } catch (error) {
