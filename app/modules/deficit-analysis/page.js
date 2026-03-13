@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 
 /* ───────────────────────────────────────────
    데이터 정의
@@ -444,10 +444,51 @@ export default function DeficitAnalysisPage() {
   const [lastUpdate, setLastUpdate] = useState("2026.03.06 (초기 수동 데이터)");
   const [companies] = useState(SEED_COMPANIES);
 
+  // ─── Admin PIN ─────────────────────────────────────────
+  const [adminPin, setAdminPin] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pinError, setPinError] = useState('');
+
+  useEffect(() => {
+    const saved = sessionStorage.getItem('wolfpack_deficit_pin');
+    if (saved) { setAdminPin(saved); setIsAdmin(true); }
+  }, []);
+
+  const handlePinSubmit = async () => {
+    try {
+      const res = await fetch("/api/deficit-update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-pin": adminPin },
+        body: JSON.stringify({ names: ["__pin_check__"], codes: {} }),
+      });
+      if (res.status === 401) {
+        setPinError("PIN이 일치하지 않습니다");
+        return;
+      }
+      setIsAdmin(true);
+      sessionStorage.setItem('wolfpack_deficit_pin', adminPin);
+      setShowPinModal(false);
+      setPinError('');
+    } catch {
+      setPinError("서버 연결 오류");
+    }
+  };
+
+  const handleLogout = () => {
+    setIsAdmin(false);
+    setAdminPin('');
+    sessionStorage.removeItem('wolfpack_deficit_pin');
+  };
+
   // ETF B/D/E 노출도 — 150종목 전체 대상 계산
   const etfScored = useMemo(() => calcETFScores(companies), [companies]);
 
   const handleAiUpdate = useCallback(async () => {
+    if (!isAdmin) {
+      setShowPinModal(true);
+      return;
+    }
     setAiLoading(true);
     setAiResult(null);
     try {
@@ -456,9 +497,19 @@ export default function DeficitAnalysisPage() {
       TOP10_DEFICIT.forEach(c => { if (c.code) top10Codes[c.name] = c.code; });
       const res = await fetch("/api/deficit-update", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-admin-pin": adminPin },
         body: JSON.stringify({ names: top10Names, codes: top10Codes }),
       });
+
+      if (res.status === 401) {
+        setIsAdmin(false);
+        sessionStorage.removeItem('wolfpack_deficit_pin');
+        alert('인증이 만료되었습니다. 다시 PIN을 입력해주세요.');
+        setShowPinModal(true);
+        setAiLoading(false);
+        return;
+      }
+
       const data = await res.json();
 
       // 뉴스 결과
@@ -505,7 +556,7 @@ export default function DeficitAnalysisPage() {
       setAiResult("API 호출 오류: " + e.message);
     }
     setAiLoading(false);
-  }, []);
+  }, [isAdmin, adminPin]);
 
   const typeDistribution = {};
   companies.forEach((c) => {
@@ -535,16 +586,62 @@ export default function DeficitAnalysisPage() {
             </h1>
             <p className="text-xs text-[#5A6478] mt-1">코스닥 시총 상위 150개 · 적자유형 분류 → 펀더멘탈(80) + 모멘텀(20) 스코어링 → 가중 ETF 매칭 · <span className="text-[#4EA8FF] font-mono">최종 업데이트: {lastUpdate}</span></p>
           </div>
-          <button onClick={handleAiUpdate} disabled={aiLoading}
-            className="px-5 py-2.5 rounded-lg border border-[#4EA8FF50] font-bold text-sm text-[#4EA8FF] transition
-                       bg-gradient-to-br from-[#0D2847] to-[#132E52]
-                       hover:from-[#133058] hover:to-[#1A3D6A] hover:border-[#4EA8FF] hover:shadow-[0_0_20px_#4EA8FF30]
-                       disabled:opacity-50 disabled:cursor-wait flex items-center gap-2">
-            {aiLoading ? "⚡ AI 분석 중..." : "⚡ AI 업데이트"}
-          </button>
+          <div className="flex items-center gap-2">
+            {isAdmin ? (
+              <button onClick={handleLogout}
+                className="px-3 py-2.5 rounded-lg border border-[#22c55e50] text-sm text-[#22c55e] bg-[#22c55e10] hover:bg-[#22c55e20] transition">
+                🔓
+              </button>
+            ) : (
+              <button onClick={() => { setShowPinModal(true); setPinError(''); }}
+                className="px-3 py-2.5 rounded-lg border border-[#5A647850] text-sm text-[#5A6478] bg-[#5A647810] hover:bg-[#5A647820] transition">
+                🔒
+              </button>
+            )}
+            <button onClick={handleAiUpdate} disabled={aiLoading || !isAdmin}
+              className={`px-5 py-2.5 rounded-lg border font-bold text-sm transition flex items-center gap-2
+                ${isAdmin
+                  ? 'border-[#4EA8FF50] text-[#4EA8FF] bg-gradient-to-br from-[#0D2847] to-[#132E52] hover:from-[#133058] hover:to-[#1A3D6A] hover:border-[#4EA8FF] hover:shadow-[0_0_20px_#4EA8FF30]'
+                  : 'border-[#5A647830] text-[#5A6478] bg-[#0D1520] cursor-not-allowed'
+                }
+                disabled:opacity-50 disabled:cursor-wait`}>
+              {aiLoading ? "⚡ AI 분석 중..." : isAdmin ? "⚡ AI 업데이트" : "🔐 AI 업데이트"}
+            </button>
+          </div>
         </div>
         <div className="h-0.5 bg-gradient-to-r from-transparent via-[#4EA8FF] to-transparent opacity-60" />
       </div>
+
+      {/* ── PIN 모달 ── */}
+      {showPinModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+          <div className="bg-[#141924] border border-[#2A3548] rounded-2xl p-8 w-[340px] shadow-2xl">
+            <div className="text-base font-bold text-[#E0E4EC] mb-1 text-center">🔐 관리자 인증</div>
+            <div className="text-xs text-[#5A6478] mb-5 text-center">AI 업데이트는 관리자만 가능합니다</div>
+            <input
+              type="password"
+              value={adminPin}
+              onChange={e => { setAdminPin(e.target.value); setPinError(''); }}
+              onKeyDown={e => e.key === 'Enter' && handlePinSubmit()}
+              placeholder="관리자 PIN 입력"
+              autoFocus
+              className="w-full px-4 py-3 rounded-xl border text-center text-base font-bold tracking-[8px] outline-none"
+              style={{ background: '#0A0E17', borderColor: pinError ? '#FF4444' : '#2A3548', color: '#E0E4EC' }}
+            />
+            {pinError && <div className="text-xs text-[#FF4444] mt-2 text-center">{pinError}</div>}
+            <div className="flex gap-2 mt-5">
+              <button onClick={() => { setShowPinModal(false); setPinError(''); setAdminPin(''); }}
+                className="flex-1 py-2.5 rounded-xl text-sm text-[#5A6478] border border-[#2A3548] hover:bg-[#1E2636] transition">
+                취소
+              </button>
+              <button onClick={handlePinSubmit}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold text-[#4EA8FF] border border-[#4EA8FF50] bg-[#0D2847] hover:bg-[#133058] transition">
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {aiResult && (
         <div className="mx-7 mt-4 p-4 bg-[#0D2847] border border-[#4EA8FF30] rounded-lg">
