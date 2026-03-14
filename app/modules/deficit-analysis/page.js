@@ -170,18 +170,26 @@ const SEED_COMPANIES = [
   { rank: 150,name: "알체라",         cap: 1720,  per: -68.4, roe: -35.2, type: "1",  detail: "AI 영상인식. 매출 극미" },
 ];
 
-/* Top10 비대칭매력: 펀더멘탈(80)+모멘텀(20)=100 */
+/* Top10 비대칭매력: 펀더멘탈 기본점수(80) + 사이클검증 조정(-8~0) + 모멘텀(20) = 최대100
+   
+   사이클 검증도 (3a 전용):
+   산업 사이클이 오래 검증된 업종(반도체장비 30년+)은 조정 0,
+   역사가 짧은 업종(2차전지 5년 미만)은 -6~-8 할인.
+   "사이클 회복 시 자동 흑전"이라는 3a의 핵심 전제가 얼마나 신뢰할 수 있는지를 반영.
+   
+   3b/2b: 사이클 논리가 아니므로 조정 없음 (0)
+*/
 const TOP10_ASYMMETRIC = [
-  { rank: 1, name: "에코프로비엠", code: "247540", type: "3a", fundScore: 74, reason: "EBITDA 755억 흑자로 GP 건전. 적자폭 축소 중. 2차전지 사이클 회복 시 가장 큰 영업레버리지", catalyst: "양극재 출하량 회복 + ASP 반등", momentum: { pct52wHigh: 0.82, maAlign: "full", ma120dir: "up", volRatio: 1.5 } },
-  { rank: 2, name: "에코프로", code: "086520", type: "3a", fundScore: 72, reason: "에코프로비엠 연결 효과. GP 유지. 인니 투자 + 원가혁신으로 흑전 목표", catalyst: "자회사 실적 턴어라운드", momentum: { pct52wHigh: 0.85, maAlign: "full", ma120dir: "up", volRatio: 1.8 } },
-  { rank: 3, name: "로보티즈", code: "108490", type: "3b", fundScore: 66, reason: "로봇 액추에이터 선도. GP흑자 확인. 삼성 로봇 수혜 기대. 매출 성장 > 비용 증가", catalyst: "로봇 양산 주문 확보", momentum: { pct52wHigh: 0.55, maAlign: "none", ma120dir: "down", volRatio: 0.8 } },
-  { rank: 4, name: "테크윙", code: "089030", type: "3a", fundScore: 62, reason: "반도체 테스트 핸들러 기술력. GP흑자 유지. 사이클 복원 시 즉시 흑전", catalyst: "반도체 사이클 상승 전환", momentum: { pct52wHigh: 0.60, maAlign: "partial", ma120dir: "down", volRatio: 2.1 } },
-  { rank: 5, name: "알지노믹스", code: "536560", type: "3b", fundScore: 60, reason: "핵산치료제 라이선싱 수익으로 GP흑자. R&D 확대로 OP적자이나 추가 딜 시 즉시 흑전", catalyst: "추가 라이선싱 딜 체결", momentum: { pct52wHigh: 0.90, maAlign: "full", ma120dir: "up", volRatio: 1.6 } },
-  { rank: 6, name: "엘앤에프", code: "066970", type: "3a", fundScore: 58, reason: "양극재 GP흑자 유지. 에코프로와 함께 2차전지 사이클 회복 수혜. 적자폭 개선 추세", catalyst: "NCMA 출하 증가 + 가동률 회복", momentum: { pct52wHigh: 0.50, maAlign: "none", ma120dir: "flat", volRatio: 1.0 } },
-  { rank: 7, name: "삼천당제약", code: "000250", type: "2b", fundScore: 64, reason: "GLP-1 파이프라인 Phase2. 시장 규모 거대. 기존 제약 매출로 런웨이 확보", catalyst: "GLP-1 임상 Phase3 진입", momentum: { pct52wHigh: 0.70, maAlign: "partial", ma120dir: "up", volRatio: 1.3 } },
-  { rank: 8, name: "에이비엘바이오", code: "298380", type: "2b", fundScore: 62, reason: "ADC 플랫폼. 사노피 파트너십 등 라이선싱 매출. 복수 파이프라인 옵셔널리티 높음", catalyst: "ABL503 Phase2 데이터 / 추가 라이선싱", momentum: { pct52wHigh: 0.65, maAlign: "partial", ma120dir: "up", volRatio: 1.1 } },
-  { rank: 9, name: "HLB", code: "028300", type: "2b", fundScore: 58, reason: "리보세라닙 FDA 승인 대기. 바이너리 이벤트. 승인 시 P&L 전면 전환", catalyst: "FDA 승인 결정", momentum: { pct52wHigh: 0.58, maAlign: "partial", ma120dir: "flat", volRatio: 1.1 } },
-  { rank: 10, name: "리가켐바이오", code: "141080", type: "2b", fundScore: 56, reason: "ADC 링커 플랫폼. 복수 라이선싱 딜 진행. 옵셔널리티 풍부", catalyst: "글로벌 빅파마 라이선싱 딜", momentum: { pct52wHigh: 0.62, maAlign: "partial", ma120dir: "up", volRatio: 1.3 } },
+  { rank: 1, name: "에코프로비엠", code: "247540", type: "3a", fundScore: 74, cycleAdj: -6, reason: "EBITDA 755억 흑자로 GP 건전. 적자폭 축소 중. 다만 2차전지 사이클 역사가 짧아 구조적 과잉 가능성 할인", catalyst: "양극재 출하량 회복 + ASP 반등", momentum: { pct52wHigh: 0.82, maAlign: "full", ma120dir: "up", volRatio: 1.5 } },
+  { rank: 2, name: "에코프로", code: "086520", type: "3a", fundScore: 72, cycleAdj: -6, reason: "에코프로비엠 연결 효과. GP 유지. 인니 투자 + 원가혁신. 사이클 불확실성 할인 적용", catalyst: "자회사 실적 턴어라운드", momentum: { pct52wHigh: 0.85, maAlign: "full", ma120dir: "up", volRatio: 1.8 } },
+  { rank: 3, name: "로보티즈", code: "108490", type: "3b", fundScore: 66, cycleAdj: 0, reason: "로봇 액추에이터 선도. GP흑자 확인. 삼성 로봇 수혜 기대. 매출 성장 > 비용 증가", catalyst: "로봇 양산 주문 확보", momentum: { pct52wHigh: 0.55, maAlign: "none", ma120dir: "down", volRatio: 0.8 } },
+  { rank: 4, name: "테크윙", code: "089030", type: "3a", fundScore: 62, cycleAdj: 0, reason: "반도체 테스트 핸들러. 30년+ 사이클 검증. GP흑자 유지. 사이클 복원 시 즉시 흑전 확실성 높음", catalyst: "반도체 사이클 상승 전환", momentum: { pct52wHigh: 0.60, maAlign: "partial", ma120dir: "down", volRatio: 2.1 } },
+  { rank: 5, name: "알지노믹스", code: "536560", type: "3b", fundScore: 60, cycleAdj: 0, reason: "핵산치료제 라이선싱 수익으로 GP흑자. R&D 확대로 OP적자이나 추가 딜 시 즉시 흑전", catalyst: "추가 라이선싱 딜 체결", momentum: { pct52wHigh: 0.90, maAlign: "full", ma120dir: "up", volRatio: 1.6 } },
+  { rank: 6, name: "엘앤에프", code: "066970", type: "3a", fundScore: 58, cycleAdj: -6, reason: "양극재 GP흑자 유지. 2차전지 사이클 수혜 기대. 사이클 불확실성 할인", catalyst: "NCMA 출하 증가 + 가동률 회복", momentum: { pct52wHigh: 0.50, maAlign: "none", ma120dir: "flat", volRatio: 1.0 } },
+  { rank: 7, name: "삼천당제약", code: "000250", type: "2b", fundScore: 64, cycleAdj: 0, reason: "GLP-1 파이프라인 Phase2. 시장 규모 거대. 기존 제약 매출로 런웨이 확보", catalyst: "GLP-1 임상 Phase3 진입", momentum: { pct52wHigh: 0.70, maAlign: "partial", ma120dir: "up", volRatio: 1.3 } },
+  { rank: 8, name: "에이비엘바이오", code: "298380", type: "2b", fundScore: 62, cycleAdj: 0, reason: "ADC 플랫폼. 사노피 파트너십 등 라이선싱 매출. 복수 파이프라인 옵셔널리티 높음", catalyst: "ABL503 Phase2 데이터 / 추가 라이선싱", momentum: { pct52wHigh: 0.65, maAlign: "partial", ma120dir: "up", volRatio: 1.1 } },
+  { rank: 9, name: "HLB", code: "028300", type: "2b", fundScore: 58, cycleAdj: 0, reason: "리보세라닙 FDA 승인 대기. 바이너리 이벤트. 승인 시 P&L 전면 전환", catalyst: "FDA 승인 결정", momentum: { pct52wHigh: 0.58, maAlign: "partial", ma120dir: "flat", volRatio: 1.1 } },
+  { rank: 10, name: "리가켐바이오", code: "141080", type: "2b", fundScore: 56, cycleAdj: 0, reason: "ADC 링커 플랫폼. 복수 라이선싱 딜 진행. 옵셔널리티 풍부", catalyst: "글로벌 빅파마 라이선싱 딜", momentum: { pct52wHigh: 0.62, maAlign: "partial", ma120dir: "up", volRatio: 1.3 } },
 ];
 
 function calcMomentum(m) {
@@ -195,7 +203,8 @@ function calcMomentum(m) {
 
 const INITIAL_TOP10 = TOP10_ASYMMETRIC.map((c) => {
   const momScore = calcMomentum(c.momentum);
-  return { ...c, momScore, totalScore: c.fundScore + momScore };
+  const adjFund = c.fundScore + (c.cycleAdj || 0);
+  return { ...c, adjFund, momScore, totalScore: adjFund + momScore };
 }).sort((a, b) => b.totalScore - a.totalScore).map((c, i) => ({ ...c, rank: i + 1 }));
 
 /* ETF 데이터 */
@@ -326,10 +335,11 @@ export default function DeficitAnalysisPage() {
           let mom = c.momentum;
           if (api && !api.error) mom = { pct52wHigh:api.pct52wHigh/100, maAlign:api.maAlign, ma120dir:api.ma120dir, volRatio:api.volRatio, currentPrice:api.currentPrice, high52w:api.high52w, ma20:api.ma20, ma60:api.ma60, ma120:api.ma120 };
           const ms = calcMomentum(mom);
-          return { ...c, momentum:mom, momScore:ms, totalScore:c.fundScore+ms };
+          const adjFund = c.fundScore + (c.cycleAdj || 0);
+          return { ...c, momentum:mom, adjFund, momScore:ms, totalScore:adjFund+ms };
         }).sort((a,b)=>b.totalScore-a.totalScore).map((c,i)=>({...c,rank:i+1}));
         setTop10Data(updated); setLastUpdate(data.dataDate||new Date().toISOString().split("T")[0]);
-        const summary = updated.slice(0,5).map(c=>`${c.rank}위 ${c.name}: 총점 ${c.totalScore} (펀더${c.fundScore}+모멘${c.momScore})`).join("\n");
+        const summary = updated.slice(0,5).map(c=>`${c.rank}위 ${c.name}: 총점 ${c.totalScore} (펀더${c.adjFund}${c.cycleAdj?'[사이클'+c.cycleAdj+']':''}+모멘${c.momScore})`).join("\n");
         setAiResult(`📊 모멘텀 업데이트 완료 (${data.dataDate||"today"})\n\n[Top 5]\n${summary}\n\n[뉴스]\n${newsText}`);
       } else { setAiResult(newsText); }
     } catch(e) { setAiResult("API 오류: "+e.message); }
@@ -386,11 +396,12 @@ export default function DeficitAnalysisPage() {
         {/* Top 10 */}
         {activeTab === "top10" && (<div>
           <div className="bg-[#111827] border border-[#1E2636] rounded-lg p-5 mb-4">
-            <div className="text-sm font-bold text-[#FFB800] mb-2">비대칭매력 스코어링: 펀더멘탈(80) + 모멘텀(20) = 100</div>
+            <div className="text-sm font-bold text-[#FFB800] mb-2">비대칭매력 스코어링: 펀더멘탈 기본(80) + 사이클검증 조정(-8~0) + 모멘텀(20)</div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs text-[#8892A4] leading-relaxed">
               <div><div className="text-[#FFB800] font-bold mb-1">3a (사이클릭)</div><p>GP마진 건전성(0~20) · 사이클 위치/흑전 거리(0~20) · 영업레버리지(0~15) · 촉매 확실성(0~15) · 재무 안정성(0~10)</p></div>
               <div><div className="text-[#E6A800] font-bold mb-1">3b (구조적)</div><p>GP마진 건전성(0~15) · 매출성장 vs 비용증가(0~20) · 플랫폼 전환점(0~15) · 촉매 확실성(0~15) · 재무 안정성(0~15)</p></div>
               <div><div className="text-[#FF8C00] font-bold mb-1">2b (메인 미출시)</div><p>파이프라인 단계(0~25) · 기존매출 런웨이(0~15) · 옵셔널리티(0~15) · 촉매 확실성(0~15) · 현금 런웨이(0~10)</p></div>
+              <div><div className="text-[#FF6B6B] font-bold mb-1">📉 사이클 검증도 (3a 전용)</div><p>산업 사이클 반복 역사가 긴 업종(반도체장비 30년+)은 조정 0, 짧은 업종(2차전지 5년 미만)은 -6~-8 할인. "사이클 회복 시 자동 흑전" 전제의 신뢰도 반영.</p></div>
               <div className="sm:col-span-2"><div className="text-[#4EA8FF] font-bold mb-1">모멘텀 (20점)</div><div className="flex gap-4 flex-wrap font-mono text-[10px]"><span>52주고가 근접도 <span className="text-[#5A6478]">(0~6)</span></span><span>이평선 정배열 <span className="text-[#5A6478]">(0~6)</span></span><span>120일선 방향 <span className="text-[#5A6478]">(-3~+4)</span></span><span>거래량 모멘텀 <span className="text-[#5A6478]">(0~4)</span></span></div></div>
             </div>
           </div>
@@ -404,14 +415,16 @@ export default function DeficitAnalysisPage() {
                   <div className="flex-1" />
                   <div className="w-36 flex items-center gap-2">
                     <div className="flex-1 h-2 rounded-full bg-[#1E2636] overflow-hidden flex">
-                      <div className="h-full" style={{width:`${c.fundScore}%`,background:dt?.color||"#4EA8FF"}} />
+                      <div className="h-full" style={{width:`${c.adjFund}%`,background:dt?.color||"#4EA8FF"}} />
                       <div className="h-full" style={{width:`${Math.max(0,c.momScore)}%`,background:"#4EA8FF"}} />
                     </div>
                     <span className={`font-mono text-sm font-bold min-w-[35px] text-right ${c.totalScore>=85?"text-[#FFB800]":"text-[#4EA8FF]"}`}>{c.totalScore}</span>
                   </div>
                 </div>
                 <div className="ml-[42px] flex gap-4 text-[10px] text-[#5A6478] mb-1 font-mono flex-wrap">
-                  <span>펀더: <span style={{color:dt?.color||"#4EA8FF"}}>{c.fundScore}</span></span>
+                  <span>기본: <span style={{color:dt?.color||"#4EA8FF"}}>{c.fundScore}</span></span>
+                  {c.cycleAdj && c.cycleAdj !== 0 && <span>사이클: <span className="text-[#FF6B6B]">{c.cycleAdj}</span></span>}
+                  <span>펀더: <span style={{color:dt?.color||"#4EA8FF"}}>{c.adjFund}</span></span>
                   <span>모멘: <span className="text-[#4EA8FF]">{c.momScore>0?"+":""}{c.momScore}</span></span>
                   <span>52w: <span className="text-[#8892A4]">{Math.round(c.momentum.pct52wHigh*100)}%</span></span>
                   <span>Vol: <span className="text-[#8892A4]">{c.momentum.volRatio}x</span></span>
@@ -465,7 +478,7 @@ export default function DeficitAnalysisPage() {
             </div>
           </div>
           <div className="bg-[#111827] border border-[#1E2636] rounded-lg overflow-hidden">
-            <div className="grid gap-3 px-4 py-3 text-[11px] font-bold text-[#6B7894] border-b-2 border-[#1E2636]" style={{gridTemplateColumns:"2fr 80px 60px 60px 70px 60px 3fr"}}><span>ETF명</span><span className="text-center">2b/3 노출</span><span className="text-center">2b형</span><span className="text-center">3형</span><span className="text-center">AUM</span><span className="text-center">보수</span><span>2b/3 편입종목</span></div>
+            <div className="grid gap-3 px-4 py-3 text-[11px] font-bold text-[#6B7894] border-b-2 border-[#1E2636]" style={{gridTemplateColumns:"2fr 70px 70px 70px 60px 60px 3fr"}}><span>ETF명</span><span className="text-center">순점수</span><span className="text-center">비대칭</span><span className="text-center">투자불가</span><span className="text-center">AUM</span><span className="text-center">보수</span><span>비대칭 편입 / 투자불가 감점</span></div>
             {etfScored.map(etf=>(<div key={etf.code||etf.name} className="grid gap-3 px-4 py-3.5 border-b border-[#1E2636] items-start text-xs hover:bg-[#1A2030] transition" style={{gridTemplateColumns:"2fr 70px 70px 70px 60px 60px 3fr"}}>
               <div><div className="font-bold text-sm">{etf.name}</div><div className="text-[10px] text-[#5A6478] font-mono">{etf.code}</div></div>
               <div className="text-center"><span className={`font-mono text-lg font-black ${etf.netScore>=15?"text-[#FFB800]":etf.netScore>=5?"text-[#4EA8FF]":"text-[#5A6478]"}`}>{etf.netScore}</span><div className="text-[9px] text-[#5A6478]">순점수</div></div>
@@ -490,6 +503,20 @@ export default function DeficitAnalysisPage() {
 
         {/* 프레임워크 */}
         {activeTab === "framework" && (<div>
+          {/* 전제 검증 */}
+          <div className="bg-[#0D2847] border border-[#4EA8FF30] rounded-xl p-5 mb-5">
+            <div className="text-sm font-bold text-[#4EA8FF] mb-2">📊 전제 검증: "코스닥 투자 = 적자기업 투자"</div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+              <div className="text-center"><div className="text-xl font-black font-mono text-[#FFB800]">53%</div><div className="text-[10px] text-[#5A6478]">시총 가중 적자 비중</div></div>
+              <div className="text-center"><div className="text-xl font-black font-mono text-[#FF3B3B]">60%</div><div className="text-[10px] text-[#5A6478]">Top 20 중 적자 시총</div></div>
+              <div className="text-center"><div className="text-xl font-black font-mono text-[#E0E4EC]">70개</div><div className="text-[10px] text-[#5A6478]">150종목 중 적자</div></div>
+              <div className="text-center"><div className="text-xl font-black font-mono text-[#00CC66]">200조</div><div className="text-[10px] text-[#5A6478]">적자기업 총 시총</div></div>
+            </div>
+            <div className="text-xs text-[#8892A4] leading-relaxed">
+              종목 수로는 흑자(80개)가 적자(70개)보다 많지만, <span className="text-[#FFB800] font-bold">시총 가중으로 보면 적자 기업이 53%</span>로 더 무겁습니다. 코스닥150 ETF를 사면 돈의 절반 이상이 적자기업에 투입됩니다. 시총 Top 20 중 11개가 적자(에코프로·삼천당·코오롱티슈진 등)이며, 이들이 Top 20 시총의 60%를 차지합니다. <span className="text-[#4EA8FF] font-bold">프레임워크의 전제는 유효합니다.</span>
+            </div>
+          </div>
+
           <div className="bg-[#111827] border border-[#1E2636] rounded-xl p-6 mb-5">
             <div className="text-sm font-bold text-[#4EA8FF] mb-4">적자기업 분류 의사결정 흐름</div>
             <div className="flex flex-col gap-2 text-xs">
