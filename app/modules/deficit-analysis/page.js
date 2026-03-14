@@ -243,8 +243,11 @@ function capPenaltyCoeff(rank) {
   return 0.3;
 }
 
-function calcETFScores(allCompanies) {
+function calcETFScores(allCompanies, top10List) {
   const companyMap = new Map(allCompanies.map(c => [c.name, c]));
+  // Top 10 종목별 totalScore 맵 — 보너스 승수 계산용
+  const top10ScoreMap = new Map((top10List || []).map(c => [c.name, c.totalScore]));
+
   return ETF_DATA.map((etf) => {
     const asymHoldings = [];
     const noInvestHoldings = [];
@@ -252,14 +255,19 @@ function calcETFScores(allCompanies) {
     (etf.holdings || []).forEach(h => {
       const comp = companyMap.get(h.name);
       if (!comp) return;
-      const entry = { ...h, type: comp.type, detail: comp.detail, rank: comp.rank };
+      const t10score = top10ScoreMap.get(h.name); // undefined if not Top 10
+      const entry = { ...h, type: comp.type, detail: comp.detail, rank: comp.rank, top10Score: t10score };
       if (ASYM_WEIGHT[comp.type] !== undefined) asymHoldings.push(entry);
       else if (NO_INVEST_TYPES.has(comp.type)) noInvestHoldings.push(entry);
     });
 
     const asymExposure = Math.round(asymHoldings.reduce((s, h) => s + h.weight, 0) * 10) / 10;
-    // 가중 비대칭 점수: 각 종목의 (비중 × 유형 가중치) 합산
-    const weightedAsym = Math.round(asymHoldings.reduce((s, h) => s + h.weight * (ASYM_WEIGHT[h.type] || 0), 0) * 10) / 10;
+    // 가중 비대칭 점수: 비중 × 유형가중치 × Top10 보너스(1 + score/100)
+    const weightedAsym = Math.round(asymHoldings.reduce((s, h) => {
+      const typeW = ASYM_WEIGHT[h.type] || 0;
+      const top10Bonus = h.top10Score !== undefined ? (1 + h.top10Score / 100) : 1;
+      return s + h.weight * typeW * top10Bonus;
+    }, 0) * 10) / 10;
     const noInvestExposure = Math.round(noInvestHoldings.reduce((s, h) => s + h.weight, 0) * 10) / 10;
     const penalty = Math.round(noInvestHoldings.reduce((s, h) => s + h.weight * capPenaltyCoeff(h.rank), 0) * 10) / 10;
     const netScore = Math.round((weightedAsym - penalty) * 10) / 10;
@@ -268,7 +276,9 @@ function calcETFScores(allCompanies) {
     asymHoldings.forEach(h => { if (byType[h.type] !== undefined) byType[h.type] += h.weight; });
     Object.keys(byType).forEach(k => { byType[k] = Math.round(byType[k] * 10) / 10; });
 
-    return { ...etf, matchedHoldings: asymHoldings, noInvestHoldings, asymExposure, weightedAsym, noInvestExposure, penalty, netScore, bdeCount: asymHoldings.length, noInvestCount: noInvestHoldings.length, byType };
+    const top10InETF = asymHoldings.filter(h => h.top10Score !== undefined).length;
+
+    return { ...etf, matchedHoldings: asymHoldings, noInvestHoldings, asymExposure, weightedAsym, noInvestExposure, penalty, netScore, bdeCount: asymHoldings.length, noInvestCount: noInvestHoldings.length, top10InETF, byType };
   }).sort((a, b) => b.netScore - a.netScore);
 }
 
@@ -322,7 +332,7 @@ export default function DeficitAnalysisPage() {
   };
   const handleLogout = () => { setIsAdmin(false); setAdminPin(''); sessionStorage.removeItem('wolfpack_deficit_pin'); };
 
-  const etfScored = useMemo(() => calcETFScores(companies), [companies]);
+  const etfScored = useMemo(() => calcETFScores(companies, top10Data), [companies, top10Data]);
 
   const handleAiUpdate = useCallback(async () => {
     if (!isAdmin) { setShowPinModal(true); return; }
@@ -478,21 +488,21 @@ export default function DeficitAnalysisPage() {
           <div className="bg-[#111827] border border-[#1E2636] rounded-lg p-5 mb-4">
             <div className="text-sm font-bold text-[#4EA8FF] mb-2">ETF 비대칭매력 가중 순점수 매칭</div>
             <div className="text-xs text-[#8892A4] leading-relaxed">
-              <span className="text-[#FFB800] font-bold">순점수 = Σ(비대칭 비중 × 유형 가중치) - Σ(투자불가 비중 × 시총 감점계수)</span><br/>
-              비대칭 유형별 가중치: <span className="font-mono text-[#FFB800]">3a(사이클릭) ×1.0</span> · <span className="font-mono text-[#E6A800]">3b(구조적) ×0.8</span> · <span className="font-mono text-[#FF8C00]">2b(메인미출시) ×0.7</span> · <span className="font-mono text-[#94A3B8]">4b(일회성) ×0.5</span><br/>
-              투자불가 감점: <span className="font-mono text-[#FF3B3B]">대형(1~30위) ×0.8</span> · <span className="font-mono text-[#FF8C00]">중형(31~70위) ×0.5</span> · <span className="font-mono text-[#8892A4]">소형(71~150위) ×0.3</span>
+              <span className="text-[#FFB800] font-bold">순점수 = Σ(비중 × 유형가중치 × Top10 보너스) - Σ(투자불가 비중 × 시총 감점)</span><br/>
+              유형 가중치: <span className="font-mono text-[#FFB800]">3a ×1.0</span> · <span className="font-mono text-[#E6A800]">3b ×0.8</span> · <span className="font-mono text-[#FF8C00]">2b ×0.7</span> · <span className="font-mono text-[#94A3B8]">4b ×0.5</span> | Top10 보너스: <span className="font-mono text-[#4EA8FF]">×(1+총점/100)</span> — 86점 종목이면 ×1.86<br/>
+              투자불가 감점: <span className="font-mono text-[#FF3B3B]">대형 ×0.8</span> · <span className="font-mono text-[#FF8C00]">중형 ×0.5</span> · <span className="font-mono text-[#8892A4]">소형 ×0.3</span>
             </div>
           </div>
           <div className="bg-[#111827] border border-[#1E2636] rounded-lg overflow-hidden">
-            <div className="grid gap-3 px-4 py-3 text-[11px] font-bold text-[#6B7894] border-b-2 border-[#1E2636]" style={{gridTemplateColumns:"2fr 65px 65px 65px 55px 55px 3fr"}}><span>ETF명</span><span className="text-center">순점수</span><span className="text-center">가중매력</span><span className="text-center">감점</span><span className="text-center">AUM</span><span className="text-center">보수</span><span>비대칭 편입 (유형×가중치) / 투자불가</span></div>
+            <div className="grid gap-3 px-4 py-3 text-[11px] font-bold text-[#6B7894] border-b-2 border-[#1E2636]" style={{gridTemplateColumns:"2fr 65px 65px 65px 55px 55px 3fr"}}><span>ETF명</span><span className="text-center">순점수</span><span className="text-center">가중매력</span><span className="text-center">감점</span><span className="text-center">AUM</span><span className="text-center">보수</span><span>비대칭 편입 (유형×가중치×T10보너스) / 투자불가</span></div>
             {etfScored.map(etf=>(<div key={etf.code||etf.name} className="grid gap-3 px-4 py-3.5 border-b border-[#1E2636] items-start text-xs hover:bg-[#1A2030] transition" style={{gridTemplateColumns:"2fr 65px 65px 65px 55px 55px 3fr"}}>
-              <div><div className="font-bold text-sm">{etf.name}</div><div className="text-[10px] text-[#5A6478] font-mono">{etf.code}</div></div>
-              <div className="text-center"><span className={`font-mono text-lg font-black ${etf.netScore>=15?"text-[#FFB800]":etf.netScore>=5?"text-[#4EA8FF]":"text-[#5A6478]"}`}>{etf.netScore}</span><div className="text-[9px] text-[#5A6478]">순점수</div></div>
+              <div><div className="font-bold text-sm">{etf.name}</div><div className="text-[10px] text-[#5A6478] font-mono">{etf.code}</div>{etf.top10InETF>0&&<div className="text-[9px] text-[#4EA8FF]">T10: {etf.top10InETF}종목</div>}</div>
+              <div className="text-center"><span className={`font-mono text-lg font-black ${etf.netScore>=20?"text-[#FFB800]":etf.netScore>=8?"text-[#4EA8FF]":"text-[#5A6478]"}`}>{etf.netScore}</span><div className="text-[9px] text-[#5A6478]">순점수</div></div>
               <div className="text-center"><span className="font-mono text-sm font-bold text-[#FFB800]">{etf.weightedAsym}</span><div className="text-[9px] text-[#5A6478]">원노출 {etf.asymExposure}%</div></div>
               <div className="text-center"><span className="font-mono text-sm font-bold text-[#FF3B3B]">{etf.penalty>0?"-"+etf.penalty:"—"}</span>{etf.noInvestCount>0&&<div className="text-[9px] text-[#FF3B3B50]">{etf.noInvestCount}종목</div>}</div>
               <div className="text-center font-mono text-[#8892A4]">{etf.aum}</div>
               <div className="text-center font-mono text-[#8892A4]">{etf.fee}</div>
-              <div><div className="flex flex-wrap gap-1 mb-1">{etf.matchedHoldings.sort((a,b)=>(ASYM_WEIGHT[b.type]||0)*b.weight-(ASYM_WEIGHT[a.type]||0)*a.weight).map(h=>{const dt=DEFICIT_TYPES[h.type]||DEFICIT_TYPES["흑자"];const w=ASYM_WEIGHT[h.type]||0;return(<span key={h.name} className="text-[10px] px-1.5 py-0.5 rounded font-mono" style={{background:dt.bg,color:dt.color,border:`1px solid ${dt.color}30`}}>{h.name} {h.weight}%<span className="opacity-50">×{w}</span></span>);})}</div>{etf.noInvestHoldings.length>0&&<div className="flex flex-wrap gap-1 mt-1 pt-1 border-t border-[#1E263680]">{etf.noInvestHoldings.sort((a,b)=>b.weight-a.weight).slice(0,5).map(h=>{const dt=DEFICIT_TYPES[h.type]||DEFICIT_TYPES["1"];const coeff=capPenaltyCoeff(h.rank);return(<span key={h.name} className="text-[9px] px-1 py-0.5 rounded font-mono opacity-60" style={{background:dt.bg,color:dt.color,border:`1px solid ${dt.color}20`}}>⚠{h.name} {h.weight}%<span className="opacity-50">×{coeff}</span></span>);})}{etf.noInvestHoldings.length>5&&<span className="text-[9px] text-[#5A6478]">+{etf.noInvestHoldings.length-5}개</span>}</div>}<div className="text-[10px] text-[#5A6478] mt-1">{etf.note}</div></div>
+              <div><div className="flex flex-wrap gap-1 mb-1">{etf.matchedHoldings.sort((a,b)=>{const aw=(ASYM_WEIGHT[a.type]||0)*a.weight*(a.top10Score!==undefined?(1+a.top10Score/100):1);const bw=(ASYM_WEIGHT[b.type]||0)*b.weight*(b.top10Score!==undefined?(1+b.top10Score/100):1);return bw-aw;}).map(h=>{const dt=DEFICIT_TYPES[h.type]||DEFICIT_TYPES["흑자"];const w=ASYM_WEIGHT[h.type]||0;const isT10=h.top10Score!==undefined;const bonus=isT10?(1+h.top10Score/100):1;return(<span key={h.name} className="text-[10px] px-1.5 py-0.5 rounded font-mono" style={{background:isT10?dt.bg.replace("15","25"):dt.bg,color:dt.color,border:`1px solid ${dt.color}${isT10?"50":"30"}`}}>{isT10?"⭐":""}{h.name} {h.weight}%<span className="opacity-50">×{w}{isT10?"×"+bonus.toFixed(1):""}</span></span>);})}</div>{etf.noInvestHoldings.length>0&&<div className="flex flex-wrap gap-1 mt-1 pt-1 border-t border-[#1E263680]">{etf.noInvestHoldings.sort((a,b)=>b.weight-a.weight).slice(0,5).map(h=>{const dt=DEFICIT_TYPES[h.type]||DEFICIT_TYPES["1"];const coeff=capPenaltyCoeff(h.rank);return(<span key={h.name} className="text-[9px] px-1 py-0.5 rounded font-mono opacity-60" style={{background:dt.bg,color:dt.color,border:`1px solid ${dt.color}20`}}>⚠{h.name} {h.weight}%<span className="opacity-50">×{coeff}</span></span>);})}{etf.noInvestHoldings.length>5&&<span className="text-[9px] text-[#5A6478]">+{etf.noInvestHoldings.length-5}개</span>}</div>}<div className="text-[10px] text-[#5A6478] mt-1">{etf.note}</div></div>
             </div>))}
           </div>
           <div className="bg-[#111827] border border-[#1E2636] rounded-lg p-5 mt-4">
