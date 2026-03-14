@@ -301,7 +301,8 @@ const ETF_DATA = [
 ];
 
 const NO_INVEST_TYPES = new Set(["1", "2a", "4a"]);
-const STABILITY_COEFF = 0.1; // 흑자 비중 1% → 안정 가산 0.1점
+// 흑자 안정 가산: ROE ≥ 10% → ×0.1 (건강), ROE < 10% → ×0.05 (부실)
+function stabilityCoeff(roe) { return roe >= 10 ? 0.1 : 0.05; }
 
 // 비대칭매력 유형별 가중치
 const ASYM_WEIGHT = { "3a": 1.0, "3b": 0.8, "2b": 0.7, "4b": 0.5 };
@@ -325,7 +326,7 @@ function calcETFScores(allCompanies, top10List) {
       const comp = companyMap.get(h.name);
       if (!comp) return;
       const t10score = top10ScoreMap.get(h.name);
-      const entry = { ...h, type: comp.type, detail: comp.detail, rank: comp.rank, top10Score: t10score };
+      const entry = { ...h, type: comp.type, detail: comp.detail, rank: comp.rank, roe: comp.roe, top10Score: t10score };
       if (ASYM_WEIGHT[comp.type] !== undefined) asymHoldings.push(entry);
       else if (NO_INVEST_TYPES.has(comp.type)) noInvestHoldings.push(entry);
       else if (comp.type === "흑자") surplusHoldings.push(entry);
@@ -340,7 +341,8 @@ function calcETFScores(allCompanies, top10List) {
     const noInvestExposure = Math.round(noInvestHoldings.reduce((s, h) => s + h.weight, 0) * 10) / 10;
     const penalty = Math.round(noInvestHoldings.reduce((s, h) => s + h.weight * capPenaltyCoeff(h.rank), 0) * 10) / 10;
     const surplusExposure = Math.round(surplusHoldings.reduce((s, h) => s + h.weight, 0) * 10) / 10;
-    const stabilityBonus = Math.round(surplusExposure * STABILITY_COEFF * 10) / 10;
+    // ROE 가중 안정 가산: 건강한 흑자(ROE≥10%) ×0.1, 부실한 흑자(ROE<10%) ×0.05
+    const stabilityBonus = Math.round(surplusHoldings.reduce((s, h) => s + h.weight * stabilityCoeff(h.roe || 0), 0) * 10) / 10;
     const netScore = Math.round((weightedAsym - penalty + stabilityBonus) * 10) / 10;
 
     const byType = { "3a": 0, "3b": 0, "2b": 0, "4b": 0 };
@@ -349,7 +351,7 @@ function calcETFScores(allCompanies, top10List) {
 
     const top10InETF = asymHoldings.filter(h => h.top10Score !== undefined).length;
 
-    return { ...etf, matchedHoldings: asymHoldings, noInvestHoldings, surplusExposure, stabilityBonus, asymExposure, weightedAsym, noInvestExposure, penalty, netScore, bdeCount: asymHoldings.length, noInvestCount: noInvestHoldings.length, top10InETF, byType };
+    return { ...etf, matchedHoldings: asymHoldings, noInvestHoldings, surplusHoldings, surplusExposure, stabilityBonus, asymExposure, weightedAsym, noInvestExposure, penalty, netScore, bdeCount: asymHoldings.length, noInvestCount: noInvestHoldings.length, top10InETF, byType };
   }).sort((a, b) => b.netScore - a.netScore);
 }
 
@@ -560,7 +562,7 @@ export default function DeficitAnalysisPage() {
             <div className="text-sm font-bold text-[#4EA8FF] mb-2">ETF 비대칭매력 가중 순점수 매칭</div>
             <div className="text-xs text-[#8892A4] leading-relaxed">
               <span className="text-[#FFB800] font-bold">순점수 = Σ(비중×유형가중×T10보너스) - Σ(투자불가×시총감점) + 흑자비중×0.1</span><br/>
-              유형: <span className="font-mono text-[#FFB800]">3a ×1.0</span> · <span className="font-mono text-[#E6A800]">3b ×0.8</span> · <span className="font-mono text-[#FF8C00]">2b ×0.7</span> · <span className="font-mono text-[#94A3B8]">4b ×0.5</span> | T10: <span className="font-mono text-[#4EA8FF]">×(1+점수/100)</span> | 흑자 안정: <span className="font-mono text-[#00CC66]">비중×0.1</span><br/>
+              유형: <span className="font-mono text-[#FFB800]">3a ×1.0</span> · <span className="font-mono text-[#E6A800]">3b ×0.8</span> · <span className="font-mono text-[#FF8C00]">2b ×0.7</span> · <span className="font-mono text-[#94A3B8]">4b ×0.5</span> | T10: <span className="font-mono text-[#4EA8FF]">×(1+점수/100)</span> | 흑자 안정: <span className="font-mono text-[#00CC66]">ROE≥10% ×0.1</span> · <span className="font-mono text-[#5A6478]">ROE&lt;10% ×0.05</span><br/>
               감점: <span className="font-mono text-[#FF3B3B]">대형 ×0.8</span> · <span className="font-mono text-[#FF8C00]">중형 ×0.5</span> · <span className="font-mono text-[#8892A4]">소형 ×0.3</span>
             </div>
           </div>
