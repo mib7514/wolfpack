@@ -229,6 +229,75 @@ const ETF_DATA = [
     holdings: [{ name: "테크윙", weight: 4.5 },{ name: "고영", weight: 2.0 },{ name: "심텍", weight: 1.5 }] },
   { name: "PLUS 코스닥150액티브", code: "신규(3/17)", aum: "상장 예정", fee: "0.15%", note: "🔜 3/17 상장 예정. 한화. 네거티브 스크리닝+30종목 압축. 최저 보수",
     holdings: [{ name: "에코프로", weight: 7.0 },{ name: "에코프로비엠", weight: 6.0 },{ name: "로보티즈", weight: 1.5 },{ name: "테크윙", weight: 1.0 },{ name: "엘앤에프", weight: 1.2 },{ name: "삼천당제약", weight: 0.8 }] },
+
+  // ─── 코스닥150 패시브 추가 ───
+  { name: "RISE 코스닥150", code: "270810", aum: "4,200억", fee: "0.20%", note: "코스닥150 패시브. KODEX/TIGER와 동일 지수",
+    holdings: [{ name: "에코프로", weight: 8.2 },{ name: "에코프로비엠", weight: 7.0 },{ name: "삼천당제약", weight: 3.0 },{ name: "에이비엘바이오", weight: 1.5 },{ name: "HLB", weight: 1.2 },{ name: "리가켐바이오", weight: 1.0 },{ name: "로보티즈", weight: 1.3 },{ name: "테크윙", weight: 0.9 },{ name: "알지노믹스", weight: 0.8 },{ name: "엔켐", weight: 0.7 },{ name: "엘앤에프", weight: 0.6 },{ name: "코오롱티슈진", weight: 1.6 },{ name: "보로노이", weight: 1.0 },{ name: "펩트론", weight: 1.0 },{ name: "서진시스템", weight: 0.5 },{ name: "성호전자", weight: 0.5 },{ name: "태성", weight: 0.4 },{ name: "원익홀딩스", weight: 0.4 },{ name: "하나마이크론", weight: 0.4 }] },
+  { name: "ACE 코스닥150", code: "354500", aum: "3,500억", fee: "0.22%", note: "코스닥150 패시브. 한투운용",
+    holdings: [{ name: "에코프로", weight: 8.2 },{ name: "에코프로비엠", weight: 7.0 },{ name: "삼천당제약", weight: 3.0 },{ name: "에이비엘바이오", weight: 1.5 },{ name: "HLB", weight: 1.2 },{ name: "리가켐바이오", weight: 1.0 },{ name: "로보티즈", weight: 1.3 },{ name: "테크윙", weight: 0.9 },{ name: "알지노믹스", weight: 0.8 },{ name: "엔켐", weight: 0.7 },{ name: "엘앤에프", weight: 0.6 },{ name: "코오롱티슈진", weight: 1.6 },{ name: "보로노이", weight: 1.0 },{ name: "펩트론", weight: 1.0 },{ name: "서진시스템", weight: 0.5 },{ name: "성호전자", weight: 0.5 },{ name: "태성", weight: 0.4 },{ name: "원익홀딩스", weight: 0.4 },{ name: "하나마이크론", weight: 0.4 }] },
+  // ─── 바이오 ───
+  { name: "KODEX 바이오", code: "244580", aum: "1,800억", fee: "0.45%", note: "코스닥 바이오 섹터 광역. 2b Pre-revenue 다수 포함",
+    holdings: [{ name: "알테오젠", weight: 8.0 },{ name: "삼천당제약", weight: 5.5 },{ name: "에이비엘바이오", weight: 4.0 },{ name: "HLB", weight: 3.5 },{ name: "리가켐바이오", weight: 3.0 },{ name: "알지노믹스", weight: 2.0 },{ name: "메지온", weight: 1.5 },{ name: "에이치엘비", weight: 1.0 },{ name: "코오롱티슈진", weight: 3.0 },{ name: "펩트론", weight: 2.5 },{ name: "보로노이", weight: 2.0 },{ name: "에임드바이오", weight: 1.5 },{ name: "올릭스", weight: 1.5 },{ name: "디앤디파마텍", weight: 1.0 },{ name: "오름테라퓨틱", weight: 1.0 },{ name: "차바이오텍", weight: 0.8 }] },
+  { name: "KODEX 바이오TOP10", code: "364970", aum: "900억", fee: "0.40%", note: "바이오 시총 상위 10종목 집중",
+    holdings: [{ name: "알테오젠", weight: 15.0 },{ name: "삼천당제약", weight: 10.0 },{ name: "에이비엘바이오", weight: 8.0 },{ name: "HLB", weight: 7.0 },{ name: "리가켐바이오", weight: 5.0 },{ name: "코오롱티슈진", weight: 5.0 },{ name: "보로노이", weight: 4.0 },{ name: "펩트론", weight: 3.0 }] },
+  { name: "TIME K바이오액티브", code: "463050", aum: "1,200억", fee: "0.80%", note: "타임폴리오 바이오 액티브. 파이프라인 기반 선별",
+    holdings: [{ name: "알테오젠", weight: 10.0 },{ name: "삼천당제약", weight: 6.0 },{ name: "에이비엘바이오", weight: 5.0 },{ name: "리가켐바이오", weight: 4.0 },{ name: "HLB", weight: 3.5 },{ name: "알지노믹스", weight: 3.0 },{ name: "메지온", weight: 2.0 },{ name: "에이치엘비", weight: 1.5 },{ name: "코오롱티슈진", weight: 1.0 }] },
+  // ─── 2차전지 추가 ───
+  { name: "TIGER 2차전지테마", code: "305540", aum: "5,500억", fee: "0.50%", note: "2차전지 테마 30종목. 소재·장비 포함",
+    holdings: [{ name: "에코프로비엠", weight: 10.0 },{ name: "에코프로", weight: 7.0 },{ name: "엘앤에프", weight: 4.5 },{ name: "엔켐", weight: 2.5 },{ name: "나노신소재", weight: 2.0 },{ name: "필에너지", weight: 1.5 },{ name: "씨아이에스", weight: 1.0 }] },
+  { name: "SOL 2차전지소부장Fn", code: "455860", aum: "1,500억", fee: "0.45%", note: "2차전지 소재·부품·장비 집중",
+    holdings: [{ name: "에코프로비엠", weight: 8.0 },{ name: "에코프로", weight: 5.0 },{ name: "엘앤에프", weight: 4.0 },{ name: "엔켐", weight: 3.5 },{ name: "나노신소재", weight: 2.5 },{ name: "필에너지", weight: 2.0 },{ name: "씨아이에스", weight: 1.5 }] },
+  { name: "RISE 2차전지액티브", code: "422420", aum: "800억", fee: "0.60%", note: "2차전지 액티브. KB자산운용",
+    holdings: [{ name: "에코프로비엠", weight: 11.0 },{ name: "에코프로", weight: 7.5 },{ name: "엘앤에프", weight: 5.0 },{ name: "엔켐", weight: 3.0 },{ name: "나노신소재", weight: 2.0 },{ name: "필에너지", weight: 1.0 }] },
+  // ─── 반도체 ───
+  { name: "KODEX AI반도체핵심장비", code: "479990", aum: "2,000억", fee: "0.45%", note: "AI 반도체 장비·소재. 코스닥 장비주 다수",
+    holdings: [{ name: "테크윙", weight: 5.0 },{ name: "심텍", weight: 3.0 },{ name: "고영", weight: 2.5 },{ name: "하나마이크론", weight: 2.0 },{ name: "인텔리안테크", weight: 1.5 },{ name: "티에스이", weight: 1.5 },{ name: "서진시스템", weight: 2.0 },{ name: "성호전자", weight: 1.5 },{ name: "태성", weight: 1.0 }] },
+  { name: "ACE AI반도체TOP3+", code: "469150", aum: "1,500억", fee: "0.45%", note: "AI 반도체 핵심3사+. 코스닥 후공정 포함",
+    holdings: [{ name: "테크윙", weight: 4.0 },{ name: "하나마이크론", weight: 3.0 },{ name: "심텍", weight: 2.0 },{ name: "고영", weight: 1.5 },{ name: "서진시스템", weight: 1.5 }] },
+  { name: "TIGER AI반도체핵심공정", code: "471760", aum: "1,800억", fee: "0.45%", note: "AI 반도체 핵심공정. 전·후공정 밸류체인",
+    holdings: [{ name: "테크윙", weight: 4.5 },{ name: "심텍", weight: 2.5 },{ name: "고영", weight: 2.0 },{ name: "하나마이크론", weight: 2.0 },{ name: "인텔리안테크", weight: 1.0 },{ name: "서진시스템", weight: 1.5 },{ name: "태성", weight: 1.0 }] },
+  // ─── 로봇 ───
+  { name: "KODEX 로봇액티브", code: "445290", aum: "1,200억", fee: "0.50%", note: "로봇 산업 액티브. 코스닥 로봇 부품 포함",
+    holdings: [{ name: "로보티즈", weight: 8.0 },{ name: "레인보우로보틱스", weight: 5.0 }] },
+  { name: "RISE AI&로봇", code: "469070", aum: "800억", fee: "0.45%", note: "AI+로봇 융합 테마",
+    holdings: [{ name: "로보티즈", weight: 6.0 },{ name: "레인보우로보틱스", weight: 3.0 },{ name: "테크윙", weight: 1.5 }] },
+  // ─── 게임 ───
+  { name: "TIGER 게임TOP10", code: "364990", aum: "600억", fee: "0.40%", note: "국내 게임 시총 상위 10종목",
+    holdings: [{ name: "카카오게임즈", weight: 8.0 },{ name: "펄어비스", weight: 7.0 },{ name: "네오위즈", weight: 5.0 },{ name: "위메이드", weight: 4.0 }] },
+  { name: "KODEX 게임산업", code: "300950", aum: "500억", fee: "0.45%", note: "국내 게임산업 광역",
+    holdings: [{ name: "카카오게임즈", weight: 7.0 },{ name: "펄어비스", weight: 6.0 },{ name: "네오위즈", weight: 4.0 },{ name: "위메이드", weight: 3.5 }] },
+  // ─── 성장·밸류업 ───
+  { name: "TIGER AI코리아그로스액티브", code: "365040", aum: "900억", fee: "0.60%", note: "AI 기반 한국 성장주 액티브. 코스닥 성장주 편입",
+    holdings: [{ name: "에코프로비엠", weight: 3.0 },{ name: "에코프로", weight: 2.5 },{ name: "삼천당제약", weight: 2.0 },{ name: "로보티즈", weight: 1.5 },{ name: "테크윙", weight: 1.0 },{ name: "엘앤에프", weight: 0.8 }] },
+  { name: "SOL 코리아메가테크액티브", code: "444200", aum: "700억", fee: "0.50%", note: "국내 메가테크 액티브. 반도체·바이오·2차전지",
+    holdings: [{ name: "에코프로비엠", weight: 2.5 },{ name: "에코프로", weight: 2.0 },{ name: "삼천당제약", weight: 1.5 },{ name: "테크윙", weight: 1.0 },{ name: "HLB", weight: 0.8 }] },
+  // ─── 방산·우주 ───
+  { name: "PLUS K방산", code: "449450", aum: "3,500억", fee: "0.45%", note: "K-방산 테마. 코스닥 방산 부품주 일부 포함",
+    holdings: [{ name: "비에이치아이", weight: 2.0 },{ name: "켐트로닉스", weight: 1.5 }] },
+  { name: "TIGER K방산&우주", code: "462250", aum: "2,800억", fee: "0.45%", note: "방산+우주 테마. 코스닥 방산·위성 종목 포함",
+    holdings: [{ name: "비에이치아이", weight: 2.0 },{ name: "인텔리안테크", weight: 1.5 },{ name: "켐트로닉스", weight: 1.0 }] },
+  { name: "PLUS 우주항공&UAM", code: "421920", aum: "600억", fee: "0.50%", note: "우주항공·UAM 테마",
+    holdings: [{ name: "인텔리안테크", weight: 3.0 }] },
+  // ─── 원자력·에너지 ───
+  { name: "HANARO 원자력iSelect", code: "484720", aum: "1,000억", fee: "0.45%", note: "원자력 밸류체인. 코스닥 부품주 일부",
+    holdings: [{ name: "비에이치아이", weight: 3.0 }] },
+  { name: "ACE 원자력TOP10", code: "433500", aum: "800억", fee: "0.45%", note: "원자력 시총 상위 10종목",
+    holdings: [{ name: "비에이치아이", weight: 4.0 }] },
+  { name: "KODEX 신재생에너지액티브", code: "385510", aum: "500억", fee: "0.50%", note: "신재생에너지 액티브",
+    holdings: [{ name: "씨아이에스", weight: 1.5 },{ name: "필에너지", weight: 1.0 }] },
+  { name: "PLUS 태양광&ESS", code: "457990", aum: "400억", fee: "0.50%", note: "태양광·ESS 테마",
+    holdings: [{ name: "씨아이에스", weight: 2.0 },{ name: "필에너지", weight: 1.5 }] },
+  // ─── 지주·밸류업 ───
+  { name: "TIGER 지주회사", code: "307520", aum: "600억", fee: "0.40%", note: "국내 지주회사. 코스닥 지주사 일부 포함",
+    holdings: [{ name: "원익홀딩스", weight: 2.0 }] },
+  { name: "KODEX 코리아밸류업", code: "495850", aum: "2,000억", fee: "0.20%", note: "밸류업 지수. KOSPI 중심이나 코스닥 대형 일부 포함",
+    holdings: [{ name: "에코프로비엠", weight: 1.0 },{ name: "에코프로", weight: 0.8 }] },
+  { name: "TIGER 코리아밸류업", code: "496060", aum: "1,500억", fee: "0.20%", note: "밸류업 지수 추종. KODEX와 동일 지수",
+    holdings: [{ name: "에코프로비엠", weight: 1.0 },{ name: "에코프로", weight: 0.8 }] },
+  { name: "RISE 코리아밸류업", code: "495050", aum: "1,200억", fee: "0.20%", note: "밸류업 지수. KB운용",
+    holdings: [{ name: "에코프로비엠", weight: 1.0 },{ name: "에코프로", weight: 0.8 }] },
+  { name: "PLUS K방산소부장", code: "0090B0", aum: "600억", fee: "0.45%", note: "K-방산 소재·부품·장비",
+    holdings: [{ name: "비에이치아이", weight: 2.5 },{ name: "켐트로닉스", weight: 2.0 }] },
 ];
 
 const NO_INVEST_TYPES = new Set(["1", "2a", "4a"]);
