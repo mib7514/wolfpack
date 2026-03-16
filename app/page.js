@@ -145,6 +145,15 @@ const MODULES = [
     layer: "bcp",
   },
   {
+    id: "regime-detector",
+    name: "Market Regime Detector",
+    subtitle: "9-Regime Matrix · 금리 × 스프레드",
+    icon: "📊",
+    description: "국고3Y + AA- 스프레드 WoW 변화 기반 9개 시장 레짐 판단",
+    path: "/modules/regime-detector",
+    layer: "bcp",
+  },
+  {
     id: "duration-commander",
     name: "Duration Commander",
     subtitle: "Engine ① · Rate Scenario · Kelly Duration",
