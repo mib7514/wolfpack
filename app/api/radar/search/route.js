@@ -70,6 +70,17 @@ Also look up the stock's current technical data:
 Generate 5-7 monitoring indicators, each with 3-5 sub-indicators for detailed evaluation.
 Each sub-indicator should be auto-evaluatable through web search or financial data.
 
+IMPORTANT: Also calculate Kelly Criterion parameters based on your analysis:
+- kelly_win_prob: Probability of investment success (0.0-1.0). Base this on:
+  * Overall monitoring score strength
+  * Technical momentum alignment
+  * Catalyst probability and timeline
+  * Bear case probability
+- kelly_wl_ratio: Win/Loss ratio (expected gain / expected loss). Base this on:
+  * Upside to target price vs downside to stop-loss
+  * Bull case return vs bear case loss
+  * Risk/reward asymmetry
+
 IMPORTANT: Return ONLY valid JSON, no markdown, no backticks:
 {
   "ticker": "9618.HK",
@@ -158,12 +169,19 @@ IMPORTANT: Return ONLY valid JSON, no markdown, no backticks:
 category: BTC_TREASURY, AI_INFRA, AI_APP, BIOTECH, SPAC, IPO, ROBOTICS, ENERGY, FINTECH, CRYPTO, SEMI, OTHER
 monitoring_indicators weight 합계 = 100
 sub_indicators score: 0-100, 현재 상태 기반으로 객관적 평가
-momentum: 웹검색으로 실제 데이터 반영`
+momentum: 웹검색으로 실제 데이터 반영
+kelly_win_prob: 0.0-1.0 범위, 모니터링 점수·모멘텀·카탈리스트 확률 종합 반영
+kelly_wl_ratio: 1.0-5.0 범위, 목표가 대비 손절가 비율 기반`
         }]
       }),
     });
 
-    if (!res.ok) return NextResponse.json({ error: "Search failed" }, { status: 502 });
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      const msg = errBody?.error?.message || errBody?.message || `API error ${res.status}`;
+      console.error("Radar search API error:", res.status, msg);
+      return NextResponse.json({ error: `Search failed: ${msg}` }, { status: 502 });
+    }
 
     const data = await res.json();
     const allText = (data.content?.filter(b => b.type === "text") || []).map(b => b.text).join("\n");
@@ -173,6 +191,7 @@ momentum: 웹검색으로 실제 데이터 반영`
 
     return NextResponse.json(parsed);
   } catch (e) {
+    console.error("Radar search error:", e);
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }
