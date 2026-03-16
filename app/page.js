@@ -45,16 +45,6 @@ const MODULES = [
     status: "live",
   },
   {
-    id: "duration-commander",
-    name: "Duration Commander",
-    subtitle: "Rate Scenario · Kelly Duration · Narrative",
-    icon: "⊿",
-    description: "확률가중 금리시나리오 · 켈리 듀레이션 포지셔닝 · 내러티브 지표 추적",
-    path: "/modules/rate-scenario",
-    layer: "macro",
-    status: "live",
-  },
-  {
     id: "employment-narrative",
     name: "고용 내러티브",
     subtitle: "Employment Narrative Monitor",
@@ -96,6 +86,26 @@ const MODULES = [
     status: "live",
   },
   // ─── Layer 3: CREDIT ───
+  {
+    id: "alpha-cockpit",
+    name: "Alpha Cockpit",
+    subtitle: "BCP Alpha Architecture · 6 Engines",
+    icon: "🎛️",
+    description: "Market Regime → 6 Alpha Engines → Portfolio Construction OS · 제1원칙 설계",
+    path: "/modules/alpha-cockpit",
+    layer: "credit",
+    status: "live",
+  },
+  {
+    id: "duration-commander",
+    name: "Duration Commander",
+    subtitle: "Engine ① · Rate Scenario · Kelly Duration",
+    icon: "⊿",
+    description: "확률가중 금리시나리오 · 켈리 듀레이션 포지셔닝 · 내러티브 지표 추적",
+    path: "/modules/rate-scenario",
+    layer: "credit",
+    status: "live",
+  },
   {
     id: "sector-watch",
     name: "Sector Watch",
