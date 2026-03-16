@@ -189,12 +189,21 @@ function RegimeDetector() {
 
   return (
     <section className="arch-section">
-      <SectionHeader
-        tag="DETECTION LAYER"
-        title="Market Regime Detector"
-        subtitle="9-Regime Matrix · 금리 방향 × 스프레드 방향"
-        color="#f59e0b"
-      />
+      <div className="flex items-center justify-between">
+        <SectionHeader
+          tag="DETECTION LAYER"
+          title="Market Regime Detector"
+          subtitle="9-Regime Matrix · 금리 방향 × 스프레드 방향"
+          color="#f59e0b"
+        />
+        <Link
+          href="/modules/regime-detector"
+          className="text-[11px] font-semibold text-amber-500 hover:text-amber-400 transition-colors flex items-center gap-1"
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+          Open Module →
+        </Link>
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-xs">
           <thead>
