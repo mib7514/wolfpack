@@ -147,23 +147,33 @@ function DetailPanel({ stock, onClose, onUpdate, onDelete }) {
           exchange: stock.exchange,
           name: stock.name,
           indicators: indicators,
+          kelly_win_prob: stock.kelly_win_prob,
+          kelly_wl_ratio: stock.kelly_wl_ratio,
         }),
       });
       if (res.ok) {
         const data = await res.json();
+        const newKellyWP = data.kelly_win_prob ?? stock.kelly_win_prob;
+        const newKellyWL = data.kelly_wl_ratio ?? stock.kelly_wl_ratio;
         const updated = {
           ...stock,
           indicators: data.indicators || indicators,
           momentum: data.momentum || momentum,
+          kelly_win_prob: newKellyWP,
+          kelly_wl_ratio: newKellyWL,
         };
         onUpdate(updated);
         dbUpdate(stock.id, {
           indicators: data.indicators || indicators,
           momentum: data.momentum || momentum,
+          kelly_win_prob: newKellyWP,
+          kelly_wl_ratio: newKellyWL,
         });
-        setEvalResult(data.summary || "평가 완료");
+        const kellyNote = data.kelly_reasoning ? ` | Kelly: ${data.kelly_reasoning}` : "";
+        setEvalResult((data.summary || "평가 완료") + kellyNote);
       } else {
-        setEvalResult("평가 실패");
+        const err = await res.json().catch(() => ({}));
+        setEvalResult(err.error || "평가 실패");
       }
     } catch (e) {
       setEvalResult("오류: " + e.message);
@@ -212,7 +222,7 @@ function DetailPanel({ stock, onClose, onUpdate, onDelete }) {
               className="mt-3 px-5 py-2 rounded-lg text-xs font-bold bg-amber-600/20 text-amber-500 border border-amber-500/30 hover:bg-amber-600/30 transition disabled:opacity-40">
               {evaluating ? "🔍 AI 평가 중..." : "🔄 AI 자동 평가"}
             </button>
-            {evalResult && <div className="mt-2 text-[10px] text-slate-400">{evalResult}</div>}
+            {evalResult && <div className="mt-2 text-[10px] text-slate-400 leading-relaxed">{evalResult}</div>}
           </div>
 
           {/* Monitoring Indicators */}
@@ -278,18 +288,37 @@ function DetailPanel({ stock, onClose, onUpdate, onDelete }) {
 
           {/* Kelly */}
           <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-4">
-            <div className="text-[11px] font-bold text-slate-400 tracking-wider font-mono mb-2">KELLY CRITERION</div>
+            <div className="text-[11px] font-bold text-slate-400 tracking-wider font-mono mb-3">KELLY CRITERION</div>
+            {/* Kelly parameters */}
+            <div className="flex gap-3 mb-3">
+              <div className="flex-1 bg-black/20 rounded-lg py-2 px-3">
+                <div className="text-[9px] text-slate-600 mb-0.5">승률 (Win Prob)</div>
+                <div className="text-sm font-mono font-bold text-slate-300">
+                  {stock.kelly_win_prob ? (stock.kelly_win_prob * 100).toFixed(0) + "%" : "—"}
+                </div>
+              </div>
+              <div className="flex-1 bg-black/20 rounded-lg py-2 px-3">
+                <div className="text-[9px] text-slate-600 mb-0.5">승패비 (W/L Ratio)</div>
+                <div className="text-sm font-mono font-bold text-slate-300">
+                  {stock.kelly_wl_ratio ? stock.kelly_wl_ratio.toFixed(1) + "x" : "—"}
+                </div>
+              </div>
+            </div>
+            {/* Kelly results */}
             <div className="flex gap-4 text-center">
               {[
-                { label: "Full", value: kelly.full },
-                { label: "Half", value: kelly.half },
-                { label: "Quarter", value: kelly.quarter },
-              ].map(({ label, value }) => (
+                { label: "Full", value: kelly.full, color: "#ef4444" },
+                { label: "Half", value: kelly.half, color: "#d4a843" },
+                { label: "Quarter", value: kelly.quarter, color: "#4ade80" },
+              ].map(({ label, value, color }) => (
                 <div key={label} className="flex-1 bg-black/20 rounded-lg py-2">
-                  <div className="text-lg font-mono font-bold text-amber-500">{value}%</div>
+                  <div className="text-lg font-mono font-bold" style={{ color }}>{value}%</div>
                   <div className="text-[9px] text-slate-600">{label}</div>
                 </div>
               ))}
+            </div>
+            <div className="text-[9px] text-slate-600 mt-2 text-center italic">
+              AI 자동 평가 시 승률·승패비가 현재 주가 수준 반영하여 업데이트됩니다
             </div>
           </div>
 
