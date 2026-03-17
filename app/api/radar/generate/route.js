@@ -1,14 +1,19 @@
 // app/api/radar/generate/route.js
 import { NextResponse } from "next/server";
-
 export async function POST(req) {
   try {
+    // ─── 관리자 PIN 검증 ───
+    const adminPin = process.env.ADMIN_PIN;
+    const userPin = req.headers.get("x-admin-pin");
+    if (!adminPin || userPin !== adminPin) {
+      return NextResponse.json({ error: "관리자 인증이 필요합니다" }, { status: 401 });
+    }
+    // ─────────────────────────
+
     const { ticker, exchange } = await req.json();
     if (!ticker) return NextResponse.json({ error: "ticker required" }, { status: 400 });
-
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return NextResponse.json({ error: "API key not set" }, { status: 500 });
-
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -23,7 +28,6 @@ export async function POST(req) {
         messages: [{
           role: "user",
           content: `You are a growth stock analyst. Research "${ticker.toUpperCase()}" on ${exchange} and generate a concise investment thesis in Korean.
-
 Return ONLY valid JSON (no markdown, no backticks):
 {
   "name": "company name in English",
@@ -42,16 +46,13 @@ wl_ratio = upside / downside ratio (0.5~10)`
         }]
       }),
     });
-
     if (!res.ok) {
       console.error("Claude API error:", await res.text());
       return NextResponse.json({ error: "Claude API failed" }, { status: 502 });
     }
-
     const data = await res.json();
     const text = data.content?.filter(b => b.type === "text").map(b => b.text).join("") || "";
     const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
-
     return NextResponse.json(parsed);
   } catch (e) {
     console.error("Generate error:", e);
