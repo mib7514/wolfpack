@@ -27,6 +27,64 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
+/* ─── Admin PIN Hook ─── */
+function useAdminPin(moduleKey) {
+  const storageKey = `wolfpack_admin_${moduleKey}`;
+  const [pin, setPin] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [pinError, setPinError] = useState('');
+
+  useEffect(() => {
+    const saved = sessionStorage.getItem(storageKey);
+    if (saved) { setPin(saved); setIsAdmin(true); }
+  }, [storageKey]);
+
+  const openModal = useCallback(() => { setPinError(''); setShowModal(true); }, []);
+  const closeModal = useCallback(() => { setShowModal(false); setPinError(''); }, []);
+  const logout = useCallback(() => {
+    setIsAdmin(false); setPin(''); sessionStorage.removeItem(storageKey);
+  }, [storageKey]);
+
+  const verify = useCallback(async (inputPin) => {
+    try {
+      const res = await fetch('/api/market-update', {
+        method: 'POST', headers: { 'x-admin-pin': inputPin },
+      });
+      if (res.status === 401) { setPinError('PIN이 일치하지 않습니다'); return false; }
+      setPin(inputPin); setIsAdmin(true);
+      sessionStorage.setItem(storageKey, inputPin);
+      setShowModal(false); setPinError('');
+      return true;
+    } catch { setPinError('서버 연결 오류'); return false; }
+  }, [storageKey]);
+
+  return { pin, setPin, isAdmin, showModal, pinError, openModal, closeModal, logout, verify };
+}
+
+/* ─── PIN Modal ─── */
+function PinModal({ admin }) {
+  const [inputPin, setInputPin] = useState('');
+  if (!admin.showModal) return null;
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[200]" onClick={admin.closeModal}>
+      <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl p-6 w-80 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <h3 className="text-white font-bold text-[15px] mb-1">🔐 관리자 인증</h3>
+        <p className="text-gray-500 text-xs mb-4">AI 업데이트는 관리자만 사용할 수 있습니다</p>
+        <input type="password" placeholder="PIN 입력" value={inputPin}
+          onChange={e => setInputPin(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && admin.verify(inputPin)}
+          className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-lg text-white text-center text-lg tracking-[0.3em] mb-3 outline-none focus:border-red-600" autoFocus />
+        {admin.pinError && <p className="text-red-400 text-xs text-center mb-3">{admin.pinError}</p>}
+        <div className="flex gap-2">
+          <button onClick={admin.closeModal} className="flex-1 py-2.5 rounded-lg border border-white/10 text-gray-500 text-sm hover:bg-white/5 transition">취소</button>
+          <button onClick={() => admin.verify(inputPin)} className="flex-1 py-2.5 rounded-lg bg-red-600 text-white text-sm font-bold hover:bg-red-700 transition">인증</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ════════════════════════════════
 // 공용 컴포넌트
 // ════════════════════════════════
@@ -63,10 +121,11 @@ function RangeButtons({ range, setRange }) {
   );
 }
 
-function UpdateButton({ loading, onClick }) {
+// 🔒 PIN: admin prop 추가
+function UpdateButton({ loading, onClick, admin }) {
   return (
     <button onClick={onClick} disabled={loading}
-      className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[12px] font-bold text-white transition-all ${loading ? "bg-gray-600 cursor-wait opacity-60" : "bg-gradient-to-br from-red-600 to-red-800 border border-red-600/50 hover:shadow-[0_0_20px_rgba(220,38,38,0.3)]"}`}>
+      className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[12px] font-bold text-white transition-all ${loading ? "bg-gray-600 cursor-wait opacity-60" : admin?.isAdmin ? "bg-gradient-to-br from-red-600 to-red-800 border border-red-600/50 hover:shadow-[0_0_20px_rgba(220,38,38,0.3)]" : "bg-gray-700 cursor-not-allowed opacity-50"}`}>
       {loading ? <><span className="animate-spin inline-block">⟳</span> 분석 중...</> : <>⚡ AI 업데이트</>}
     </button>
   );
@@ -110,7 +169,8 @@ function CSITooltip({ active, payload, label }) {
   );
 }
 
-function ConsumerTab() {
+// 🔒 PIN: admin prop 추가
+function ConsumerTab({ admin }) {
   const [marketData, setMarketData] = useState(SEED_MARKET);
   const [csiData, setCSIData] = useState(SEED_CSI);
   const [range, setRange] = useState(12);
@@ -147,12 +207,15 @@ function ConsumerTab() {
   const kodexChg = latest.kodex && prev.kodex ? ((latest.kodex - prev.kodex) / prev.kodex * 100).toFixed(1) : "—";
   const spread = indexed.length > 1 ? (indexed[indexed.length - 1].kodexIdx - indexed[indexed.length - 1].kospiIdx).toFixed(1) : "—";
 
+  // 🔒 PIN: admin 검증 + 헤더 추가
   const handleUpdate = useCallback(async () => {
+    if (!admin.isAdmin) { admin.openModal(); return; }
     setLoading(true); setAiLog(""); setShowLog(true);
     const log = (m) => setAiLog((p) => p + m + "\n");
     try {
       log("🔍 /api/market-update 호출 중...");
-      const res = await fetch("/api/market-update", { method: "POST" });
+      const res = await fetch("/api/market-update", { method: "POST", headers: { "x-admin-pin": admin.pin } });
+      if (res.status === 401) { log("⚠️ 인증 만료"); admin.logout(); admin.openModal(); return; }
       const body = await res.json();
       if (!body.ok) { log(`⚠️ 실패: ${body.error}`); return; }
       log("✅ 수신 완료");
@@ -164,7 +227,7 @@ function ConsumerTab() {
       if (body.sentiment?.length) setCSIData(body.sentiment.map((r) => ({ date: r.date, csi: Number(r.csi) })));
       log("✅ 완료!");
     } catch (err) { log(`❌ ${err.message}`); } finally { setLoading(false); }
-  }, []);
+  }, [admin]);
 
   return (
     <>
@@ -181,7 +244,7 @@ function ConsumerTab() {
             ))}
           </div>
         </div>
-        <UpdateButton loading={loading} onClick={handleUpdate} />
+        <UpdateButton loading={loading} onClick={handleUpdate} admin={admin} />
       </div>
       <LogPanel aiLog={aiLog} showLog={showLog} logRef={logRef} />
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
@@ -309,7 +372,8 @@ function CurrencyMiniChart({ data, currencyCode, info }) {
   );
 }
 
-function InboundTab() {
+// 🔒 PIN: admin prop 추가
+function InboundTab({ admin }) {
   const [inboundData, setInboundData] = useState(SEED_INBOUND);
   const [currencyData, setCurrencyData] = useState(SEED_CURRENCY);
   const [range, setRange] = useState(12);
@@ -345,12 +409,15 @@ function InboundTab() {
   const prev = pivoted[pivoted.length - 2] || {};
   const totalChg = latest.total && prev.total ? ((latest.total - prev.total) / prev.total * 100).toFixed(1) : "—";
 
+  // 🔒 PIN: admin 검증 + 헤더 추가
   const handleUpdate = useCallback(async () => {
+    if (!admin.isAdmin) { admin.openModal(); return; }
     setLoading(true); setAiLog(""); setShowLog(true);
     const log = (m) => setAiLog((p) => p + m + "\n");
     try {
       log("🔍 /api/inbound-update 호출 중...");
-      const res = await fetch("/api/inbound-update", { method: "POST" });
+      const res = await fetch("/api/inbound-update", { method: "POST", headers: { "x-admin-pin": admin.pin } });
+      if (res.status === 401) { log("⚠️ 인증 만료"); admin.logout(); admin.openModal(); return; }
       const body = await res.json();
       if (!body.ok) { log(`⚠️ 실패: ${body.error}`); return; }
       log("✅ 수신 완료");
@@ -361,7 +428,7 @@ function InboundTab() {
       if (body.currency?.length) setCurrencyData(body.currency.map((r) => ({ date: r.date, currency: r.currency, rate: Number(r.rate) })));
       log("✅ 완료!");
     } catch (err) { log(`❌ ${err.message}`); } finally { setLoading(false); }
-  }, []);
+  }, [admin]);
 
   const allCountries = Object.keys(COUNTRY_LABELS);
 
@@ -369,7 +436,7 @@ function InboundTab() {
     <>
       <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
         <RangeButtons range={range} setRange={setRange} />
-        <UpdateButton loading={loading} onClick={handleUpdate} />
+        <UpdateButton loading={loading} onClick={handleUpdate} admin={admin} />
       </div>
       <LogPanel aiLog={aiLog} showLog={showLog} logRef={logRef} />
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
@@ -471,7 +538,8 @@ function EventTimeline({ events }) {
   );
 }
 
-function ValuationTab() {
+// 🔒 PIN: admin prop 추가
+function ValuationTab({ admin }) {
   const [valData, setValData] = useState(SEED_VALUATION);
   const [events, setEvents] = useState(SEED_EVENTS);
   const [range, setRange] = useState(12);
@@ -522,12 +590,15 @@ function ValuationTab() {
   const below1Min = Math.floor(Math.min(...below1Values) - 2);
   const below1Max = Math.ceil(Math.max(...below1Values) + 2);
 
+  // 🔒 PIN: admin 검증 + 헤더 추가
   const handleUpdate = useCallback(async () => {
+    if (!admin.isAdmin) { admin.openModal(); return; }
     setLoading(true); setAiLog(""); setShowLog(true);
     const log = (m) => setAiLog((p) => p + m + "\n");
     try {
       log("🔍 /api/valuation-update 호출 중...");
-      const res = await fetch("/api/valuation-update", { method: "POST" });
+      const res = await fetch("/api/valuation-update", { method: "POST", headers: { "x-admin-pin": admin.pin } });
+      if (res.status === 401) { log("⚠️ 인증 만료"); admin.logout(); admin.openModal(); return; }
       const body = await res.json();
       if (!body.ok) { log(`⚠️ 실패: ${body.error}`); return; }
       log("✅ 수신 완료");
@@ -549,13 +620,13 @@ function ValuationTab() {
       if (body.events?.length) setEvents(body.events);
       log("✅ 완료!");
     } catch (err) { log(`❌ ${err.message}`); } finally { setLoading(false); }
-  }, []);
+  }, [admin]);
 
   return (
     <>
       <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
         <RangeButtons range={range} setRange={setRange} />
-        <UpdateButton loading={loading} onClick={handleUpdate} />
+        <UpdateButton loading={loading} onClick={handleUpdate} admin={admin} />
       </div>
       <LogPanel aiLog={aiLog} showLog={showLog} logRef={logRef} />
 
@@ -566,7 +637,6 @@ function ValuationTab() {
         <StatCard label="PBR<1 비율" value={`${latest.pbr_below1_pct || "—"}%`} sub={`공시 ${latest.valueup_corps_count || "—"}개사`} accent={latest.pbr_below1_pct < 60 ? "#4ade80" : "#f87171"} />
       </div>
 
-      {/* 밸류업지수 vs KOSPI */}
       <div className="bg-white/[.015] border border-white/[.06] rounded-2xl pt-4 pr-1 pb-2 mb-4">
         <div className="flex items-center gap-2 px-5 mb-2 text-[13px] font-bold opacity-80">
           <span className="w-1.5 h-1.5 rounded-full bg-orange-500 shadow-[0_0_6px_#f97316]" /><span>밸류업지수</span>
@@ -588,7 +658,6 @@ function ValuationTab() {
         </ResponsiveContainer>
       </div>
 
-      {/* 주주환원 듀얼 차트 */}
       <div className="bg-white/[.015] border border-white/[.06] rounded-2xl pt-4 pr-1 pb-2 mb-4">
         <div className="flex items-center gap-2 px-5 mb-1 text-[13px] font-bold opacity-80">
           <span className="w-1.5 h-1.5 rounded-full bg-green-400 shadow-[0_0_6px_#22c55e]" /><span>배당수익률</span>
@@ -614,7 +683,6 @@ function ValuationTab() {
         </ResponsiveContainer>
       </div>
 
-      {/* PBR + PBR<1 비율 */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
         <div className="bg-white/[.015] border border-white/[.06] rounded-2xl pt-3 pr-1 pb-2">
           <div className="flex items-center justify-between px-4 mb-1">
@@ -695,8 +763,14 @@ const TABS = [
 export default function MarketDashboard() {
   const [tab, setTab] = useState("consumer");
 
+  // 🔒 PIN: 전체 모듈에 공유
+  const admin = useAdminPin('market-consumer');
+
   return (
     <div className="min-h-screen bg-[#08080f] text-gray-300">
+      {/* PIN Modal */}
+      <PinModal admin={admin} />
+
       <div className="border-b border-red-900/30 px-4 sm:px-6 py-3 flex items-center justify-between flex-wrap gap-2"
         style={{ background: "linear-gradient(90deg, rgba(220,38,38,0.1) 0%, transparent 60%)" }}>
         <div className="flex items-center gap-2.5">
@@ -705,6 +779,20 @@ export default function MarketDashboard() {
             늑대무리원정단
             <span className="text-[10px] opacity-40 ml-2 font-normal normal-case tracking-normal">CONTROL TOWER · MARKET</span>
           </span>
+        </div>
+        {/* 🔒 Admin Lock Button */}
+        <div className="flex items-center gap-2">
+          {admin.isAdmin ? (
+            <button onClick={admin.logout}
+              className="px-2.5 py-1 rounded-lg border border-green-500/30 text-xs text-green-400 bg-green-500/10 hover:bg-green-500/20 transition">
+              🔓
+            </button>
+          ) : (
+            <button onClick={admin.openModal}
+              className="px-2.5 py-1 rounded-lg border border-white/10 text-xs text-gray-600 bg-white/5 hover:bg-white/10 transition">
+              🔒
+            </button>
+          )}
         </div>
       </div>
 
@@ -721,9 +809,10 @@ export default function MarketDashboard() {
           ))}
         </div>
 
-        {tab === "consumer" && <ConsumerTab />}
-        {tab === "inbound" && <InboundTab />}
-        {tab === "valuation" && <ValuationTab />}
+        {/* 🔒 PIN: admin prop 전달 */}
+        {tab === "consumer" && <ConsumerTab admin={admin} />}
+        {tab === "inbound" && <InboundTab admin={admin} />}
+        {tab === "valuation" && <ValuationTab admin={admin} />}
 
         <div className="text-center text-[10px] opacity-30 py-3 mt-4">
           탑다운으로 가보자고 #4 — 한국의 명품 소비주 찾기
