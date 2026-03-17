@@ -26,8 +26,17 @@ function extractJSON(text) {
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-export async function POST() {
+export async function POST(request) {
+  // ─── 관리자 PIN 검증 ───
+  const adminPin = process.env.ADMIN_PIN;
+  const userPin = request.headers.get("x-admin-pin");
+  if (!adminPin || userPin !== adminPin) {
+    return NextResponse.json({ error: "관리자 인증이 필요합니다" }, { status: 401 });
+  }
+  // ─────────────────────────
+
   const supabase = getSupabase();
+
   try {
     const apiRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -75,6 +84,7 @@ export async function POST() {
 
     const { data: prices } = await supabase.from("market_prices").select("*").order("date", { ascending: true });
     const { data: sentiment } = await supabase.from("consumer_sentiment").select("*").order("date", { ascending: true });
+
     return NextResponse.json({ ok: true, parsed, market: prices, sentiment });
   } catch (err) {
     console.error("[market-update] Error:", err);
