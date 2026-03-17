@@ -8,6 +8,71 @@ import {
   getWeight, computeTotals, computeCatTotals, DEFAULT_US, DEFAULT_KR
 } from '@/lib/cycle-constants';
 
+/* ─── Admin PIN Hook (inline) ─── */
+function useAdminPin(moduleKey) {
+  const storageKey = `wolfpack_admin_${moduleKey}`;
+  const [pin, setPin] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [pinError, setPinError] = useState('');
+
+  useEffect(() => {
+    const saved = sessionStorage.getItem(storageKey);
+    if (saved) { setPin(saved); setIsAdmin(true); }
+  }, [storageKey]);
+
+  const openModal = useCallback(() => { setPinError(''); setShowModal(true); }, []);
+  const closeModal = useCallback(() => { setShowModal(false); setPinError(''); }, []);
+  const logout = useCallback(() => {
+    setIsAdmin(false); setPin(''); sessionStorage.removeItem(storageKey);
+  }, [storageKey]);
+  const handleAuthExpired = useCallback(() => {
+    setIsAdmin(false); setPin(''); sessionStorage.removeItem(storageKey);
+    alert('인증이 만료되었습니다. 다시 PIN을 입력해주세요.');
+    setShowModal(true);
+  }, [storageKey]);
+
+  const verify = useCallback(async (inputPin) => {
+    try {
+      const res = await fetch('/api/ai-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-pin': inputPin },
+        body: JSON.stringify({ __pin_check: true }),
+      });
+      if (res.status === 401) { setPinError('PIN이 일치하지 않습니다'); return false; }
+      setPin(inputPin); setIsAdmin(true);
+      sessionStorage.setItem(storageKey, inputPin);
+      setShowModal(false); setPinError('');
+      return true;
+    } catch { setPinError('서버 연결 오류'); return false; }
+  }, [storageKey]);
+
+  return { pin, setPin, isAdmin, showModal, pinError, openModal, closeModal, logout, verify, handleAuthExpired };
+}
+
+/* ─── PIN Modal Component ─── */
+function PinModal({ admin }) {
+  const [inputPin, setInputPin] = useState('');
+  if (!admin.showModal) return null;
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[200]" onClick={admin.closeModal}>
+      <div className="bg-[#1e293b] border border-gray-700 rounded-2xl p-6 w-80 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <h3 className="text-white font-bold text-base mb-1">🔐 관리자 인증</h3>
+        <p className="text-gray-400 text-xs mb-4">업데이트 기능은 관리자만 사용할 수 있습니다</p>
+        <input type="password" placeholder="PIN 입력" value={inputPin}
+          onChange={e => setInputPin(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && admin.verify(inputPin)}
+          className="w-full px-4 py-3 bg-[#0d1117] border border-gray-700 rounded-lg text-white text-center text-lg tracking-[0.3em] mb-3 outline-none focus:border-[#38bdf8]" autoFocus />
+        {admin.pinError && <p className="text-red-400 text-xs text-center mb-3">{admin.pinError}</p>}
+        <div className="flex gap-2">
+          <button onClick={admin.closeModal} className="flex-1 py-2.5 rounded-lg border border-gray-700 text-gray-400 text-sm hover:bg-[#151a27] transition">취소</button>
+          <button onClick={() => admin.verify(inputPin)} className="flex-1 py-2.5 rounded-lg bg-[#38bdf8] text-white text-sm font-bold hover:bg-[#2da3db] transition">인증</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Sub-components ─── */
 const PhaseGauge = ({ totals, label }) => {
   const max = Math.max(...Object.values(totals));
@@ -39,14 +104,14 @@ const PhaseGauge = ({ totals, label }) => {
   );
 };
 
-const ScoreCell = ({ value, phase, onChange }) => {
+const ScoreCell = ({ value, phase, onChange, locked }) => {
   const [editing, setEditing] = useState(false);
   const intensity = value / 5;
   const bg = value > 0
     ? `rgba(${phase === "침체" ? "239,68,68" : phase === "회복" ? "234,179,8" : phase === "확장" ? "34,197,94" : "59,130,246"}, ${intensity * 0.35})`
     : "transparent";
 
-  if (editing) {
+  if (editing && !locked) {
     return (
       <select autoFocus value={value}
         className="w-9 bg-[#1e293b] text-gray-200 border border-gray-600 rounded text-xs text-center"
@@ -57,7 +122,8 @@ const ScoreCell = ({ value, phase, onChange }) => {
     );
   }
   return (
-    <div onClick={() => setEditing(true)} className="cursor-pointer w-9 h-7 flex items-center justify-center rounded text-xs transition-all"
+    <div onClick={() => !locked && setEditing(true)}
+      className={`${locked ? 'cursor-default' : 'cursor-pointer'} w-9 h-7 flex items-center justify-center rounded text-xs transition-all`}
       style={{ background: bg, fontWeight: value >= 4 ? 700 : 400, color: value >= 3 ? PHASE_COLORS[phase].text : "#94a3b8" }}>
       {value || "·"}
     </div>
@@ -79,7 +145,7 @@ const CustomTooltip = ({ active, payload, label }) => {
 };
 
 /* ─── AI Update Modal ─── */
-const AIUpdateModal = ({ country, monthLabel, currentScores, monthIdx, onApply, onClose }) => {
+const AIUpdateModal = ({ country, monthLabel, currentScores, monthIdx, onApply, onClose, adminPin }) => {
   const [status, setStatus] = useState('idle');
   const [aiScores, setAiScores] = useState(null);
   const [rationale, setRationale] = useState({});
@@ -102,9 +168,15 @@ const AIUpdateModal = ({ country, monthLabel, currentScores, monthIdx, onApply, 
 
         const res = await fetch('/api/ai-update', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-admin-pin': adminPin },
           body: JSON.stringify({ country, monthLabel, category: cat, questionNumbers: qNums, prevScores, monthIdx }),
         });
+
+        if (res.status === 401) {
+          allRationale[cat] = '⚠️ 인증 만료';
+          qNums.forEach(qn => { allScores[qn] = currentScores[qn]?.[monthIdx] || 0; });
+          continue;
+        }
 
         const data = await res.json();
         if (data.scores) {
@@ -128,7 +200,6 @@ const AIUpdateModal = ({ country, monthLabel, currentScores, monthIdx, onApply, 
   return (
     <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
       <div className="bg-[#1e293b] rounded-2xl border border-gray-700 max-w-[700px] w-full max-h-[85vh] overflow-hidden flex flex-col shadow-2xl">
-        {/* Header */}
         <div className="px-6 py-5 border-b border-gray-700 flex justify-between items-center">
           <div>
             <h2 className="text-base font-bold"><span className="text-purple-400">⚡</span> AI 업데이트</h2>
@@ -137,7 +208,6 @@ const AIUpdateModal = ({ country, monthLabel, currentScores, monthIdx, onApply, 
           <button onClick={onClose} className="w-8 h-8 rounded-lg bg-gray-700 text-gray-400 flex items-center justify-center hover:text-gray-200 transition">✕</button>
         </div>
 
-        {/* Body */}
         <div className="flex-1 overflow-auto px-6 py-5">
           {status === 'idle' && (
             <div className="text-center py-10">
@@ -160,7 +230,6 @@ const AIUpdateModal = ({ country, monthLabel, currentScores, monthIdx, onApply, 
 
           {status === 'done' && aiScores && (
             <div>
-              {/* Rationale */}
               <div className="bg-[#0f172a] rounded-xl p-4 mb-4 border border-gray-700">
                 <div className="text-xs text-purple-400 font-bold mb-2 tracking-wider">AI 분석 요약</div>
                 {Object.entries(rationale).map(([cat, text]) => (
@@ -175,7 +244,6 @@ const AIUpdateModal = ({ country, monthLabel, currentScores, monthIdx, onApply, 
                 ))}
               </div>
 
-              {/* Score comparison */}
               <div className="text-xs text-gray-500 mb-2 font-semibold">스코어 비교 (기존 → AI 제안)</div>
               <div className="max-h-80 overflow-auto">
                 <table className="w-full border-collapse text-[11px]">
@@ -221,7 +289,6 @@ const AIUpdateModal = ({ country, monthLabel, currentScores, monthIdx, onApply, 
           )}
         </div>
 
-        {/* Footer */}
         {status === 'done' && (
           <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3">
             <button onClick={onClose} className="bg-gray-700 text-gray-400 px-5 py-2.5 rounded-lg text-[13px] hover:text-gray-200 transition">취소</button>
@@ -245,7 +312,9 @@ export default function BusinessCyclePage() {
   const [showAI, setShowAI] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
 
-  // Load from Supabase
+  // ─── Admin PIN ───
+  const admin = useAdminPin('business-cycle');
+
   useEffect(() => {
     async function load() {
       try {
@@ -263,9 +332,7 @@ export default function BusinessCyclePage() {
           });
           setData(result);
         } else {
-          // First time: seed with defaults
           setData({ US: DEFAULT_US, KR: DEFAULT_KR });
-          // Save defaults to Supabase
           await supabase.from('business_cycle_scores').upsert([
             { country: 'KR', scores: DEFAULT_KR, updated_at: new Date().toISOString() },
             { country: 'US', scores: DEFAULT_US, updated_at: new Date().toISOString() },
@@ -279,7 +346,6 @@ export default function BusinessCyclePage() {
     load();
   }, []);
 
-  // Save to Supabase
   const saveData = useCallback(async (newData) => {
     setData(newData);
     const now = new Date().toISOString();
@@ -293,11 +359,12 @@ export default function BusinessCyclePage() {
   }, []);
 
   const handleScoreChange = useCallback((qNum, mIdx, newVal) => {
+    if (!admin.isAdmin) { admin.openModal(); return; }
     const key = country;
     const newData = { ...data, [key]: { ...data[key], [qNum]: [...data[key][qNum]] } };
     newData[key][qNum][mIdx] = newVal;
     saveData(newData);
-  }, [data, country, saveData]);
+  }, [data, country, saveData, admin]);
 
   const handleAIApply = useCallback((aiScores) => {
     const newData = { ...data, [country]: { ...data[country] } };
@@ -343,10 +410,14 @@ export default function BusinessCyclePage() {
 
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-gray-200 pb-10">
+      {/* PIN Modal */}
+      <PinModal admin={admin} />
+
       {showAI && (
         <AIUpdateModal country={country} monthLabel={MONTHS[selectedMonth]}
           currentScores={scores} monthIdx={selectedMonth}
-          onApply={handleAIApply} onClose={() => setShowAI(false)} />
+          onApply={handleAIApply} onClose={() => setShowAI(false)}
+          adminPin={admin.pin} />
       )}
 
       {/* Toolbar */}
@@ -362,7 +433,25 @@ export default function BusinessCyclePage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => setShowAI(true)} className="bg-gradient-to-r from-purple-600 to-purple-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow-lg shadow-purple-600/20 hover:shadow-purple-600/30 transition">
+            {/* Admin Lock Button */}
+            {admin.isAdmin ? (
+              <button onClick={admin.logout}
+                className="px-2.5 py-1.5 rounded-lg border border-[#22c55e50] text-xs text-[#22c55e] bg-[#22c55e10] hover:bg-[#22c55e20] transition" title="관리자 인증됨">
+                🔓
+              </button>
+            ) : (
+              <button onClick={admin.openModal}
+                className="px-2.5 py-1.5 rounded-lg border border-[#5A647850] text-xs text-[#5A6478] bg-[#5A647810] hover:bg-[#5A647820] transition" title="관리자 잠금">
+                🔒
+              </button>
+            )}
+            {/* AI Update Button */}
+            <button onClick={() => { if (!admin.isAdmin) { admin.openModal(); return; } setShowAI(true); }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition ${
+                admin.isAdmin
+                  ? 'bg-gradient-to-r from-purple-600 to-purple-500 text-white shadow-lg shadow-purple-600/20 hover:shadow-purple-600/30'
+                  : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+              }`}>
               ⚡ AI 업데이트
             </button>
             <div className="flex bg-[#1e293b] rounded-lg p-0.5">
@@ -407,7 +496,6 @@ export default function BusinessCyclePage() {
 
         {view === 'overview' ? (
           <>
-            {/* Phase Gauges */}
             <div className="grid grid-cols-2 gap-4 mt-4">
               <div className="bg-[#1a2035] rounded-xl p-5 border border-white/5">
                 <PhaseGauge totals={computeTotals(data.KR, selectedMonth)} label="한국" />
@@ -417,7 +505,6 @@ export default function BusinessCyclePage() {
               </div>
             </div>
 
-            {/* Net Score Time Series */}
             <div className="bg-[#1a2035] rounded-xl p-5 border border-white/5 mt-4">
               <h3 className="text-[13px] font-bold text-gray-400 tracking-wider mb-4">NET SCORE 추이</h3>
               <ResponsiveContainer width="100%" height={220}>
@@ -434,7 +521,6 @@ export default function BusinessCyclePage() {
               </ResponsiveContainer>
             </div>
 
-            {/* Category Breakdown */}
             <div className="bg-[#1a2035] rounded-xl p-5 border border-white/5 mt-4">
               <h3 className="text-[13px] font-bold text-gray-400 tracking-wider mb-1">
                 {country === 'KR' ? '🇰🇷 한국' : '🇺🇸 미국'} 분류별 ({MONTHS[selectedMonth]})
@@ -450,7 +536,6 @@ export default function BusinessCyclePage() {
               </ResponsiveContainer>
             </div>
 
-            {/* Phase cards */}
             <div className="grid grid-cols-4 gap-2 mt-4">
               {currentTotals && PHASE_ORDER.map(p => {
                 const total = Object.values(currentTotals).reduce((a,b) => a+b, 0) || 1;
@@ -466,11 +551,12 @@ export default function BusinessCyclePage() {
             </div>
           </>
         ) : (
-          /* Detail Table */
           <div className="mt-4 bg-[#1a2035] rounded-xl border border-white/5 overflow-hidden">
             <div className="px-4 py-3 border-b border-white/5 flex justify-between items-center">
               <h3 className="text-sm font-bold">{country === 'KR' ? '🇰🇷 한국' : '🇺🇸 미국'} 상세 스코어 ({MONTHS[selectedMonth]})</h3>
-              <span className="text-[11px] text-gray-500">셀 클릭하여 수정 · 0–5점</span>
+              <span className="text-[11px] text-gray-500">
+                {admin.isAdmin ? '🔓 셀 클릭하여 수정 · 0–5점' : '🔒 수정하려면 관리자 인증 필요'}
+              </span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-xs">
@@ -503,7 +589,9 @@ export default function BusinessCyclePage() {
                           <td className="px-1.5 py-1 text-gray-400 text-[10px] max-w-[280px]">{q[4]}</td>
                           {MONTHS.map((m, mi) => (
                             <td key={m} className={`px-0.5 py-0.5 text-center ${mi === selectedMonth ? 'bg-[#1e293b]' : ''}`}>
-                              <ScoreCell value={scores[qn]?.[mi] || 0} phase={q[2]} onChange={v => handleScoreChange(qn, mi, v)} />
+                              <ScoreCell value={scores[qn]?.[mi] || 0} phase={q[2]}
+                                onChange={v => handleScoreChange(qn, mi, v)}
+                                locked={!admin.isAdmin} />
                             </td>
                           ))}
                         </tr>
