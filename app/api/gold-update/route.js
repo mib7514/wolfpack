@@ -18,27 +18,32 @@ async function callClaude(prompt) {
     }),
   });
   const data = await res.json();
-  // Extract all text blocks
   return data.content
     ?.filter((b) => b.type === 'text')
     .map((b) => b.text)
     .join('\n');
 }
 
-export async function POST() {
+export async function POST(request) {
   try {
+    // ─── 관리자 PIN 검증 ───
+    const adminPin = process.env.ADMIN_PIN;
+    const userPin = request.headers.get('x-admin-pin');
+    if (!adminPin || userPin !== adminPin) {
+      return NextResponse.json({ error: '관리자 인증이 필요합니다' }, { status: 401 });
+    }
+    // ─────────────────────────
+
     if (!ANTHROPIC_API_KEY) {
       return NextResponse.json({ error: 'ANTHROPIC_API_KEY not set' }, { status: 500 });
     }
 
-    // ── 1. Gold price + headline ──
     const priceRaw = await callClaude(
       `Search for the current gold price (XAU/USD) today and the daily change percentage, plus ATH and YTD performance.
 Return ONLY valid JSON, no markdown, no backticks:
 {"price":number,"change_pct":number,"ath":number,"ytd_pct":number,"updated":"YYYY-MM-DD"}`
     );
 
-    // ── 2. Central bank purchases latest ──
     const cbRaw = await callClaude(
       `Search for the latest World Gold Council (WGC) monthly central bank gold statistics report. Also search "central bank gold purchases 2026" and "WGC central bank gold statistics".
 I need the latest monthly net purchases data for these 11 countries: Poland, China, Czech Republic, Serbia, India, Kazakhstan, Turkey, Brazil, Uzbekistan, Malaysia, South Korea (BOK).
@@ -66,7 +71,6 @@ Return ONLY valid JSON, no markdown:
 }`
     );
 
-    // ── 3. IB forecasts ──
     const ibRaw = await callClaude(
       `Search for the latest 2026 gold price forecasts from major investment banks (JPMorgan, Goldman Sachs, UBS, Deutsche Bank, Bank of America, Morgan Stanley, Standard Chartered, Jefferies, etc).
 Also search for their central bank gold purchase forecasts for 2026.
@@ -74,7 +78,6 @@ Return ONLY valid JSON, no markdown:
 {"forecasts":[{"bank":"","target_2026":"","cb_forecast":"","stance":""}]}`
     );
 
-    // ── 4. News ──
     const newsRaw = await callClaude(
       `Search for the latest gold market news from the past 2 weeks. Focus on: central bank gold purchases, geopolitical events affecting gold, major price movements, and IB forecast updates.
 Return ONLY valid JSON array, no markdown:
@@ -82,7 +85,6 @@ Return ONLY valid JSON array, no markdown:
 Return maximum 10 items, most recent first.`
     );
 
-    // ── 5. Upcoming events ──
     const eventsRaw = await callClaude(
       `Search for upcoming events in the next 4 weeks that could impact gold prices: FOMC meetings, economic data releases (CPI, NFP, PMI), geopolitical events, WGC reports.
 Return ONLY valid JSON array, no markdown:
@@ -90,14 +92,12 @@ Return ONLY valid JSON array, no markdown:
 Return maximum 8 items.`
     );
 
-    // ── Parse all results ──
     function safeJSON(raw, fallback) {
       if (!raw) return fallback;
       try {
         const cleaned = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
         return JSON.parse(cleaned);
       } catch {}
-      // Try to extract JSON from text
       const matches = raw.match(/[\[{][\s\S]*[\]}]/g);
       if (matches) {
         for (const m of matches.sort((a, b) => b.length - a.length)) {
@@ -116,7 +116,6 @@ Return maximum 8 items.`
       updated_at: new Date().toISOString(),
     };
 
-    // ── Save to Supabase if configured ──
     const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
