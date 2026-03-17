@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useCallback } from "react";
 import Link from "next/link";
 
 const MODULES = [
@@ -85,28 +86,7 @@ const MODULES = [
     layer: "market",
     status: "live",
   },
-  // ─── Layer 3: CREDIT ───
-  {
-    id: "sector-watch",
-    name: "Sector Watch",
-    subtitle: "산업별 조기경보",
-    icon: "◉",
-    description: "산업별 크레딧 신호등 모니터링",
-    path: "/modules/sector-watch",
-    layer: "credit",
-    status: "planned",
-  },
-  {
-    id: "risk-alert",
-    name: "Risk Alert",
-    subtitle: "종목별 위기감지",
-    icon: "⚑",
-    description: "고빈도 선행지표 기반 크레딧 경보",
-    path: "/modules/risk-alert",
-    layer: "credit",
-    status: "planned",
-  },
-  // ─── Layer 4: PORTFOLIO ───
+  // ─── Layer 3: PORTFOLIO ───
   {
     id: "portfolio-tracker",
     name: "Portfolio Tracker",
@@ -122,7 +102,7 @@ const MODULES = [
     name: "적자기업 투자분석",
     subtitle: "Deficit Company Analysis",
     icon: "🎯",
-    description: "코스닥 시총 상위 150개 적자유형 · 위험대비수익 Top10 · ETF 매칭",
+    description: "코스닥 150개 · 손익구간별 10단계 분류(3a/3b/4a/4b/E) · 비대칭매력 Top10 · ETF 매칭",
     path: "/modules/deficit-analysis",
     layer: "portfolio",
     status: "live",
@@ -132,7 +112,7 @@ const MODULES = [
     name: "K-REIT 스코어링",
     subtitle: "REIT Screening & Scoring",
     icon: "◉",
-    description: "채권 투자자 관점 5축 분석 · 연율화 캐리 · 금리 스트레스 테스트",
+    description: "채권 투자자 관점 6축 분석 · 연율화 캐리 · 금리 스트레스 테스트",
     path: "/modules/reit-scoring",
     layer: "portfolio",
     status: "live",
@@ -147,7 +127,7 @@ const MODULES = [
     layer: "portfolio",
     status: "live",
   },
-  // ─── Layer 5: FUND IDEA ───
+  // ─── Layer 4: FUND IDEA ───
   {
     id: "fund-ideas",
     name: "역목표전환형",
@@ -178,7 +158,7 @@ const MODULES = [
     layer: "fund-idea",
     status: "live",
   },
-  // ─── Layer 6: BEST CREDIT PLUS ───
+  // ─── Layer 5: BEST CREDIT PLUS (PIN 보호) ───
   {
     id: "best-credit-plus",
     name: "베스트크레딧플러스",
@@ -189,23 +169,91 @@ const MODULES = [
     layer: "bcp",
     status: "live",
   },
+  {
+    id: "alpha-cockpit",
+    name: "Alpha Cockpit",
+    subtitle: "BCP Alpha Generation Dashboard",
+    icon: "🎛️",
+    description: "베스트크레딧플러스 알파 생성 전략 · 포트폴리오 최적화",
+    path: "/modules/alpha-cockpit",
+    layer: "bcp",
+    status: "live",
+  },
+  {
+    id: "regime-detector",
+    name: "Regime Detector",
+    subtitle: "Market Regime Classification",
+    icon: "🔬",
+    description: "시장 국면 자동 분류 · 레짐 전환 감지 · 전략 스위칭",
+    path: "/modules/regime-detector",
+    layer: "bcp",
+    status: "live",
+  },
 ];
 
 const LAYERS = [
   { id: "macro", label: "Layer 1 · MACRO", color: "#f59e0b" },
   { id: "market", label: "Layer 2 · MARKET", color: "#3b82f6" },
-  { id: "credit", label: "Layer 3 · CREDIT", color: "#ef4444" },
-  { id: "portfolio", label: "Layer 4 · PORTFOLIO", color: "#10b981" },
-  { id: "fund-idea", label: "Layer 5 · FUND IDEA", color: "#a855f7" },
-  { id: "bcp", label: "Layer 6 · BEST CREDIT PLUS", color: "#ec4899" },
+  { id: "portfolio", label: "Layer 3 · PORTFOLIO", color: "#10b981" },
+  { id: "fund-idea", label: "Layer 4 · FUND IDEA", color: "#a855f7" },
+  { id: "bcp", label: "Layer 5 · BEST CREDIT PLUS", color: "#ec4899", locked: true },
 ];
 
 export default function ControlTower() {
   const liveCount = MODULES.filter((m) => m.status === "live").length;
   const totalCount = MODULES.length;
 
+  // BCP PIN state
+  const [bcpUnlocked, setBcpUnlocked] = useState(false);
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pinInput, setPinInput] = useState("");
+  const [pinError, setPinError] = useState("");
+
+  const handlePinSubmit = useCallback(() => {
+    if (pinInput === "bcplus") {
+      setBcpUnlocked(true);
+      setShowPinModal(false);
+      setPinInput("");
+      setPinError("");
+      sessionStorage.setItem("wolfpack_bcp_unlocked", "true");
+    } else {
+      setPinError("PIN이 일치하지 않습니다");
+    }
+  }, [pinInput]);
+
+  // Check session on mount
+  useState(() => {
+    if (typeof window !== "undefined" && sessionStorage.getItem("wolfpack_bcp_unlocked") === "true") {
+      setBcpUnlocked(true);
+    }
+  });
+
   return (
     <div className="min-h-screen bg-[#0a0e17] text-gray-200">
+      {/* PIN Modal */}
+      {showPinModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowPinModal(false)}>
+          <div className="bg-[#111827] border border-pink-500/30 rounded-2xl p-6 w-80 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-base font-bold text-white mb-1">🔐 BCP Layer Access</h3>
+            <p className="text-xs text-gray-500 mb-4">베스트크레딧플러스 레이어는 관리자 전용입니다</p>
+            <input
+              type="password"
+              placeholder="PIN 입력"
+              value={pinInput}
+              onChange={e => setPinInput(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handlePinSubmit()}
+              className="w-full px-4 py-2.5 bg-black/40 border border-gray-700 rounded-lg text-center text-lg tracking-[0.3em] text-white outline-none focus:border-pink-500/50"
+              autoFocus
+            />
+            {pinError && <p className="text-red-400 text-xs text-center mt-2">{pinError}</p>}
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setShowPinModal(false)} className="flex-1 py-2 border border-gray-700 rounded-lg text-gray-500 text-xs">취소</button>
+              <button onClick={handlePinSubmit} className="flex-1 py-2 bg-pink-600 rounded-lg text-white text-xs font-bold">인증</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="border-b border-gray-800 px-6 py-8 text-center">
         <div className="flex items-center justify-center gap-3 mb-2">
@@ -233,19 +281,54 @@ export default function ControlTower() {
           const layerModules = MODULES.filter((m) => m.layer === layer.id);
           if (layerModules.length === 0) return null;
 
+          const isLocked = layer.locked && !bcpUnlocked;
+
           return (
             <section key={layer.id}>
-              <h2
-                className="text-xs font-bold tracking-[0.25em] uppercase mb-4 pl-1"
-                style={{ color: layer.color }}
-              >
-                {layer.label}
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {layerModules.map((mod) => (
-                  <ModuleCard key={mod.id} module={mod} layerColor={layer.color} />
-                ))}
+              <div className="flex items-center gap-2 mb-4">
+                <h2
+                  className="text-xs font-bold tracking-[0.25em] uppercase pl-1"
+                  style={{ color: layer.color }}
+                >
+                  {layer.label}
+                </h2>
+                {layer.locked && (
+                  <button
+                    onClick={() => {
+                      if (bcpUnlocked) {
+                        setBcpUnlocked(false);
+                        sessionStorage.removeItem("wolfpack_bcp_unlocked");
+                      } else {
+                        setShowPinModal(true);
+                      }
+                    }}
+                    className="text-xs px-2 py-0.5 rounded-full border transition-colors"
+                    style={{
+                      borderColor: bcpUnlocked ? "rgba(236,72,153,0.4)" : "rgba(107,114,128,0.3)",
+                      color: bcpUnlocked ? "#ec4899" : "#6b7280",
+                      background: bcpUnlocked ? "rgba(236,72,153,0.08)" : "transparent",
+                    }}
+                  >
+                    {bcpUnlocked ? "🔓" : "🔒"}
+                  </button>
+                )}
               </div>
+              {isLocked ? (
+                <div
+                  onClick={() => setShowPinModal(true)}
+                  className="rounded-xl border border-dashed border-gray-700 bg-[#0d1117] p-8 text-center cursor-pointer hover:border-pink-500/30 transition-colors"
+                >
+                  <div className="text-3xl mb-3">🔒</div>
+                  <div className="text-sm text-gray-500 font-mono">PIN 인증 필요</div>
+                  <div className="text-xs text-gray-600 mt-1">클릭하여 잠금 해제</div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {layerModules.map((mod) => (
+                    <ModuleCard key={mod.id} module={mod} layerColor={layer.color} />
+                  ))}
+                </div>
+              )}
             </section>
           );
         })}
@@ -254,9 +337,9 @@ export default function ControlTower() {
       {/* Footer */}
       <footer className="border-t border-gray-800/50 py-6 text-center">
         <p className="text-xs text-gray-600 font-mono">
-          늑대무리원정단 v2.1.0
+          늑대무리원정단 v2.2.0
           <span className="text-gray-700 mx-1">·</span>
-          Macro · Market · Credit · Portfolio · Fund Idea · BCP
+          Macro · Market · Portfolio · Fund Idea · BCP
         </p>
       </footer>
     </div>
