@@ -4,6 +4,46 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from 'recharts';
 
+// ── Admin PIN Hook ──
+function useAdminPin(moduleKey) {
+  const storageKey = `wolfpack_admin_${moduleKey}`;
+  const [pin, setPin] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [pinError, setPinError] = useState('');
+  useEffect(() => { const saved = sessionStorage.getItem(storageKey); if (saved) { setPin(saved); setIsAdmin(true); } }, [storageKey]);
+  const openModal = useCallback(() => { setPinError(''); setShowModal(true); }, []);
+  const closeModal = useCallback(() => { setShowModal(false); setPinError(''); }, []);
+  const logout = useCallback(() => { setIsAdmin(false); setPin(''); sessionStorage.removeItem(storageKey); }, [storageKey]);
+  const verify = useCallback(async (inputPin) => {
+    try {
+      const res = await fetch('/api/ai-update', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pin': inputPin }, body: JSON.stringify({ __pin_check: true }) });
+      if (res.status === 401) { setPinError('PIN이 일치하지 않습니다'); return false; }
+      setPin(inputPin); setIsAdmin(true); sessionStorage.setItem(storageKey, inputPin); setShowModal(false); setPinError(''); return true;
+    } catch { setPinError('서버 연결 오류'); return false; }
+  }, [storageKey]);
+  return { pin, isAdmin, showModal, pinError, openModal, closeModal, logout, verify };
+}
+function PinModal({ admin }) {
+  const [inputPin, setInputPin] = useState('');
+  if (!admin.showModal) return null;
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200}} onClick={admin.closeModal}>
+      <div style={{background:'#1e293b',border:'1px solid rgba(99,102,241,0.3)',borderRadius:14,padding:24,width:300,boxShadow:'0 8px 32px rgba(0,0,0,0.4)'}} onClick={e=>e.stopPropagation()}>
+        <h3 style={{fontSize:15,fontWeight:700,color:'#e2e8f0',marginBottom:4}}>🔐 관리자 인증</h3>
+        <p style={{fontSize:11,color:'#64748b',marginBottom:16}}>업데이트/수정은 관리자만 사용할 수 있습니다</p>
+        <input type="password" placeholder="PIN 입력" value={inputPin} onChange={e=>setInputPin(e.target.value)} onKeyDown={e=>e.key==='Enter'&&admin.verify(inputPin)}
+          style={{width:'100%',padding:'10px 14px',background:'rgba(15,23,42,0.8)',border:'1px solid rgba(99,102,241,0.2)',borderRadius:8,fontSize:16,textAlign:'center',letterSpacing:'0.3em',color:'#e2e8f0',outline:'none',boxSizing:'border-box'}} autoFocus />
+        {admin.pinError && <p style={{color:'#f87171',fontSize:11,textAlign:'center',marginTop:8}}>{admin.pinError}</p>}
+        <div style={{display:'flex',gap:8,marginTop:16}}>
+          <button onClick={admin.closeModal} style={{flex:1,padding:'9px 0',border:'1px solid rgba(99,102,241,0.2)',borderRadius:8,background:'transparent',color:'#64748b',fontSize:12,cursor:'pointer'}}>취소</button>
+          <button onClick={()=>admin.verify(inputPin)} style={{flex:1,padding:'9px 0',border:'none',borderRadius:8,background:'linear-gradient(135deg,#6366f1,#4f46e5)',color:'#fff',fontSize:12,fontWeight:700,cursor:'pointer'}}>인증</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── DB ↔ Frontend 변환 ──
 const DB_MAP = {
   div_yield:'divYield', ffo_based_payout:'ffoBasedPayout', funding_rate:'fundingRate',
@@ -18,20 +58,8 @@ const DB_MAP = {
   data_source:'dataSource', updated_at:'updatedAt',
 };
 const FRONT_MAP = Object.fromEntries(Object.entries(DB_MAP).map(([k,v])=>[v,k]));
-
-function toFront(row) {
-  const r = { id: row.id };
-  for (const [db, fe] of Object.entries(DB_MAP)) if (row[db] !== undefined) r[fe] = row[db];
-  return r;
-}
-function toDb(data) {
-  const r = {};
-  for (const [fe, val] of Object.entries(data)) {
-    const db = FRONT_MAP[fe];
-    if (db) r[db] = val; else r[fe] = val;
-  }
-  return r;
-}
+function toFront(row) { const r = { id: row.id }; for (const [db, fe] of Object.entries(DB_MAP)) if (row[db] !== undefined) r[fe] = row[db]; return r; }
+function toDb(data) { const r = {}; for (const [fe, val] of Object.entries(data)) { const db = FRONT_MAP[fe]; if (db) r[db] = val; else r[fe] = val; } return r; }
 
 const REIT_FIELDS = [
   {key:'lastDist',label:'최근 1회 분배금(원)',step:1},{key:'distFreq',label:'분배주기(월)',step:1},
@@ -43,50 +71,19 @@ const REIT_FIELDS = [
   {key:'occupancy',label:'임대율(%)',step:0.1},{key:'wale',label:'WALE(Y)',step:0.1},
 ];
 
-// ── 실질배당률 계산 ──
-function calcRealYield(r) {
-  if (!r.lastDist || !r.distFreq || !r.price || r.price === 0) return 0;
-  return (r.lastDist * (12 / r.distFreq)) / r.price * 100;
-}
+function calcRealYield(r) { if (!r.lastDist || !r.distFreq || !r.price || r.price === 0) return 0; return (r.lastDist * (12 / r.distFreq)) / r.price * 100; }
 
-// ── Scoring (6축) ──
-function scoreRealYield(r) {
-  const ry = calcRealYield(r);
-  let s = 0;
-  // 5~9% 구간이 적정, 10%+ 과도 (함정 가능)
-  if (ry >= 4 && ry <= 9) s += Math.min(50, (ry - 2) * 10);
-  else if (ry > 9) s += 35; // 과도 시 오히려 감점
-  else if (ry > 0) s += ry * 8; // 4% 미만은 낮은 점수
-  // FFO Payout 교차검증: 실질배당률이 높은데 Payout도 높으면 감점
-  if (r.ffoBasedPayout <= 95) s += 50 * (1 - Math.abs(r.ffoBasedPayout - 87) / 30);
-  else s += Math.max(0, 50 - (r.ffoBasedPayout - 95) * 3);
-  return Math.round(Math.min(100, Math.max(0, s)));
-}
+function scoreRealYield(r) { const ry = calcRealYield(r); let s = 0; if (ry >= 4 && ry <= 9) s += Math.min(50, (ry - 2) * 10); else if (ry > 9) s += 35; else if (ry > 0) s += ry * 8; if (r.ffoBasedPayout <= 95) s += 50 * (1 - Math.abs(r.ffoBasedPayout - 87) / 30); else s += Math.max(0, 50 - (r.ffoBasedPayout - 95) * 3); return Math.round(Math.min(100, Math.max(0, s))); }
 function scoreCarryQuality(r){const sp=(r.capRate-r.fundingRate)*100;return Math.round(Math.min(100,Math.max(0,Math.min(50,sp/4)+(r.fixedRateRatio/100)*30+(r.hedgeRatio/100)*20)));}
 function scoreRefiRisk(r){return Math.round(Math.min(100,Math.max(0,100-r.debtMaturingIn2Y*1.2-Math.max(0,(5-r.avgDebtMaturity)*10))));}
 function scoreLeverage(r){let s=r.ltv<=40?100:r.ltv<=55?100-(r.ltv-40)*2:Math.max(0,70-(r.ltv-55)*4);if(r.debtRatio>150)s-=(r.debtRatio-150)*0.5;return Math.round(Math.min(100,Math.max(0,s)));}
 function scoreCFStability(r){let s=r.occupancy>=98?50:r.occupancy>=95?40:r.occupancy>=90?25:Math.max(0,r.occupancy-80);s+=Math.min(50,r.wale*6);return Math.round(Math.min(100,Math.max(0,s)));}
-function scoreCapSpread(r){
-  // Cap Rate - Funding Rate 스프레드 자체의 크기 점수 (캐리질과 별도로 순수 스프레드 크기)
-  const sp = (r.capRate - r.fundingRate) * 100; // bp
-  let s = 0;
-  if (sp >= 200) s = 100;
-  else if (sp >= 150) s = 80;
-  else if (sp >= 100) s = 60;
-  else if (sp >= 50) s = 35;
-  else s = Math.max(0, sp / 5);
-  return Math.round(s);
-}
+function scoreCapSpread(r){const sp=(r.capRate-r.fundingRate)*100;let s=0;if(sp>=200)s=100;else if(sp>=150)s=80;else if(sp>=100)s=60;else if(sp>=50)s=35;else s=Math.max(0,sp/5);return Math.round(s);}
 
 function computeScores(r, w) {
-  const ry = scoreRealYield(r);
-  const q = scoreCarryQuality(r);
-  const rf = scoreRefiRisk(r);
-  const l = scoreLeverage(r);
-  const cf = scoreCFStability(r);
-  const cs = scoreCapSpread(r);
-  const total = Math.round(ry*w[0]/100 + cs*w[1]/100 + q*w[2]/100 + rf*w[3]/100 + l*w[4]/100 + cf*w[5]/100);
-  return { realYld: ry, capSpread: cs, quality: q, refi: rf, lev: l, cf, total };
+  const ry=scoreRealYield(r),q=scoreCarryQuality(r),rf=scoreRefiRisk(r),l=scoreLeverage(r),cf=scoreCFStability(r),cs=scoreCapSpread(r);
+  const total=Math.round(ry*w[0]/100+cs*w[1]/100+q*w[2]/100+rf*w[3]/100+l*w[4]/100+cf*w[5]/100);
+  return{realYld:ry,capSpread:cs,quality:q,refi:rf,lev:l,cf,total};
 }
 
 function getGrade(s){if(s>=80)return{grade:'A',color:'#22d3ee'};if(s>=65)return{grade:'B+',color:'#34d399'};if(s>=50)return{grade:'B',color:'#fbbf24'};if(s>=35)return{grade:'C',color:'#fb923c'};return{grade:'D',color:'#f87171'};}
@@ -97,66 +94,30 @@ function pNavDisc(r){return r.nav>0?(((r.price-r.nav)/r.nav)*100).toFixed(1):'N/
 function pNav(r){return r.nav>0?((r.price/r.nav)*100).toFixed(1):'N/A';}
 function momSignal(r){const disc=r.nav>0?(r.price-r.nav)/r.nav*100:0;const vr=r.avgVol60d>0?r.avgVol20d/r.avgVol60d:1;let sig=0;if(r.ret3m>3)sig+=1;else if(r.ret3m<-5)sig-=1;if(r.ret6m>5)sig+=1;else if(r.ret6m<-10)sig-=1;if(disc>-5)sig+=0.5;else if(disc<-25)sig-=0.5;if(vr>1.2)sig+=0.5;if(sig>=2)return{label:'강세',color:'#22d3ee',icon:'▲'};if(sig>=1)return{label:'양호',color:'#34d399',icon:'△'};if(sig>=-0.5)return{label:'중립',color:'#94a3b8',icon:'—'};if(sig>=-1.5)return{label:'약세',color:'#fb923c',icon:'▽'};return{label:'경고',color:'#f87171',icon:'▼'};}
 
-// 6축 라벨/키
 const ML=['실질배당률','캐리스프레드','캐리질','리파이리스크','레버리지','CF안정성'];
 const MK=['realYld','capSpread','quality','refi','lev','cf'];
 const SC={'오피스':'#6366f1','오피스(해외)':'#818cf8','물류':'#22d3ee','리테일':'#f472b6','인프라':'#34d399','인프라/리테일':'#a78bfa'};
 
-// ── 방법론 상세 ──
 const METHOD_DETAIL = [
-  { key:'realYld', label:'실질배당률', color:'#f97316',
-    what:'최근 분배금과 분배주기, 현재 주가 기준으로 계산한 실제 연율화 배당수익률입니다. 공시 배당수익률과 달리 시장가격 변동을 실시간 반영합니다.',
-    inputs:['최근 1회 분배금 (원)', '분배주기 (월: 3/6/12)', '현재 주가 (원)', 'FFO Payout Ratio (%)'],
-    logic:'연율화 배당률 = 최근분배금 × (12÷분배주기) ÷ 현재주가 × 100. 5~9% 구간이 최적이며 10%+ 시 과도 감점. FFO Payout 80~95%일 때 추가 가점, 100% 초과 시 감점.',
-    good:'실질배당률 5.5~7.5%, FFO Payout 85~95%',
-    bad:'실질배당률 10%+ (함정), 또는 2% 미만 (캐리 부족). FFO Payout 110%+',
-    tip:'특별배당이 포함된 분배금이면 일상적 분배금만으로 재계산 필요. 주가 급락으로 배당률이 높아진 경우 함정일 수 있으므로 모멘텀 보조지표와 교차 확인.', },
-  { key:'capSpread', label:'캐리 스프레드', color:'#22d3ee',
-    what:'Cap Rate와 조달금리 간 스프레드의 절대적 크기를 평가합니다. 리츠 수익 엔진의 마진 크기입니다.',
-    inputs:['Cap Rate (%)', '조달금리 (%)'],
-    logic:'스프레드 = Cap Rate − 조달금리. 200bp 이상이면 만점, 150bp 이상 양호, 100bp 미만은 금리 변동에 매우 취약.',
-    good:'스프레드 ≥150bp',
-    bad:'스프레드 <100bp (금리 소폭 상승에도 캐리 붕괴)',
-    tip:'금리 충격 슬라이더로 +50~100bp 충격 시에도 스프레드가 양(+)을 유지하는지 확인. 이 축은 금리 충격 시나리오에 가장 민감하게 반응합니다.', },
-  { key:'quality', label:'캐리 질', color:'#6366f1',
-    what:'캐리의 방어력과 금리 변동에 대한 내성을 평가합니다. 스프레드 크기와 별도로 구조적 안정성을 봅니다.',
-    inputs:['Cap Rate − 조달금리 스프레드 (bp)', '고정금리 차입 비중 (%)', '변동금리 헷지(스왑) 비율 (%)'],
-    logic:'스프레드가 넓을수록 캐리 버퍼가 크고, 고정금리·헷지 비중이 높을수록 금리 변동에 덜 흔들립니다.',
-    good:'고정금리 ≥70%, 헷지 ≥50%',
-    bad:'변동금리 위주 + 무헷지',
-    tip:'2026 BoK 인상 시나리오 감안 시, 고정금리 비중과 헷지 비율이 높은 리츠가 방어력 우수.', },
-  { key:'refi', label:'리파이낸싱 리스크', color:'#38bdf8',
-    what:'향후 1~2년 내 차입금 만기 도래에 따른 리파이낸싱 부담을 평가합니다.',
-    inputs:['2년 내 만기 도래 차입금 비중 (%)', '전체 차입금 평균잔존만기 (년)'],
-    logic:'100점에서 시작하여 2년내 만기비중이 높을수록, 평균만기가 짧을수록 감점.',
-    good:'2Y 만기비중 ≤20%, 평균잔존만기 ≥4년',
-    bad:'2Y 만기비중 ≥40%, 평균만기 <2년',
-    tip:'현재 시장금리로 리파이낸싱 시 이자비용 증가분이 FFO를 얼마나 갉아먹는지까지 시뮬레이션 필요.', },
-  { key:'lev', label:'레버리지', color:'#a78bfa',
-    what:'리츠의 차입 수준과 자산가격 하락에 대한 버퍼를 평가합니다.',
-    inputs:['LTV — Loan to Value (%)', '부채비율 — 총부채/자기자본 (%)'],
-    logic:'LTV 40% 이하면 만점, 55%까지 완만 감점, 55% 초과 시 급격 감점.',
-    good:'LTV ≤45%, 부채비율 ≤120%',
-    bad:'LTV ≥60%, 부채비율 ≥170%',
-    tip:'감정평가 기준 LTV와 시가 기준 LTV의 괴리에 주의. 보수적 접근 필요.', },
-  { key:'cf', label:'CF 안정성', color:'#34d399',
-    what:'임대 수입의 안정성과 예측 가능성을 평가합니다.',
-    inputs:['임대율 — 현재 가동률 (%)', 'WALE — 가중평균잔여임대기간 (년)'],
-    logic:'임대율 98%+ 이면 최고점, 95~98% 양호, 90% 미만 시 급격 감점. WALE 5년 이상 우수.',
-    good:'임대율 ≥98%, WALE ≥6년',
-    bad:'임대율 <90%, WALE <3년',
-    tip:'임대율이 높아도 WALE이 짧으면 재계약 리스크에 노출. 두 지표를 반드시 같이 볼 것.', },
+  {key:'realYld',label:'실질배당률',color:'#f97316',what:'최근 분배금과 분배주기, 현재 주가 기준으로 계산한 실제 연율화 배당수익률입니다.',inputs:['최근 1회 분배금 (원)','분배주기 (월: 3/6/12)','현재 주가 (원)','FFO Payout Ratio (%)'],logic:'연율화 배당률 = 최근분배금 × (12÷분배주기) ÷ 현재주가 × 100. 5~9% 구간이 최적.',good:'실질배당률 5.5~7.5%, FFO Payout 85~95%',bad:'실질배당률 10%+ (함정), FFO Payout 110%+',tip:'특별배당이 포함된 분배금이면 일상적 분배금만으로 재계산 필요.'},
+  {key:'capSpread',label:'캐리 스프레드',color:'#22d3ee',what:'Cap Rate와 조달금리 간 스프레드의 절대적 크기를 평가합니다.',inputs:['Cap Rate (%)','조달금리 (%)'],logic:'스프레드 = Cap Rate − 조달금리. 200bp 이상이면 만점.',good:'스프레드 ≥150bp',bad:'스프레드 <100bp',tip:'금리 충격 슬라이더로 +50~100bp 충격 시에도 스프레드가 양(+)을 유지하는지 확인.'},
+  {key:'quality',label:'캐리 질',color:'#6366f1',what:'캐리의 방어력과 금리 변동에 대한 내성을 평가합니다.',inputs:['Cap Rate − 조달금리 스프레드 (bp)','고정금리 차입 비중 (%)','변동금리 헷지(스왑) 비율 (%)'],logic:'스프레드가 넓을수록 캐리 버퍼가 크고, 고정금리·헷지 비중이 높을수록 금리 변동에 덜 흔들립니다.',good:'고정금리 ≥70%, 헷지 ≥50%',bad:'변동금리 위주 + 무헷지',tip:'2026 BoK 인상 시나리오 감안 시, 고정금리 비중과 헷지 비율이 높은 리츠가 방어력 우수.'},
+  {key:'refi',label:'리파이낸싱 리스크',color:'#38bdf8',what:'향후 1~2년 내 차입금 만기 도래에 따른 리파이낸싱 부담을 평가합니다.',inputs:['2년 내 만기 도래 차입금 비중 (%)','전체 차입금 평균잔존만기 (년)'],logic:'100점에서 시작하여 2년내 만기비중이 높을수록, 평균만기가 짧을수록 감점.',good:'2Y 만기비중 ≤20%, 평균잔존만기 ≥4년',bad:'2Y 만기비중 ≥40%, 평균만기 <2년',tip:'현재 시장금리로 리파이낸싱 시 이자비용 증가분이 FFO를 얼마나 갉아먹는지까지 시뮬레이션 필요.'},
+  {key:'lev',label:'레버리지',color:'#a78bfa',what:'리츠의 차입 수준과 자산가격 하락에 대한 버퍼를 평가합니다.',inputs:['LTV — Loan to Value (%)','부채비율 — 총부채/자기자본 (%)'],logic:'LTV 40% 이하면 만점, 55%까지 완만 감점, 55% 초과 시 급격 감점.',good:'LTV ≤45%, 부채비율 ≤120%',bad:'LTV ≥60%, 부채비율 ≥170%',tip:'감정평가 기준 LTV와 시가 기준 LTV의 괴리에 주의.'},
+  {key:'cf',label:'CF 안정성',color:'#34d399',what:'임대 수입의 안정성과 예측 가능성을 평가합니다.',inputs:['임대율 — 현재 가동률 (%)','WALE — 가중평균잔여임대기간 (년)'],logic:'임대율 98%+ 이면 최고점, 95~98% 양호, 90% 미만 시 급격 감점. WALE 5년 이상 우수.',good:'임대율 ≥98%, WALE ≥6년',bad:'임대율 <90%, WALE <3년',tip:'임대율이 높아도 WALE이 짧으면 재계약 리스크에 노출.'},
 ];
 
-// ── AI Update ──
-async function aiUpdateViaAPI(names) {
+// 🔒 AI Update — PIN 헤더 추가
+async function aiUpdateViaAPI(names, adminPin) {
   const res = await fetch('/api/ai-update', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-admin-pin': adminPin },
     body: JSON.stringify({
       module: 'reit-scoring',
       prompt: `다음 국내 상장 리츠들의 최신 데이터를 웹에서 검색하여 JSON 배열로 반환해주세요:\n${names.join(', ')}\n\n포함 항목: name, ticker, sector, divYield, ffoBasedPayout, fundingRate, capRate, fixedRateRatio, hedgeRatio, debtMaturingIn2Y, avgDebtMaturity, ltv, debtRatio, occupancy, wale, price, nav, ret3m, ret6m, avgVol20d, avgVol60d, specialDiv, specialDivNote, lastDist(최근 1회 분배금 원), distFreq(분배주기 월수 3/6/12), note. 최신 사업보고서/IR/DART 기준. JSON 배열만 반환.`,
     }),
   });
+  if (res.status === 401) throw new Error('인증 만료');
   if (!res.ok) throw new Error('AI 업데이트 실패');
   const data = await res.json();
   const txt = typeof data.result === 'string' ? data.result : JSON.stringify(data.result);
@@ -168,7 +129,7 @@ async function aiUpdateViaAPI(names) {
 // ── Main Page Component ──
 export default function ReitScoringPage() {
   const [reits, setReits] = useState([]);
-  const [weights, setWeights] = useState([20,15,15,20,15,15]); // 6축
+  const [weights, setWeights] = useState([20,15,15,20,15,15]);
   const [sel, setSel] = useState(null);
   const [sortBy, setSortBy] = useState('total');
   const [rateShock, setRateShock] = useState(0);
@@ -180,7 +141,9 @@ export default function ReitScoringPage() {
   const [lastUpd, setLastUpd] = useState(null);
   const [methodOpen, setMethodOpen] = useState(null);
 
-  // ── Load from Supabase ──
+  // 🔒 Admin PIN
+  const admin = useAdminPin('reit-scoring');
+
   useEffect(() => {
     async function load() {
       const { data, error } = await supabase.from('reits').select('*').order('name');
@@ -191,16 +154,12 @@ export default function ReitScoringPage() {
     load();
   }, []);
 
-  // ── Scoring ──
   const scored = useMemo(() => {
     return reits.map(r => {
       const sh = { ...r, fundingRate: r.fundingRate + rateShock / 100 };
       const ry = calcRealYield(r);
       return { ...r, scores: computeScores(sh, weights), ry, ac: annCarry(r, rateShock), mom: momSignal(r) };
-    }).sort((a, b) => sortBy === 'total' ? b.scores.total - a.scores.total
-      : sortBy === 'ry' ? b.ry - a.ry
-      : sortBy === 'ac' ? b.ac - a.ac
-      : (b.scores[sortBy] ?? 0) - (a.scores[sortBy] ?? 0));
+    }).sort((a, b) => sortBy === 'total' ? b.scores.total - a.scores.total : sortBy === 'ry' ? b.ry - a.ry : sortBy === 'ac' ? b.ac - a.ac : (b.scores[sortBy] ?? 0) - (a.scores[sortBy] ?? 0));
   }, [reits, weights, sortBy, rateShock]);
 
   const handleW = (idx, val) => {
@@ -212,11 +171,12 @@ export default function ReitScoringPage() {
     setWeights(nw);
   };
 
-  // ── AI Update ──
+  // 🔒 AI Update with PIN
   const doAI = useCallback(async () => {
+    if (!admin.isAdmin) { admin.openModal(); return; }
     setAiLoading(true); setStatus(null);
     try {
-      const res = await aiUpdateViaAPI(reits.map(r=>r.name));
+      const res = await aiUpdateViaAPI(reits.map(r=>r.name), admin.pin);
       for (const aiReit of res) {
         const dbData = toDb(aiReit);
         dbData.data_source = 'ai_update';
@@ -228,12 +188,13 @@ export default function ReitScoringPage() {
       setLastUpd(ts);
       setStatus({ ok: true, msg: `${res.length}개 리츠 업데이트 완료 · ${ts}` });
     } catch (e) {
+      if (e.message === '인증 만료') { admin.logout(); admin.openModal(); }
       setStatus({ ok: false, msg: `실패: ${e.message}` });
     } finally { setAiLoading(false); }
-  }, [reits]);
+  }, [reits, admin]);
 
-  // ── Manual Edit ──
-  const startEdit = r => { setEditId(r.id); setEditForm(Object.fromEntries(REIT_FIELDS.map(f=>[f.key,r[f.key]]))); };
+  // 🔒 Manual Edit — PIN 필요
+  const startEdit = r => { if (!admin.isAdmin) { admin.openModal(); return; } setEditId(r.id); setEditForm(Object.fromEntries(REIT_FIELDS.map(f=>[f.key,r[f.key]]))); };
   const saveEdit = async () => {
     const dbData = toDb(editForm);
     dbData.data_source = 'manual';
@@ -248,21 +209,18 @@ export default function ReitScoringPage() {
   const Tip = ({ active, payload }) => {
     if (!active || !payload?.length) return null; const d = payload[0].payload;
     return (<div style={{background:'rgba(15,23,42,0.95)',border:'1px solid rgba(99,102,241,0.3)',borderRadius:8,padding:'10px 14px',fontSize:13,color:'#e2e8f0'}}>
-      <div style={{fontWeight:700}}>{d.name}</div>
-      <div style={{color:'#94a3b8',fontSize:11}}>{d.sector}</div>
+      <div style={{fontWeight:700}}>{d.name}</div><div style={{color:'#94a3b8',fontSize:11}}>{d.sector}</div>
       <div style={{marginTop:6,fontWeight:600,color:getGrade(d.total).color,fontSize:16}}>{d.total}점 ({getGrade(d.total).grade})</div>
     </div>);
   };
 
-  if (loading) return (
-    <div style={{minHeight:'100vh',background:'linear-gradient(165deg,#0a0e1a 0%,#0f172a 40%,#111827 100%)',display:'flex',alignItems:'center',justifyContent:'center',color:'#64748b',fontSize:14}}>
-      데이터 로딩 중...
-    </div>
-  );
+  if (loading) return (<div style={{minHeight:'100vh',background:'linear-gradient(165deg,#0a0e1a 0%,#0f172a 40%,#111827 100%)',display:'flex',alignItems:'center',justifyContent:'center',color:'#64748b',fontSize:14}}>데이터 로딩 중...</div>);
 
   return (
     <div style={{minHeight:'100vh',background:'linear-gradient(165deg,#0a0e1a 0%,#0f172a 40%,#111827 100%)',color:'#e2e8f0',fontFamily:"'Pretendard','Noto Sans KR',-apple-system,sans-serif",padding:'24px 20px'}}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes fadeIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      {/* 🔒 PIN Modal */}
+      <PinModal admin={admin} />
       <div style={{maxWidth:1200,margin:'0 auto'}}>
 
         {/* Header */}
@@ -276,8 +234,14 @@ export default function ReitScoringPage() {
           </div>
           <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
             {lastUpd&&<span style={{fontSize:10,color:'#475569'}}>Last: {lastUpd}</span>}
-            <button onClick={doAI} disabled={aiLoading}
-              style={{background:aiLoading?'rgba(99,102,241,0.15)':'linear-gradient(135deg,#6366f1,#4f46e5)',border:'1px solid rgba(99,102,241,0.4)',borderRadius:10,color:'#fff',fontWeight:700,fontSize:13,padding:'10px 22px',cursor:aiLoading?'wait':'pointer',display:'flex',alignItems:'center',gap:8,boxShadow:aiLoading?'none':'0 0 24px rgba(99,102,241,0.3)'}}>
+            {/* 🔒 Admin Lock */}
+            {admin.isAdmin ? (
+              <button onClick={admin.logout} style={{padding:'8px 12px',borderRadius:8,border:'1px solid rgba(52,211,153,0.3)',background:'rgba(52,211,153,0.08)',color:'#34d399',cursor:'pointer',fontSize:12}}>🔓</button>
+            ) : (
+              <button onClick={admin.openModal} style={{padding:'8px 12px',borderRadius:8,border:'1px solid rgba(99,102,241,0.2)',background:'rgba(99,102,241,0.06)',color:'#64748b',cursor:'pointer',fontSize:12}}>🔒</button>
+            )}
+            <button onClick={doAI} disabled={aiLoading||!admin.isAdmin}
+              style={{background:aiLoading?'rgba(99,102,241,0.15)':admin.isAdmin?'linear-gradient(135deg,#6366f1,#4f46e5)':'rgba(99,102,241,0.1)',border:'1px solid rgba(99,102,241,0.4)',borderRadius:10,color:admin.isAdmin?'#fff':'#475569',fontWeight:700,fontSize:13,padding:'10px 22px',cursor:aiLoading||!admin.isAdmin?'not-allowed':'pointer',display:'flex',alignItems:'center',gap:8,boxShadow:aiLoading||!admin.isAdmin?'none':'0 0 24px rgba(99,102,241,0.3)',opacity:admin.isAdmin?1:0.5}}>
               {aiLoading?<span style={{display:'inline-block',width:16,height:16,border:'2px solid rgba(255,255,255,0.3)',borderTop:'2px solid #fff',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
               :<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>}
               {aiLoading?'AI 검색 중...':'AI 데이터 업데이트'}
@@ -307,8 +271,7 @@ export default function ReitScoringPage() {
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
                 <div style={{display:'flex',alignItems:'center',gap:4}}>
                   <span style={{fontSize:11,color:'#94a3b8'}}>{label}</span>
-                  <button onClick={()=>setMethodOpen(methodOpen===MK[i]?null:MK[i])}
-                    style={{width:16,height:16,borderRadius:'50%',border:'1px solid',borderColor:methodOpen===MK[i]?METHOD_DETAIL[i].color:'rgba(99,102,241,0.3)',background:methodOpen===MK[i]?`${METHOD_DETAIL[i].color}20`:'transparent',color:methodOpen===MK[i]?METHOD_DETAIL[i].color:'#64748b',fontSize:9,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1,padding:0}}>?</button>
+                  <button onClick={()=>setMethodOpen(methodOpen===MK[i]?null:MK[i])} style={{width:16,height:16,borderRadius:'50%',border:'1px solid',borderColor:methodOpen===MK[i]?METHOD_DETAIL[i].color:'rgba(99,102,241,0.3)',background:methodOpen===MK[i]?`${METHOD_DETAIL[i].color}20`:'transparent',color:methodOpen===MK[i]?METHOD_DETAIL[i].color:'#64748b',fontSize:9,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1,padding:0}}>?</button>
                 </div>
                 <span style={{fontSize:12,fontWeight:700,color:'#6366f1'}}>{weights[i]}%</span>
               </div>
@@ -319,8 +282,7 @@ export default function ReitScoringPage() {
 
         {/* Method Detail Panel */}
         {methodOpen && (()=>{
-          const m = METHOD_DETAIL.find(d=>d.key===methodOpen);
-          if(!m) return null;
+          const m = METHOD_DETAIL.find(d=>d.key===methodOpen); if(!m) return null;
           return (
             <div style={{background:'rgba(30,41,59,0.6)',borderRadius:12,border:`1px solid ${m.color}30`,padding:20,marginBottom:20,animation:'fadeIn 0.2s ease'}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14}}>
@@ -331,35 +293,18 @@ export default function ReitScoringPage() {
                 <button onClick={()=>setMethodOpen(null)} style={{background:'none',border:'none',color:'#64748b',cursor:'pointer',fontSize:16,padding:'0 4px'}}>✕</button>
               </div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-                <div style={{background:'rgba(15,23,42,0.5)',borderRadius:8,padding:'12px 14px'}}>
-                  <div style={{fontSize:10,fontWeight:700,color:'#64748b',textTransform:'uppercase',letterSpacing:1,marginBottom:8}}>입력 변수</div>
-                  {m.inputs.map((inp,j)=>(<div key={j} style={{fontSize:11,color:'#94a3b8',padding:'3px 0',display:'flex',alignItems:'center',gap:6}}><span style={{color:m.color,fontSize:8}}>●</span>{inp}</div>))}
-                </div>
-                <div style={{background:'rgba(15,23,42,0.5)',borderRadius:8,padding:'12px 14px'}}>
-                  <div style={{fontSize:10,fontWeight:700,color:'#64748b',textTransform:'uppercase',letterSpacing:1,marginBottom:8}}>스코어링 로직</div>
-                  <div style={{fontSize:11,color:'#94a3b8',lineHeight:1.7}}>{m.logic}</div>
-                </div>
-                <div style={{background:'rgba(52,211,153,0.05)',borderRadius:8,padding:'12px 14px',border:'1px solid rgba(52,211,153,0.1)'}}>
-                  <div style={{fontSize:10,fontWeight:700,color:'#34d399',marginBottom:6}}>▲ 양호 기준</div>
-                  <div style={{fontSize:11,color:'#94a3b8',lineHeight:1.6}}>{m.good}</div>
-                </div>
-                <div style={{background:'rgba(248,113,113,0.05)',borderRadius:8,padding:'12px 14px',border:'1px solid rgba(248,113,113,0.1)'}}>
-                  <div style={{fontSize:10,fontWeight:700,color:'#f87171',marginBottom:6}}>▼ 위험 신호</div>
-                  <div style={{fontSize:11,color:'#94a3b8',lineHeight:1.6}}>{m.bad}</div>
-                </div>
+                <div style={{background:'rgba(15,23,42,0.5)',borderRadius:8,padding:'12px 14px'}}><div style={{fontSize:10,fontWeight:700,color:'#64748b',textTransform:'uppercase',letterSpacing:1,marginBottom:8}}>입력 변수</div>{m.inputs.map((inp,j)=>(<div key={j} style={{fontSize:11,color:'#94a3b8',padding:'3px 0',display:'flex',alignItems:'center',gap:6}}><span style={{color:m.color,fontSize:8}}>●</span>{inp}</div>))}</div>
+                <div style={{background:'rgba(15,23,42,0.5)',borderRadius:8,padding:'12px 14px'}}><div style={{fontSize:10,fontWeight:700,color:'#64748b',textTransform:'uppercase',letterSpacing:1,marginBottom:8}}>스코어링 로직</div><div style={{fontSize:11,color:'#94a3b8',lineHeight:1.7}}>{m.logic}</div></div>
+                <div style={{background:'rgba(52,211,153,0.05)',borderRadius:8,padding:'12px 14px',border:'1px solid rgba(52,211,153,0.1)'}}><div style={{fontSize:10,fontWeight:700,color:'#34d399',marginBottom:6}}>▲ 양호 기준</div><div style={{fontSize:11,color:'#94a3b8',lineHeight:1.6}}>{m.good}</div></div>
+                <div style={{background:'rgba(248,113,113,0.05)',borderRadius:8,padding:'12px 14px',border:'1px solid rgba(248,113,113,0.1)'}}><div style={{fontSize:10,fontWeight:700,color:'#f87171',marginBottom:6}}>▼ 위험 신호</div><div style={{fontSize:11,color:'#94a3b8',lineHeight:1.6}}>{m.bad}</div></div>
               </div>
-              <div style={{marginTop:12,padding:'10px 14px',borderRadius:8,background:`${m.color}08`,border:`1px solid ${m.color}15`}}>
-                <div style={{fontSize:10,fontWeight:700,color:m.color,marginBottom:4}}>실전 팁</div>
-                <div style={{fontSize:11,color:'#94a3b8',lineHeight:1.7}}>{m.tip}</div>
-              </div>
+              <div style={{marginTop:12,padding:'10px 14px',borderRadius:8,background:`${m.color}08`,border:`1px solid ${m.color}15`}}><div style={{fontSize:10,fontWeight:700,color:m.color,marginBottom:4}}>실전 팁</div><div style={{fontSize:11,color:'#94a3b8',lineHeight:1.7}}>{m.tip}</div></div>
             </div>
           );
         })()}
 
         {/* Main Grid */}
         <div style={{display:'flex',gap:16,flexWrap:'wrap'}}>
-
-          {/* Left: Table + Chart */}
           <div style={{flex:'1 1 680px',minWidth:0}}>
             <div style={{background:'rgba(30,41,59,0.4)',borderRadius:12,border:'1px solid rgba(99,102,241,0.12)',overflow:'hidden'}}>
               <div style={{padding:'12px 16px',borderBottom:'1px solid rgba(99,102,241,0.1)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -391,21 +336,20 @@ export default function ReitScoringPage() {
                           </div>
                         </td>
                         <td style={{...td,fontWeight:800,fontSize:14,color:g.color}}>{r.scores.total}</td>
-                        {/* 실질배당률 */}
                         <td style={td}><div style={{display:'inline-flex',alignItems:'baseline',gap:2,padding:'3px 10px',borderRadius:6,background:`${rc}12`,border:`1px solid ${rc}30`}}>
                           <span style={{fontWeight:800,fontSize:14,color:rc}}>{fmtC(r.ry)}</span><span style={{fontSize:9,color:rc,opacity:0.7}}>%</span>
                         </div></td>
                         {MK.map(k=>(<td key={k} style={td}><div style={{display:'inline-block',padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:600,background:`${getGrade(r.scores[k]).color}18`,color:getGrade(r.scores[k]).color}}>{r.scores[k]}</div></td>))}
                         <td style={td}><span style={{color:r.mom.color,fontWeight:700,fontSize:12}}>{r.mom.icon}</span></td>
                         <td style={td}><span style={{display:'inline-block',width:28,height:28,lineHeight:'28px',borderRadius:'50%',textAlign:'center',fontWeight:800,fontSize:11,background:`${g.color}20`,color:g.color,border:`1.5px solid ${g.color}40`}}>{g.grade}</span></td>
-                        <td style={td}><button onClick={e=>{e.stopPropagation();startEdit(r);}} style={{background:'rgba(99,102,241,0.1)',border:'1px solid rgba(99,102,241,0.2)',borderRadius:6,color:'#818cf8',fontSize:10,padding:'3px 8px',cursor:'pointer'}}>수정</button></td>
+                        {/* 🔒 수정 버튼 — PIN 검증 */}
+                        <td style={td}><button onClick={e=>{e.stopPropagation();startEdit(r);}} style={{background:'rgba(99,102,241,0.1)',border:'1px solid rgba(99,102,241,0.2)',borderRadius:6,color:'#818cf8',fontSize:10,padding:'3px 8px',cursor:'pointer'}}>{admin.isAdmin?'수정':'🔒'}</button></td>
                       </tr>);})}
                   </tbody>
                 </table>
               </div>
             </div>
 
-            {/* Edit */}
             {editId&&(<div style={{background:'rgba(30,41,59,0.95)',borderRadius:12,border:'1px solid rgba(99,102,241,0.25)',padding:20,marginTop:12}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
                 <span style={{fontWeight:700,fontSize:14}}>{reits.find(r=>r.id===editId)?.name} 데이터 수정</span>
@@ -423,7 +367,6 @@ export default function ReitScoringPage() {
               </div>
             </div>)}
 
-            {/* Bar Chart */}
             <div style={{background:'rgba(30,41,59,0.4)',borderRadius:12,border:'1px solid rgba(99,102,241,0.12)',padding:16,marginTop:16}}>
               <div style={{fontSize:13,fontWeight:700,marginBottom:12}}>종합 스코어 비교</div>
               <ResponsiveContainer width="100%" height={220}>
@@ -446,8 +389,6 @@ export default function ReitScoringPage() {
                 <div><h2 style={{margin:0,fontSize:18,fontWeight:800}}>{sel.name}</h2><div style={{fontSize:11,color:SC[sel.sector],marginTop:2}}>{sel.sector} · {sel.ticker}</div></div>
                 <div style={{width:44,height:44,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:900,fontSize:16,background:`${getGrade(sel.scores.total).color}18`,color:getGrade(sel.scores.total).color,border:`2px solid ${getGrade(sel.scores.total).color}40`}}>{getGrade(sel.scores.total).grade}</div>
               </div>
-
-              {/* Hero: Score + Real Yield + Leverage Carry */}
               <div style={{display:'flex',justifyContent:'center',alignItems:'flex-end',gap:16,margin:'14px 0 8px'}}>
                 <div style={{textAlign:'center'}}><div style={{fontSize:10,color:'#64748b',marginBottom:2}}>종합점수</div><div style={{fontSize:30,fontWeight:900,color:getGrade(sel.scores.total).color,lineHeight:1}}>{sel.scores.total}</div></div>
                 <div style={{width:1,height:40,background:'rgba(99,102,241,0.15)'}}/>
@@ -455,20 +396,13 @@ export default function ReitScoringPage() {
                 <div style={{width:1,height:40,background:'rgba(99,102,241,0.15)'}}/>
                 <div style={{textAlign:'center'}}><div style={{fontSize:10,color:'#64748b',marginBottom:2}}>레버리지캐리</div><div style={{fontSize:20,fontWeight:800,color:'#64748b',lineHeight:1}}>{fmtC(sel.ac)}<span style={{fontSize:11,opacity:0.6}}>%</span></div></div>
               </div>
-
-              {/* 분배금 분해 */}
               <div style={{background:'rgba(15,23,42,0.4)',borderRadius:8,padding:'8px 12px',margin:'6px 0 10px',fontSize:10,color:'#64748b',lineHeight:1.7}}>
-                <span style={{color:'#f97316',fontWeight:600}}>분배금 분해</span>:
-                최근 {sel.distFreq||6}개월 분배금 {(sel.lastDist||0).toLocaleString()}원 × (12÷{sel.distFreq||6}) = 연 {((sel.lastDist||0)*(12/(sel.distFreq||6))).toLocaleString()}원 ÷ 현재가 {(sel.price||0).toLocaleString()}원 = <span style={{color:ryColor(sel.ry),fontWeight:700}}>{fmtC(sel.ry)}%</span>
+                <span style={{color:'#f97316',fontWeight:600}}>분배금 분해</span>: 최근 {sel.distFreq||6}개월 분배금 {(sel.lastDist||0).toLocaleString()}원 × (12÷{sel.distFreq||6}) = 연 {((sel.lastDist||0)*(12/(sel.distFreq||6))).toLocaleString()}원 ÷ 현재가 {(sel.price||0).toLocaleString()}원 = <span style={{color:ryColor(sel.ry),fontWeight:700}}>{fmtC(sel.ry)}%</span>
                 {sel.divYield > 0 && <span style={{color:'#475569'}}> (공시 {sel.divYield}%)</span>}
               </div>
-
-              {/* Radar */}
               <ResponsiveContainer width="100%" height={200}>
                 <RadarChart data={radar} cx="50%" cy="50%" outerRadius="65%"><PolarGrid stroke="rgba(99,102,241,0.15)"/><PolarAngleAxis dataKey="metric" tick={{fill:'#94a3b8',fontSize:9}}/><PolarRadiusAxis domain={[0,100]} tick={false} axisLine={false}/><Radar dataKey="score" fill="#6366f1" fillOpacity={0.25} stroke="#6366f1" strokeWidth={2} dot={{r:3,fill:'#6366f1'}}/></RadarChart>
               </ResponsiveContainer>
-
-              {/* Key Metrics */}
               <div style={{fontSize:12,marginTop:4}}>
                 <div style={{color:'#64748b',fontSize:10,fontWeight:600,marginBottom:8,textTransform:'uppercase',letterSpacing:1}}>핵심 지표</div>
                 {[['실질배당률',`${fmtC(sel.ry)}%`,'공시배당률',`${sel.divYield}%`],['조달금리',`${(sel.fundingRate+rateShock/100).toFixed(2)}%`,'Cap Rate',`${sel.capRate}%`],['스프레드',`${Math.round((sel.capRate-sel.fundingRate-rateShock/100)*100)}bp`,'고정금리비중',`${sel.fixedRateRatio}%`],['2Y내 만기',`${sel.debtMaturingIn2Y}%`,'평균잔존만기',`${sel.avgDebtMaturity}Y`],['LTV',`${sel.ltv}%`,'부채비율',`${sel.debtRatio}%`],['임대율',`${sel.occupancy}%`,'WALE',`${sel.wale}Y`]].map(([l1,v1,l2,v2],i)=>(
@@ -477,8 +411,6 @@ export default function ReitScoringPage() {
                     <div style={{flex:1,display:'flex',justifyContent:'space-between',background:'rgba(15,23,42,0.5)',borderRadius:6,padding:'5px 10px'}}><span style={{color:'#64748b'}}>{l2}</span><span style={{fontWeight:700}}>{v2}</span></div>
                   </div>))}
               </div>
-
-              {/* Momentum */}
               <div style={{marginTop:10,padding:'12px 14px',borderRadius:8,background:'rgba(15,23,42,0.4)',border:'1px solid rgba(99,102,241,0.1)'}}>
                 <div style={{fontSize:10,fontWeight:700,color:'#64748b',marginBottom:8,textTransform:'uppercase',letterSpacing:1}}>시장 센티먼트 (보조지표)</div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
@@ -487,24 +419,9 @@ export default function ReitScoringPage() {
                   <div style={{textAlign:'center'}}><div style={{fontSize:9,color:'#475569'}}>모멘텀</div><div style={{fontSize:16,fontWeight:800,color:sel.mom.color}}>{sel.mom.icon}</div><div style={{fontSize:9,color:sel.mom.color}}>{sel.mom.label}</div></div>
                 </div>
               </div>
-
-              {/* Special Div */}
-              {sel.specialDiv&&(<div style={{marginTop:10,padding:'10px 14px',borderRadius:8,background:'rgba(251,191,36,0.06)',border:'1px solid rgba(251,191,36,0.2)'}}>
-                <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}><span style={{fontSize:14}}>⚠</span><span style={{fontSize:11,fontWeight:700,color:'#fbbf24'}}>특별배당 이슈</span></div>
-                <div style={{fontSize:11,color:'#94a3b8',lineHeight:1.6}}>{sel.specialDivNote}</div>
-                <div style={{fontSize:10,color:'#64748b',marginTop:4,fontStyle:'italic'}}>특별배당 포함 시 실질배당률이 과대계상될 수 있음. 일상 분배금만으로 재계산 필요.</div>
-              </div>)}
-
-              {/* Note */}
-              <div style={{marginTop:10,padding:'10px 14px',borderRadius:8,background:'rgba(99,102,241,0.06)',border:'1px solid rgba(99,102,241,0.12)',fontSize:11,color:'#94a3b8',lineHeight:1.6}}>
-                <span style={{color:'#6366f1',fontWeight:700}}>Analyst Note</span><br/>{sel.note}
-              </div>
-
-              {/* Stress */}
-              {rateShock!==0&&(<div style={{marginTop:10,padding:'8px 12px',borderRadius:8,background:rateShock>0?'rgba(248,113,113,0.08)':'rgba(52,211,153,0.08)',border:`1px solid ${rateShock>0?'rgba(248,113,113,0.2)':'rgba(52,211,153,0.2)'}`,fontSize:11}}>
-                <span style={{fontWeight:700,color:rateShock>0?'#f87171':'#34d399'}}>Stress Test ({rateShock>=0?'+':''}{rateShock}bp)</span><br/>
-                <span style={{color:'#94a3b8'}}>조달금리 {sel.fundingRate}% → {(sel.fundingRate+rateShock/100).toFixed(2)}% · 레버리지캐리 {fmtC(annCarry(sel,0))}% → {fmtC(sel.ac)}%</span>
-              </div>)}
+              {sel.specialDiv&&(<div style={{marginTop:10,padding:'10px 14px',borderRadius:8,background:'rgba(251,191,36,0.06)',border:'1px solid rgba(251,191,36,0.2)'}}><div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}><span style={{fontSize:14}}>⚠</span><span style={{fontSize:11,fontWeight:700,color:'#fbbf24'}}>특별배당 이슈</span></div><div style={{fontSize:11,color:'#94a3b8',lineHeight:1.6}}>{sel.specialDivNote}</div><div style={{fontSize:10,color:'#64748b',marginTop:4,fontStyle:'italic'}}>특별배당 포함 시 실질배당률이 과대계상될 수 있음.</div></div>)}
+              <div style={{marginTop:10,padding:'10px 14px',borderRadius:8,background:'rgba(99,102,241,0.06)',border:'1px solid rgba(99,102,241,0.12)',fontSize:11,color:'#94a3b8',lineHeight:1.6}}><span style={{color:'#6366f1',fontWeight:700}}>Analyst Note</span><br/>{sel.note}</div>
+              {rateShock!==0&&(<div style={{marginTop:10,padding:'8px 12px',borderRadius:8,background:rateShock>0?'rgba(248,113,113,0.08)':'rgba(52,211,153,0.08)',border:`1px solid ${rateShock>0?'rgba(248,113,113,0.2)':'rgba(52,211,153,0.2)'}`,fontSize:11}}><span style={{fontWeight:700,color:rateShock>0?'#f87171':'#34d399'}}>Stress Test ({rateShock>=0?'+':''}{rateShock}bp)</span><br/><span style={{color:'#94a3b8'}}>조달금리 {sel.fundingRate}% → {(sel.fundingRate+rateShock/100).toFixed(2)}% · 레버리지캐리 {fmtC(annCarry(sel,0))}% → {fmtC(sel.ac)}%</span></div>)}
             </div>) : (
               <div style={{background:'rgba(30,41,59,0.3)',borderRadius:12,border:'1px dashed rgba(99,102,241,0.2)',padding:40,textAlign:'center',color:'#475569'}}>
                 <div style={{fontSize:32,marginBottom:8}}>←</div><div style={{fontSize:13}}>리츠를 선택하면<br/>상세 분석을 보여드립니다</div>
