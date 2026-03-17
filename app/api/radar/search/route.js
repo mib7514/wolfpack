@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-
 function extractJSON(text) {
   if (!text) return null;
   try { return JSON.parse(text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim()); } catch {}
@@ -19,18 +18,22 @@ function extractJSON(text) {
   }
   return null;
 }
-
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
 export async function POST(req) {
   try {
+    // ─── 관리자 PIN 검증 ───
+    const adminPin = process.env.ADMIN_PIN;
+    const userPin = req.headers.get("x-admin-pin");
+    if (!adminPin || userPin !== adminPin) {
+      return NextResponse.json({ error: "관리자 인증이 필요합니다" }, { status: 401 });
+    }
+    // ─────────────────────────
+
     const { query } = await req.json();
     if (!query) return NextResponse.json({ error: "query required" }, { status: 400 });
-
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return NextResponse.json({ error: "API key not set" }, { status: 500 });
-
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -45,7 +48,6 @@ export async function POST(req) {
         messages: [{
           role: "user",
           content: `"${query}" 종목을 웹검색해서 투자 분석해줘. US/KR/HK/JP 등 글로벌 거래소 지원.
-
 반드시 JSON만 응답 (마크다운/백틱 없이):
 {
   "ticker": "CPNG",
@@ -76,7 +78,6 @@ export async function POST(req) {
   "kelly_win_prob": 0.45,
   "kelly_wl_ratio": 2.5
 }
-
 규칙:
 - category: BTC_TREASURY/AI_INFRA/AI_APP/BIOTECH/SPAC/IPO/ROBOTICS/ENERGY/FINTECH/CRYPTO/SEMI/OTHER
 - monitoring_indicators 5-7개, 각 sub_indicators 3-5개, weight합=100, score 0-100
@@ -86,20 +87,16 @@ export async function POST(req) {
         }]
       }),
     });
-
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({}));
       const msg = errBody?.error?.message || errBody?.message || `API error ${res.status}`;
       console.error("Radar search API error:", res.status, msg);
       return NextResponse.json({ error: `Search failed: ${msg}` }, { status: 502 });
     }
-
     const data = await res.json();
     const allText = (data.content?.filter(b => b.type === "text") || []).map(b => b.text).join("\n");
     const parsed = extractJSON(allText);
-
     if (!parsed) return NextResponse.json({ error: "Failed to parse result" }, { status: 500 });
-
     return NextResponse.json(parsed);
   } catch (e) {
     console.error("Radar search error:", e);
