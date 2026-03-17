@@ -36,16 +36,6 @@ const MODULES = [
     status: "live",
   },
   {
-    id: "rate-scenario",
-    name: "금리 시나리오",
-    subtitle: "Rate Scenario Calculator",
-    icon: "⊿",
-    description: "확률가중 금리 전망 시뮬레이션",
-    path: "/modules/rate-scenario",
-    layer: "macro",
-    status: "planned",
-  },
-  {
     id: "employment-narrative",
     name: "고용 내러티브",
     subtitle: "Employment Narrative Monitor",
@@ -87,16 +77,6 @@ const MODULES = [
     status: "live",
   },
   // ─── Layer 3: PORTFOLIO ───
-  {
-    id: "portfolio-tracker",
-    name: "Portfolio Tracker",
-    subtitle: "보유종목 & 매매",
-    icon: "⊞",
-    description: "듀레이션, 커브, 섹터 포지션 현황",
-    path: "/modules/portfolio-tracker",
-    layer: "portfolio",
-    status: "planned",
-  },
   {
     id: "deficit-analysis",
     name: "적자기업 투자분석",
@@ -160,22 +140,22 @@ const MODULES = [
   },
   // ─── Layer 5: BEST CREDIT PLUS (PIN 보호) ───
   {
-    id: "best-credit-plus",
-    name: "베스트크레딧플러스",
-    subtitle: "Best Credit Plus Fund Hub",
-    icon: "🐺",
-    description: "베스트크레딧플러스 펀드 전용 관리 레이어",
-    path: "/modules/best-credit-plus",
-    layer: "bcp",
-    status: "live",
-  },
-  {
     id: "alpha-cockpit",
     name: "Alpha Cockpit",
     subtitle: "BCP Alpha Generation Dashboard",
     icon: "🎛️",
     description: "베스트크레딧플러스 알파 생성 전략 · 포트폴리오 최적화",
     path: "/modules/alpha-cockpit",
+    layer: "bcp",
+    status: "live",
+  },
+  {
+    id: "duration-commander",
+    name: "Duration Commander",
+    subtitle: "Duration & Rate Strategy",
+    icon: "⏱️",
+    description: "듀레이션 전략 시뮬레이션 · 금리 시나리오별 포지션 설계",
+    path: "/modules/rate-scenario",
     layer: "bcp",
     status: "live",
   },
@@ -337,7 +317,7 @@ export default function ControlTower() {
       {/* Footer */}
       <footer className="border-t border-gray-800/50 py-6 text-center">
         <p className="text-xs text-gray-600 font-mono">
-          늑대무리원정단 v2.2.0
+          늑대무리원정단 v2.2.1
           <span className="text-gray-700 mx-1">·</span>
           Macro · Market · Portfolio · Fund Idea · BCP
         </p>
