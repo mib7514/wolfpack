@@ -1,14 +1,19 @@
 // app/api/radar/discover/route.js
 import { NextResponse } from "next/server";
-
 export async function POST(req) {
   try {
+    // ─── 관리자 PIN 검증 ───
+    const adminPin = process.env.ADMIN_PIN;
+    const userPin = req.headers.get("x-admin-pin");
+    if (!adminPin || userPin !== adminPin) {
+      return NextResponse.json({ error: "관리자 인증이 필요합니다" }, { status: 401 });
+    }
+    // ─────────────────────────
+
     const { theme } = await req.json();
     if (!theme) return NextResponse.json({ error: "theme required" }, { status: 400 });
-
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return NextResponse.json({ error: "API key not set" }, { status: 500 });
-
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -23,14 +28,12 @@ export async function POST(req) {
         messages: [{
           role: "user",
           content: `You are a growth stock scout. Search the web for the most interesting speculative growth stocks related to the theme: "${theme}"
-
 Focus on:
 - Recently IPO'd or SPAC-merged companies (last 12 months)
 - Small/mid cap with high upside potential  
 - Companies getting attention on social media, Reddit, fintwit
 - Stocks trading at interesting valuations (deep discount to NAV, high short interest, unusual volume)
 - Both US and global markets (Hong Kong, Korea, Japan, Europe)
-
 Return ONLY a valid JSON array (no markdown, no backticks, no preamble). Each element:
 {
   "ticker": "XXI",
@@ -47,25 +50,20 @@ Return ONLY a valid JSON array (no markdown, no backticks, no preamble). Each el
   "wl_ratio": 2.5,
   "heat": 8
 }
-
 heat = 1~10 how "hot" this stock is right now (buzz, momentum, timeliness)
 category must be one of: BTC_TREASURY, AI_INFRA, AI_APP, BIOTECH, SPAC, IPO, ROBOTICS, ENERGY, FINTECH, CRYPTO, SEMI, OTHER
-
 Return 5-8 stocks, ranked by heat descending. Be creative — find genuinely interesting, non-obvious picks.`
         }]
       }),
     });
-
     if (!res.ok) {
       console.error("Claude API error:", await res.text());
       return NextResponse.json({ error: "Claude API failed" }, { status: 502 });
     }
-
     const data = await res.json();
     const text = data.content?.filter(b => b.type === "text").map(b => b.text).join("") || "";
     const cleaned = text.replace(/```json|```/g, "").trim();
     const parsed = JSON.parse(cleaned);
-
     return NextResponse.json(Array.isArray(parsed) ? parsed : [parsed]);
   } catch (e) {
     console.error("Discover error:", e);
