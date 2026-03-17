@@ -25,6 +25,14 @@ export const maxDuration = 60;
 
 export async function POST(req) {
   try {
+    // ─── 관리자 PIN 검증 ───
+    const adminPin = process.env.ADMIN_PIN;
+    const userPin = req.headers.get("x-admin-pin");
+    if (!adminPin || userPin !== adminPin) {
+      return NextResponse.json({ error: "관리자 인증이 필요합니다" }, { status: 401 });
+    }
+    // ─────────────────────────
+
     const { ticker, exchange, name, indicators, kelly_win_prob, kelly_wl_ratio } = await req.json();
     if (!ticker) return NextResponse.json({ error: "ticker required" }, { status: 400 });
 
