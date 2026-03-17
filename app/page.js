@@ -19,7 +19,7 @@ const MODULES = [
     name: "테일러 룰 모니터",
     subtitle: "Modified Taylor Rule Monitor",
     icon: "📐",
-    description: "수정 테일러 룰 기반 적정금리 vs 기준금리 괴리 분석 · 국고3년 GAP 비교",
+    description: "수정 테일러 룰 기반 적정금리 vs 기준금리 괴리 분석 · 국채3년 GAP 비교",
     path: "/taylor-rule",
     layer: "macro",
     status: "live",
