@@ -120,15 +120,9 @@ async function callClaude(systemPrompt, userPrompt) {
     },
     body: JSON.stringify({
       model: "claude-sonnet-4-20250514",
-      max_tokens: 16000,
+      max_tokens: 4096,
       system: systemPrompt,
       messages: [{ role: "user", content: userPrompt }],
-      tools: [
-        {
-          type: "web_search_20250305",
-          name: "web_search",
-        },
-      ],
     }),
   });
   const data = await res.json();
@@ -183,7 +177,7 @@ export async function POST(request) {
 - 51~75: 경고 (확산 진행 중, 모니터링 강화 필요)
 - 76~100: 위험 (광범위한 확산, 구조적 인플레 위험)
 
-반드시 web_search를 사용하여 최신 데이터를 확인하세요. 한국과 미국 양쪽 모두 고려하되 글로벌 관점에서 분석하세요.
+반드시 최신 학습 데이터를 기반으로 분석하세요. 한국과 미국 양쪽 모두 고려하되 글로벌 관점에서 분석하세요.
 오늘 날짜: ${new Date().toISOString().split("T")[0]}
 
 응답은 반드시 다음 JSON 형식으로만 응답하세요 (다른 텍스트 없이):
