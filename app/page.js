@@ -45,6 +45,16 @@ const MODULES = [
     layer: "macro",
     status: "live",
   },
+  {
+    id: "inflation-monitor",
+    name: "CPI 확산 모니터",
+    subtitle: "CPI Diffusion Monitor",
+    icon: "🌡️",
+    description: "중동발 에너지·물류 쇼크 → 물가 확산 경로 6단계 추적 · AI 자동 업데이트",
+    path: "/modules/inflation-monitor",
+    layer: "macro",
+    status: "live",
+  },
   // ─── Layer 2: MARKET ───
   {
     id: "narrative-tracker",
