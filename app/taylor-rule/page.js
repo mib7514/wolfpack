@@ -6,13 +6,6 @@ import {
   ResponsiveContainer, ReferenceLine, ComposedChart, Area
 } from "recharts";
 
-// ═══════════════════════════════════════════
-// Real Monthly Data: 2019.01 ~ 2026.03
-// KTB 3Y: e-나라지표 + market data
-// BOK Rate: 한국은행 기준금리 이력
-// CPI: 통계청 소비자물가 YoY
-// Output Gap: BOK 추정 근사
-// ═══════════════════════════════════════════
 const D = [
   {d:"2019.01",cpi:0.8,gap:-0.6,bok:1.75,k:1.81},{d:"2019.02",cpi:0.5,gap:-0.7,bok:1.75,k:1.80},
   {d:"2019.03",cpi:0.4,gap:-0.7,bok:1.75,k:1.79},{d:"2019.04",cpi:0.6,gap:-0.8,bok:1.75,k:1.74},
@@ -83,6 +76,68 @@ function calc({rStar,piTarget,alpha,beta,cpi,gap}){
 const mono="'JetBrains Mono','SF Mono','Consolas',monospace";
 const STORAGE_KEY = "wolfpack-taylor-custom";
 
+/* ─── Admin PIN Hook ─── */
+function useAdminPin(moduleKey) {
+  const storageKey = `wolfpack_admin_${moduleKey}`;
+  const [pin, setPin] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [pinError, setPinError] = useState('');
+
+  useEffect(() => {
+    const saved = sessionStorage.getItem(storageKey);
+    if (saved) { setPin(saved); setIsAdmin(true); }
+  }, [storageKey]);
+
+  const openModal = useCallback(() => { setPinError(''); setShowModal(true); }, []);
+  const closeModal = useCallback(() => { setShowModal(false); setPinError(''); }, []);
+  const logout = useCallback(() => {
+    setIsAdmin(false); setPin(''); sessionStorage.removeItem(storageKey);
+  }, [storageKey]);
+
+  const verify = useCallback(async (inputPin) => {
+    try {
+      const res = await fetch('/api/taylor-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-pin': inputPin },
+      });
+      if (res.status === 401) { setPinError('PIN이 일치하지 않습니다'); return false; }
+      setPin(inputPin); setIsAdmin(true);
+      sessionStorage.setItem(storageKey, inputPin);
+      setShowModal(false); setPinError('');
+      return true;
+    } catch { setPinError('서버 연결 오류'); return false; }
+  }, [storageKey]);
+
+  return { pin, setPin, isAdmin, showModal, pinError, openModal, closeModal, logout, verify };
+}
+
+/* ─── PIN Modal ─── */
+function PinModal({ admin }) {
+  const [inputPin, setInputPin] = useState('');
+  if (!admin.showModal) return null;
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200}}
+      onClick={admin.closeModal}>
+      <div style={{background:"#fff",border:"1px solid #e0e0e0",borderRadius:14,padding:24,width:300,boxShadow:"0 8px 32px rgba(0,0,0,0.12)"}}
+        onClick={e=>e.stopPropagation()}>
+        <h3 style={{fontSize:15,fontWeight:700,color:"#1a1a2e",marginBottom:4}}>🔐 관리자 인증</h3>
+        <p style={{fontSize:11,color:"#999",marginBottom:16}}>업데이트 기능은 관리자만 사용할 수 있습니다</p>
+        <input type="password" placeholder="PIN 입력" value={inputPin}
+          onChange={e=>setInputPin(e.target.value)}
+          onKeyDown={e=>e.key==='Enter'&&admin.verify(inputPin)}
+          style={{width:"100%",padding:"10px 14px",border:"1px solid #e0e0e0",borderRadius:8,fontSize:16,textAlign:"center",
+            letterSpacing:"0.3em",fontFamily:mono,outline:"none",boxSizing:"border-box"}} autoFocus />
+        {admin.pinError && <p style={{color:"#c0392b",fontSize:11,textAlign:"center",marginTop:8}}>{admin.pinError}</p>}
+        <div style={{display:"flex",gap:8,marginTop:16}}>
+          <button onClick={admin.closeModal} style={{flex:1,padding:"9px 0",border:"1px solid #e0e0e0",borderRadius:8,background:"#fff",color:"#999",fontSize:12,cursor:"pointer"}}>취소</button>
+          <button onClick={()=>admin.verify(inputPin)} style={{flex:1,padding:"9px 0",border:"none",borderRadius:8,background:"#1a1a2e",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>인증</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Sub-components ──
 
 function Tip1({active,payload,label}){
@@ -147,7 +202,9 @@ export default function TaylorRulePage(){
   const [aiResult,setAiResult]=useState(null);
   const [mounted,setMounted]=useState(false);
 
-  // ── Load custom params from localStorage ──
+  // ── Admin PIN ──
+  const admin = useAdminPin('taylor-rule');
+
   useEffect(()=>{
     setMounted(true);
     try{
@@ -159,7 +216,6 @@ export default function TaylorRulePage(){
     }catch(e){}
   },[]);
 
-  // ── Save custom params ──
   useEffect(()=>{
     if(!mounted)return;
     if(mode==="custom"){
@@ -191,12 +247,25 @@ export default function TaylorRulePage(){
   const latest=chartData[chartData.length-1];
   const policyGap=latest.bok-latest.taylor;
 
-  // ── AI Update (서버 사이드 API) ──
+  // ── AI Update ──
   const handleAIUpdate=useCallback(async()=>{
+    if (!admin.isAdmin) { admin.openModal(); return; }
     setAiLoading(true);
     setAiResult(null);
     try{
-      const res=await fetch("/api/taylor-update",{method:"POST"});
+      const res=await fetch("/api/taylor-update",{
+        method:"POST",
+        headers:{"x-admin-pin":admin.pin},
+      });
+
+      if(res.status===401){
+        admin.logout();
+        setAiResult({ok:false,msg:"인증이 만료되었습니다"});
+        admin.openModal();
+        setAiLoading(false);
+        return;
+      }
+
       const d=await res.json();
       if(!res.ok||d.error){
         setAiResult({ok:false,msg:d.error||"API 오류"});
@@ -216,7 +285,6 @@ export default function TaylorRulePage(){
               d:date||nd[li].d,
             };
           }else{
-            // 새로운 데이터포인트 추가
             nd.push({d:date||"2026.04",cpi:cpi_yoy||2.4,gap:output_gap||0.4,bok:bok_rate||2.50,k:ktb3y||3.18,live:true});
           }
           return nd;
@@ -226,7 +294,7 @@ export default function TaylorRulePage(){
       setAiResult({ok:false,msg:e.message});
     }
     setAiLoading(false);
-  },[]);
+  },[admin]);
 
   const xInterval=filtered.length>48?5:filtered.length>24?3:filtered.length>12?2:1;
 
@@ -241,6 +309,9 @@ export default function TaylorRulePage(){
         input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:#1a1a2e;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.18);}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
       `}</style>
+
+      {/* PIN Modal */}
+      <PinModal admin={admin} />
 
       <div style={{maxWidth:1060,margin:"0 auto"}}>
 
@@ -258,13 +329,25 @@ export default function TaylorRulePage(){
               <h1 style={{fontSize:23,fontWeight:800,letterSpacing:-0.3,color:"#1a1a2e",marginBottom:3}}>수정 테일러 룰 적정금리 모니터</h1>
               <div style={{fontSize:11,color:"#999",fontFamily:mono}}>i* = r* + π + α(π − π*) + β(y − y*) · Monthly · 2019.01 – 2026.03</div>
             </div>
-            <button onClick={handleAIUpdate} disabled={aiLoading} style={{
-              padding:"7px 14px",border:"1px solid #1a1a2e",borderRadius:6,background:aiLoading?"#f5f5f5":"#1a1a2e",
-              color:aiLoading?"#999":"#fff",cursor:aiLoading?"wait":"pointer",fontFamily:mono,fontSize:10.5,fontWeight:600,
-              display:"flex",alignItems:"center",gap:6,transition:"all 0.15s",letterSpacing:0.5,
-            }}>
-              {aiLoading?<span style={{animation:"pulse 1s infinite"}}>검색 중...</span>:<><span style={{fontSize:13}}>⚡</span>AI 업데이트</>}
-            </button>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              {/* Admin Lock */}
+              {admin.isAdmin ? (
+                <button onClick={admin.logout} style={{padding:"5px 10px",border:"1px solid #22c55e50",borderRadius:6,background:"#22c55e10",color:"#22c55e",cursor:"pointer",fontSize:12}} title="관리자 인증됨">🔓</button>
+              ) : (
+                <button onClick={admin.openModal} style={{padding:"5px 10px",border:"1px solid #e0e0e0",borderRadius:6,background:"#fafafa",color:"#bbb",cursor:"pointer",fontSize:12}} title="관리자 잠금">🔒</button>
+              )}
+              {/* AI Update */}
+              <button onClick={handleAIUpdate} disabled={aiLoading} style={{
+                padding:"7px 14px",border:admin.isAdmin?"1px solid #1a1a2e":"1px solid #e0e0e0",borderRadius:6,
+                background:aiLoading?"#f5f5f5":admin.isAdmin?"#1a1a2e":"#f5f5f5",
+                color:aiLoading?"#999":admin.isAdmin?"#fff":"#ccc",
+                cursor:aiLoading?"wait":admin.isAdmin?"pointer":"not-allowed",
+                fontFamily:mono,fontSize:10.5,fontWeight:600,
+                display:"flex",alignItems:"center",gap:6,transition:"all 0.15s",letterSpacing:0.5,
+              }}>
+                {aiLoading?<span style={{animation:"pulse 1s infinite"}}>검색 중...</span>:<><span style={{fontSize:13}}>⚡</span>AI 업데이트</>}
+              </button>
+            </div>
           </div>
           {aiResult&&(
             <div style={{marginTop:8,padding:"6px 12px",borderRadius:6,fontSize:11,fontFamily:mono,
@@ -284,7 +367,6 @@ export default function TaylorRulePage(){
 
         {/* Main Grid */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 240px",gap:12,marginBottom:16}}>
-          {/* Chart 1 */}
           <div style={{border:"1px solid #eee",borderRadius:10,padding:"14px 10px 8px",background:"#fff"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,paddingLeft:6,paddingRight:6}}>
               <span style={{fontSize:10,fontWeight:700,letterSpacing:1.5,color:"#aaa",fontFamily:mono}}>기준금리 vs 적정금리 vs 국고3년</span>
@@ -310,7 +392,6 @@ export default function TaylorRulePage(){
             </ResponsiveContainer>
           </div>
 
-          {/* Right Panel */}
           <div style={{border:"1px solid #eee",borderRadius:10,padding:14,background:"#fff",display:"flex",flexDirection:"column"}}>
             <div style={{fontSize:10,fontWeight:700,letterSpacing:1.5,color:"#aaa",marginBottom:10,fontFamily:mono}}>시나리오</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,marginBottom:12}}>
@@ -345,7 +426,7 @@ export default function TaylorRulePage(){
           </div>
         </div>
 
-        {/* Chart 2: Dual Gap */}
+        {/* Chart 2 */}
         <div style={{border:"1px solid #eee",borderRadius:10,padding:"14px 10px 8px",background:"#fff",marginBottom:16}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,paddingLeft:6,paddingRight:6}}>
             <div>
