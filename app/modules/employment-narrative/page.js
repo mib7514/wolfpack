@@ -1,5 +1,68 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+
+/* ─── Admin PIN Hook ─── */
+function useAdminPin(moduleKey) {
+  const storageKey = `wolfpack_admin_${moduleKey}`;
+  const [pin, setPin] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [pinError, setPinError] = useState('');
+
+  useEffect(() => {
+    const saved = sessionStorage.getItem(storageKey);
+    if (saved) { setPin(saved); setIsAdmin(true); }
+  }, [storageKey]);
+
+  const openModal = useCallback(() => { setPinError(''); setShowModal(true); }, []);
+  const closeModal = useCallback(() => { setShowModal(false); setPinError(''); }, []);
+  const logout = useCallback(() => {
+    setIsAdmin(false); setPin(''); sessionStorage.removeItem(storageKey);
+  }, [storageKey]);
+
+  const verify = useCallback(async (inputPin) => {
+    try {
+      const res = await fetch('/api/narrative-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-pin': inputPin },
+        body: JSON.stringify({ __pin_check: true }),
+      });
+      if (res.status === 401) { setPinError('PIN이 일치하지 않습니다'); return false; }
+      setPin(inputPin); setIsAdmin(true);
+      sessionStorage.setItem(storageKey, inputPin);
+      setShowModal(false); setPinError('');
+      return true;
+    } catch { setPinError('서버 연결 오류'); return false; }
+  }, [storageKey]);
+
+  return { pin, setPin, isAdmin, showModal, pinError, openModal, closeModal, logout, verify };
+}
+
+/* ─── PIN Modal ─── */
+function PinModal({ admin }) {
+  const [inputPin, setInputPin] = useState('');
+  if (!admin.showModal) return null;
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200}}
+      onClick={admin.closeModal}>
+      <div style={{background:"#1a1a18",border:"1px solid rgba(255,255,255,0.1)",borderRadius:14,padding:24,width:300,boxShadow:"0 8px 32px rgba(0,0,0,0.4)"}}
+        onClick={e=>e.stopPropagation()}>
+        <h3 style={{fontSize:15,fontWeight:700,color:"#e8e6e1",marginBottom:4}}>🔐 관리자 인증</h3>
+        <p style={{fontSize:11,color:"#6b6960",marginBottom:16}}>AI 업데이트는 관리자만 사용할 수 있습니다</p>
+        <input type="password" placeholder="PIN 입력" value={inputPin}
+          onChange={e=>setInputPin(e.target.value)}
+          onKeyDown={e=>e.key==='Enter'&&admin.verify(inputPin)}
+          style={{width:"100%",padding:"10px 14px",background:"rgba(0,0,0,0.3)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,
+            fontSize:16,textAlign:"center",letterSpacing:"0.3em",color:"#e8e6e1",outline:"none",boxSizing:"border-box"}} autoFocus />
+        {admin.pinError && <p style={{color:"#e63946",fontSize:11,textAlign:"center",marginTop:8}}>{admin.pinError}</p>}
+        <div style={{display:"flex",gap:8,marginTop:16}}>
+          <button onClick={admin.closeModal} style={{flex:1,padding:"9px 0",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,background:"transparent",color:"#6b6960",fontSize:12,cursor:"pointer"}}>취소</button>
+          <button onClick={()=>admin.verify(inputPin)} style={{flex:1,padding:"9px 0",border:"none",borderRadius:8,background:"#bb86fc",color:"#0f0f0e",fontSize:12,fontWeight:700,cursor:"pointer"}}>인증</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /* ─── DATA ─── */
 const MONTHS = [
@@ -67,12 +130,10 @@ function NarrativeTimeline({narratives, months}){
   return (
     <div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:8,padding:"14px 16px",marginBottom:18}}>
       <div style={{fontSize:10,color:"#5a5850",fontWeight:700,letterSpacing:"0.04em",marginBottom:10}}>NARRATIVE LIFECYCLE TIMELINE</div>
-      {/* Month headers */}
       <div style={{display:"grid",gridTemplateColumns:`120px repeat(${monthLabels.length},1fr)`,gap:0,marginBottom:4}}>
         <div/>
         {monthLabels.map((l,i)=><div key={i} style={{fontSize:8,color:"#4a4840",textAlign:"center"}}>{l}</div>)}
       </div>
-      {/* Each narrative row */}
       {allNarr.map(n=>{
         const c = ST[n.status]||ST.emerging;
         const opacity = n.status==="collapsed"?0.3:n.status==="weakening"?0.55:1;
@@ -80,11 +141,9 @@ function NarrativeTimeline({narratives, months}){
           <div key={n.id} style={{display:"grid",gridTemplateColumns:`120px repeat(${monthKeys.length},1fr)`,gap:0,marginBottom:6,opacity,transition:"opacity 0.5s"}}>
             <div style={{fontSize:10,color:c.color,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",paddingRight:6}}>{n.name}</div>
             {monthKeys.map((mk,i)=>{
-              // Find if this narrative has a lifecycle entry for this month or is active during this period
               const lcEntry = n.lifecycle?.find(lc=>lc.month===mk);
               const startIdx = monthKeys.indexOf(n.startMonth||n.lifecycle?.[0]?.month);
               const isActive = startIdx>=0 && i>=startIdx;
-              // Find closest previous status
               let currentStatus = null;
               if(isActive && n.lifecycle){
                 for(let j=n.lifecycle.length-1;j>=0;j--){
@@ -108,7 +167,6 @@ function NarrativeTimeline({narratives, months}){
           </div>
         );
       })}
-      {/* Legend */}
       <div style={{display:"flex",gap:12,marginTop:8,flexWrap:"wrap"}}>
         {[["strengthening","강화"],["stable","유지"],["emerging","부상"],["weakening","약화"],["collapsed","붕괴"]].map(([s,l])=>(
           <div key={s} style={{display:"flex",alignItems:"center",gap:4}}>
@@ -125,7 +183,7 @@ function NarrativeTimeline({narratives, months}){
   );
 }
 
-/* ─── NARRATIVE CARD (with fade) ─── */
+/* ─── NARRATIVE CARD ─── */
 function NCard({n,expanded,onToggle}){
   const c=ST[n.status]||ST.emerging;
   const fade=n.status==="collapsed"?0.3:n.status==="weakening"?0.6:1;
@@ -171,8 +229,8 @@ function NCard({n,expanded,onToggle}){
   );
 }
 
-/* ─── AI PANEL ─── */
-function AIPanel({months,narratives,onResult,loading,lastResult}){
+/* ─── AI PANEL (with PIN) ─── */
+function AIPanel({months,narratives,onResult,loading,lastResult,admin}){
   const [mode,setMode]=useState("analyze");
   const [newData,setNewData]=useState("");
   const [ctx,setCtx]=useState("");
@@ -197,11 +255,9 @@ Return ONLY valid JSON, no backticks. Keep all text SHORT (each field under 40 c
 Rules: candidates must be exactly 5, probability desc, new angles only. narrative_updates: [] if no changes. Bond investor view required.`;
   };
 
-  // Attempt to repair truncated JSON
   const repairJSON=(str)=>{
     let s=str.replace(/```json|```/g,"").trim();
     try{ return JSON.parse(s); }catch(e){}
-    // Try closing open structures
     let opened=0, inStr=false, esc=false;
     for(let i=0;i<s.length;i++){
       const c=s[i];
@@ -212,25 +268,10 @@ Rules: candidates must be exactly 5, probability desc, new angles only. narrativ
       if(c==='{'||c==='[')opened++;
       if(c==='}'||c===']')opened--;
     }
-    // Close any unclosed strings
     if(inStr) s+='"';
-    // Close arrays/objects
-    // Find last complete element
     const lastComma=s.lastIndexOf(',');
     const lastBrace=Math.max(s.lastIndexOf('}'),s.lastIndexOf(']'));
     if(lastComma>lastBrace) s=s.substring(0,lastComma);
-    // Recount and close
-    opened=0; inStr=false; esc=false;
-    for(let i=0;i<s.length;i++){
-      const c=s[i];
-      if(esc){esc=false;continue;}
-      if(c==='\\'){esc=true;continue;}
-      if(c==='"'){inStr=!inStr;continue;}
-      if(inStr)continue;
-      if(c==='{'||c==='[')opened++;
-      if(c==='}'||c===']')opened--;
-    }
-    // Build closing chars by scanning what was opened
     const stack=[];
     inStr=false; esc=false;
     for(let i=0;i<s.length;i++){
@@ -245,17 +286,26 @@ Rules: candidates must be exactly 5, probability desc, new angles only. narrativ
     }
     s+=stack.reverse().join('');
     try{ return JSON.parse(s); }catch(e2){
-      // Last resort: try to extract at least synthesis
       const synthMatch=s.match(/"synthesis"\s*:\s*"([^"]+)"/);
-      return {narrative_updates:[],candidates:[],synthesis:synthMatch?synthMatch[1]:"분석 결과를 파싱할 수 없습니다. 다시 시도해주세요.",next_watch:""};
+      return {narrative_updates:[],candidates:[],synthesis:synthMatch?synthMatch[1]:"분석 결과를 파싱할 수 없습니다.",next_watch:""};
     }
   };
 
   const run=async()=>{
+    if (!admin.isAdmin) { admin.openModal(); return; }
     onResult({type:"loading"});
     try{
-      const res=await fetch("/api/narrative-ai",{method:"POST",headers:{"Content-Type":"application/json"},
+      const res=await fetch("/api/narrative-ai",{method:"POST",
+        headers:{"Content-Type":"application/json","x-admin-pin":admin.pin},
         body:JSON.stringify({prompt:prompt(),system:"You output ONLY valid compact JSON. No markdown. No backticks. No explanation. Keep Korean text very concise."})});
+
+      if(res.status===401){
+        admin.logout();
+        onResult({type:"error",error:"인증이 만료되었습니다. 다시 PIN을 입력해주세요."});
+        admin.openModal();
+        return;
+      }
+
       const d=await res.json();
       const t=d.content?.map(i=>i.text||"").join("")||"";
       if(!t) throw new Error("Empty response from API");
@@ -275,13 +325,20 @@ Rules: candidates must be exactly 5, probability desc, new angles only. narrativ
           </div>
         </div>
         <div style={{display:"flex",gap:6}}>
+          {/* Admin Lock */}
+          {admin.isAdmin ? (
+            <button onClick={admin.logout} style={{padding:"6px 10px",border:"1px solid rgba(34,197,94,0.3)",borderRadius:5,background:"rgba(34,197,94,0.06)",color:"#22c55e",cursor:"pointer",fontSize:11}}>🔓</button>
+          ) : (
+            <button onClick={admin.openModal} style={{padding:"6px 10px",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,background:"transparent",color:"#5a5850",cursor:"pointer",fontSize:11}}>🔒</button>
+          )}
           <button onClick={()=>setShowInput(!showInput)} style={{padding:"6px 12px",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,background:"transparent",color:"#8a8780",cursor:"pointer",fontSize:10,fontWeight:600}}>
             {showInput?"접기":"입력 ▼"}
           </button>
-          <button onClick={run} disabled={loading} style={{
+          <button onClick={run} disabled={loading||!admin.isAdmin} style={{
             padding:"6px 18px",border:"none",borderRadius:6,
-            background:loading?"rgba(187,134,252,0.1)":"linear-gradient(135deg,#bb86fc,#2a9d8f)",
-            color:loading?"#6b6960":"#0f0f0e",cursor:loading?"wait":"pointer",fontSize:11,fontWeight:800,letterSpacing:"0.02em"
+            background:loading?"rgba(187,134,252,0.1)":admin.isAdmin?"linear-gradient(135deg,#bb86fc,#2a9d8f)":"rgba(255,255,255,0.05)",
+            color:loading?"#6b6960":admin.isAdmin?"#0f0f0e":"#4a4840",
+            cursor:loading?"wait":admin.isAdmin?"pointer":"not-allowed",fontSize:11,fontWeight:800,letterSpacing:"0.02em"
           }}>
             {loading?"⏳ 분석 중...":"🔍 AI 업데이트"}
           </button>
@@ -315,14 +372,12 @@ function CandidatesPanel({candidates}){
         <span style={{fontSize:13,fontWeight:800,color:"#bb86fc"}}>★ Narrative Candidates</span>
         <span style={{fontSize:9.5,color:"#5a5850"}}>AI가 발견한 신규 후보 · 상위 3개 하이라이트</span>
       </div>
-      {/* Top 3 */}
       {top3.map((c,i)=>{
         const prob=Math.round((c.probability||0)*100);
         const barW=prob;
         const accent=i===0?"#bb86fc":i===1?"#8ecae6":"#2a9d8f";
         return (
           <div key={c.id} style={{background:"rgba(187,134,252,0.04)",border:`1px solid ${i===0?"rgba(187,134,252,0.25)":"rgba(187,134,252,0.1)"}`,borderRadius:8,padding:"12px 14px",marginBottom:6,position:"relative",overflow:"hidden"}}>
-            {/* Probability bar background */}
             <div style={{position:"absolute",top:0,left:0,bottom:0,width:`${barW}%`,background:`linear-gradient(90deg,${accent}08,transparent)`,pointerEvents:"none"}}/>
             <div style={{position:"relative"}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
@@ -350,7 +405,6 @@ function CandidatesPanel({candidates}){
           </div>
         );
       })}
-      {/* Rest (dimmed) */}
       {rest.map((c,i)=>(
         <div key={c.id} style={{background:"rgba(255,255,255,0.015)",border:"1px solid rgba(255,255,255,0.04)",borderRadius:6,padding:"8px 12px",marginBottom:4,opacity:0.5}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
@@ -396,6 +450,9 @@ export default function App(){
   const [ai,setAi]=useState({loading:false,lastResult:null});
   const [candidates,setCandidates]=useState(null);
 
+  // ── Admin PIN ──
+  const admin = useAdminPin('employment-narrative');
+
   const cur=MONTHS[sel], prv=sel>0?MONTHS[sel-1]:null;
   const d=k=>prv?cur[k]-prv[k]:null;
 
@@ -404,7 +461,6 @@ export default function App(){
     setAi({loading:false,lastResult:update});
     if(update.type==="success"&&update.result){
       const r=update.result;
-      // Apply narrative updates
       setNarratives(prev=>{
         let u=prev.map(n=>({...n,supporting:[...n.supporting],contradicting:[...n.contradicting],lifecycle:[...(n.lifecycle||[])]}));
         if(r.narrative_updates){
@@ -420,18 +476,19 @@ export default function App(){
         }
         return u;
       });
-      // Set candidates
       if(r.candidates) setCandidates(r.candidates);
     }
   },[]);
 
   const active=narratives.filter(n=>n.status!=="collapsed");
-  const fading=narratives.filter(n=>n.status==="weakening"||n.status==="collapsed");
   const collapsed=narratives.filter(n=>n.status==="collapsed");
 
   return (
     <div style={{fontFamily:"'IBM Plex Sans','Pretendard',-apple-system,sans-serif",background:"#0f0f0e",color:"#e8e6e1",minHeight:"100vh",padding:"20px 16px",maxWidth:960,margin:"0 auto"}}>
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}`}</style>
+
+      {/* PIN Modal */}
+      <PinModal admin={admin} />
 
       {/* HEADER */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18,paddingBottom:12,borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
@@ -444,13 +501,10 @@ export default function App(){
         </div>
       </div>
 
-      {/* AI PANEL — 최상단 배치 */}
-      <AIPanel months={MONTHS} narratives={narratives} onResult={handleAI} loading={ai.loading} lastResult={ai.lastResult}/>
+      {/* AI PANEL */}
+      <AIPanel months={MONTHS} narratives={narratives} onResult={handleAI} loading={ai.loading} lastResult={ai.lastResult} admin={admin}/>
 
-      {/* AI Synthesis */}
       <AISynth result={ai.lastResult}/>
-
-      {/* Candidates (AI 발견 후보) */}
       <CandidatesPanel candidates={candidates}/>
 
       {/* TIMELINE SELECTOR */}
@@ -523,10 +577,9 @@ export default function App(){
         <div style={{fontSize:11,color:"#a8a6a0",lineHeight:1.55}}>{cur.note}</div>
       </div>}
 
-      {/* NARRATIVE LIFECYCLE TIMELINE */}
       <NarrativeTimeline narratives={narratives} months={MONTHS}/>
 
-      {/* ACTIVE NARRATIVES (with fade for weakening) */}
+      {/* ACTIVE NARRATIVES */}
       <div style={{marginBottom:8}}>
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
           <span style={{fontSize:12.5,fontWeight:800,color:"#e8e6e1"}}>Active Narratives</span>
@@ -538,7 +591,6 @@ export default function App(){
         {active.map(n=><NCard key={n.id} n={n} expanded={expN===n.id} onToggle={()=>setExpN(expN===n.id?null:n.id)}/>)}
       </div>
 
-      {/* COLLAPSED (visually faded) */}
       {collapsed.length>0&&<div style={{marginBottom:16}}>
         <div style={{fontSize:10,color:"#3a3830",fontWeight:600,marginBottom:6}}>Archived (붕괴)</div>
         {collapsed.map(n=><NCard key={n.id} n={n} expanded={expN===n.id} onToggle={()=>setExpN(expN===n.id?null:n.id)}/>)}
@@ -556,7 +608,6 @@ export default function App(){
         </div>
       </div>
 
-      {/* NEXT */}
       <div style={{background:"rgba(255,255,255,0.012)",border:"1px dashed rgba(255,255,255,0.06)",borderRadius:7,padding:"10px 12px"}}>
         <div style={{fontSize:9,color:"#4a4840",fontWeight:600,marginBottom:3}}>NEXT</div>
         <div style={{fontSize:11,color:"#8a8780"}}>📅 <strong style={{color:"#8ecae6"}}>3월 고용</strong> 2026.04.03 — Healthcare 반등? Manufacturing 추가 악화? 연방정부 감축 지속?</div>
