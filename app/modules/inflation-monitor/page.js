@@ -20,6 +20,92 @@ function getScoreStatus(score) {
   return "위험";
 }
 
+// Robust JSON extraction with brace matching
+function extractJSON(text) {
+  let depth = 0;
+  let start = -1;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "{") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (text[i] === "}") {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        try {
+          return JSON.parse(text.substring(start, i + 1));
+        } catch (e) {
+          start = -1;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+// Build the AI prompt
+function buildPrompts(framework) {
+  const systemPrompt = `당신은 인플레이션 확산 모니터링 전문 분석가입니다. 현재 중동발 에너지/물류 쇼크가 다양한 품목으로 확산되어 CPI가 상승할 우려가 있는 상황을 모니터링하고 있습니다.
+
+각 지표에 대해 가장 최근 학습 데이터를 기반으로 분석해주세요.
+점수 기준:
+- 0~25: 안정 (인플레 확산 위험 낮음)
+- 26~50: 주의 (일부 상승 신호, 아직 제한적)
+- 51~75: 경고 (확산 진행 중, 모니터링 강화 필요)
+- 76~100: 위험 (광범위한 확산, 구조적 인플레 위험)
+
+한국과 미국 양쪽 모두 고려하되 글로벌 관점에서 분석하세요.
+오늘 날짜: ${new Date().toISOString().split("T")[0]}
+
+응답은 반드시 다음 JSON 형식으로만 응답하세요 (다른 텍스트 없이, markdown 코드블록도 없이):
+{
+  "categories": {
+    "[category_id]": {
+      "score": number,
+      "status": "안정|주의|경고|위험",
+      "summary": "카테고리 전체 요약 (2-3문장)",
+      "indicators": {
+        "[indicator_id]": {
+          "score": number,
+          "trend": "상승|하락|보합|급등|급락",
+          "analysis": "지표별 분석 (2-3문장, 구체적 수치/사실 포함)"
+        }
+      }
+    }
+  },
+  "overall_index": number,
+  "overall_status": "안정|주의|경고|위험",
+  "overall_summary": "전체 CPI 확산 위험 종합 판단 (3-5문장)",
+  "key_signals": ["주요 신호 1", "주요 신호 2", "주요 신호 3"],
+  "scenario_update": {
+    "base": "베이스 시나리오 업데이트 (2-3문장)",
+    "upside": "상방(구조적 인플레) 시나리오 변화 (2-3문장)",
+    "downside": "하방(스파이크 후 둔화) 시나리오 변화 (2-3문장)"
+  }
+}`;
+
+  const categories = framework.categories;
+  const categoryDescriptions = categories.map((c) => {
+    const indDesc = c.indicators.map((ind) => `  - ${ind.id}: ${ind.name} — ${ind.description}`).join("\n");
+    return `### ${c.name} (${c.id}, 가중치 ${c.weight})\n${c.description}\n${indDesc}`;
+  }).join("\n\n");
+
+  const userPrompt = `다음 인플레이션 확산 모니터링 프레임워크의 모든 카테고리와 지표를 분석해주세요.
+
+${categoryDescriptions}
+
+특히 다음을 중점 확인하세요:
+1. 호르무즈/중동 리스크가 에너지·원료 가격에 미치는 현재 영향
+2. 해상운임/보험료가 이벤트성 스파이크인지, 고점 고착화인지
+3. PE/PP 등 중간재 스프레드 방향
+4. 미국/한국 코어 서비스 물가 최근 추이 (MoM)
+5. 5Y5Y 브레이크이븐, 기간프리미엄 움직임
+6. 임금/기업 가격전가 최근 동향
+
+JSON 형식으로만 응답하세요.`;
+
+  return { systemPrompt, userPrompt };
+}
+
 function ScoreGauge({ score, size = 80 }) {
   const status = getScoreStatus(score);
   const cfg = STATUS_CONFIG[status];
@@ -249,27 +335,98 @@ export default function InflationMonitorPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleAIUpdate = async () => {
-    if (!pin) return;
+    if (!pin || !framework) return;
     setUpdating(true);
-    setUpdateLog("AI가 최신 데이터를 검색하고 분석 중...");
     setError("");
+
     try {
-      const res = await fetch("/api/inflation-monitor", {
+      // Step 1: Verify PIN and get API key from server
+      setUpdateLog("🔐 관리자 인증 중...");
+      const keyRes = await fetch("/api/inflation-monitor", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-admin-pin": pin },
-        body: JSON.stringify({ action: "ai_update" }),
+        body: JSON.stringify({ action: "get_api_key" }),
       });
-      const json = await res.json();
-      if (json.error) {
-        setError(json.error);
+      const keyJson = await keyRes.json();
+      if (keyJson.error) {
+        setError(keyJson.error);
         setUpdateLog("");
-      } else {
-        setData(json.data);
-        setShowPin(false);
-        setPin("");
-        setUpdateLog("업데이트 완료!");
-        setTimeout(() => setUpdateLog(""), 3000);
+        setUpdating(false);
+        return;
       }
+      const apiKey = keyJson.apiKey;
+
+      // Step 2: Call Anthropic API directly from browser (no timeout!)
+      setUpdateLog("🤖 AI가 6개 카테고리 20개 지표를 분석 중... (30~60초 소요)");
+      const { systemPrompt, userPrompt } = buildPrompts(framework);
+
+      const aiRes = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 4096,
+          system: systemPrompt,
+          messages: [{ role: "user", content: userPrompt }],
+        }),
+      });
+
+      const aiRawText = await aiRes.text();
+      let aiData;
+      try {
+        aiData = JSON.parse(aiRawText);
+      } catch (e) {
+        setError(`AI API 응답 파싱 실패 (HTTP ${aiRes.status}): ${aiRawText.substring(0, 300)}`);
+        setUpdateLog("");
+        setUpdating(false);
+        return;
+      }
+
+      if (aiData.error) {
+        setError(`AI API 오류: ${aiData.error.message || JSON.stringify(aiData.error)}`);
+        setUpdateLog("");
+        setUpdating(false);
+        return;
+      }
+
+      const textBlocks = (aiData.content || []).filter((b) => b.type === "text").map((b) => b.text);
+      const aiResponseText = textBlocks.join("\n");
+      const parsed = extractJSON(aiResponseText);
+
+      if (!parsed) {
+        setError("AI 응답에서 JSON을 추출할 수 없습니다: " + aiResponseText.substring(0, 300));
+        setUpdateLog("");
+        setUpdating(false);
+        return;
+      }
+
+      // Step 3: Save result to Supabase via server
+      setUpdateLog("💾 분석 결과 저장 중...");
+      const saveRes = await fetch("/api/inflation-monitor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-pin": pin },
+        body: JSON.stringify({ action: "save_result", analysisData: parsed }),
+      });
+      const saveJson = await saveRes.json();
+      if (saveJson.error) {
+        setError("저장 실패: " + saveJson.error);
+        setUpdateLog("");
+        setUpdating(false);
+        return;
+      }
+
+      // Success!
+      setData(saveJson.data);
+      setShowPin(false);
+      setPin("");
+      setUpdateLog("✅ 업데이트 완료!");
+      setTimeout(() => setUpdateLog(""), 3000);
+
     } catch (err) {
       setError("업데이트 실패: " + err.message);
       setUpdateLog("");
@@ -341,6 +498,7 @@ export default function InflationMonitorPage() {
                 placeholder="관리자 PIN"
                 value={pin}
                 onChange={(e) => setPin(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleAIUpdate()}
                 style={{
                   flex: 1, padding: "8px 12px", background: "rgba(0,0,0,0.3)",
                   border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8,
@@ -371,7 +529,7 @@ export default function InflationMonitorPage() {
           <div style={{
             background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)",
             borderRadius: 10, padding: "10px 14px", marginBottom: 16,
-            fontSize: 12, color: "#ef4444",
+            fontSize: 12, color: "#ef4444", wordBreak: "break-all",
           }}>
             {error}
           </div>
