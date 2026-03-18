@@ -7,8 +7,6 @@ function getSupabase() {
   return createClient(supabaseUrl, supabaseKey);
 }
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-
 const INDICATOR_FRAMEWORK = {
   categories: [
     {
@@ -88,50 +86,7 @@ const INDICATOR_FRAMEWORK = {
   ]
 };
 
-function extractJSON(text) {
-  // Robust JSON extraction with brace matching
-  let depth = 0;
-  let start = -1;
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === "{") {
-      if (depth === 0) start = i;
-      depth++;
-    } else if (text[i] === "}") {
-      depth--;
-      if (depth === 0 && start !== -1) {
-        try {
-          return JSON.parse(text.substring(start, i + 1));
-        } catch (e) {
-          start = -1;
-        }
-      }
-    }
-  }
-  return null;
-}
-
-async function callClaude(systemPrompt, userPrompt) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 4096,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userPrompt }],
-    }),
-  });
-  const data = await res.json();
-  if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
-  const textBlocks = (data.content || []).filter((b) => b.type === "text").map((b) => b.text);
-  return textBlocks.join("\n");
-}
-
-// GET: Fetch latest data
+// GET: Fetch latest data + framework
 export async function GET() {
   try {
     const supabase = getSupabase();
@@ -155,7 +110,7 @@ export async function GET() {
   }
 }
 
-// POST: AI Update (admin only)
+// POST: PIN verify + get API key, or save AI result
 export async function POST(request) {
   try {
     const adminPin = request.headers.get("x-admin-pin");
@@ -166,78 +121,25 @@ export async function POST(request) {
     const body = await request.json();
     const { action } = body;
 
-    if (action === "ai_update") {
-      // AI updates all categories at once
-      const systemPrompt = `당신은 인플레이션 확산 모니터링 전문 분석가입니다. 현재 중동발 에너지/물류 쇼크가 다양한 품목으로 확산되어 CPI가 상승할 우려가 있는 상황을 모니터링하고 있습니다.
-
-각 지표에 대해 최신 데이터와 뉴스를 검색하여 분석해주세요.
-점수 기준:
-- 0~25: 안정 (인플레 확산 위험 낮음)
-- 26~50: 주의 (일부 상승 신호, 아직 제한적)
-- 51~75: 경고 (확산 진행 중, 모니터링 강화 필요)
-- 76~100: 위험 (광범위한 확산, 구조적 인플레 위험)
-
-반드시 최신 학습 데이터를 기반으로 분석하세요. 한국과 미국 양쪽 모두 고려하되 글로벌 관점에서 분석하세요.
-오늘 날짜: ${new Date().toISOString().split("T")[0]}
-
-응답은 반드시 다음 JSON 형식으로만 응답하세요 (다른 텍스트 없이):
-{
-  "categories": {
-    "[category_id]": {
-      "score": number,
-      "status": "안정|주의|경고|위험",
-      "summary": "카테고리 전체 요약 (2-3문장)",
-      "indicators": {
-        "[indicator_id]": {
-          "score": number,
-          "trend": "상승|하락|보합|급등|급락",
-          "analysis": "지표별 분석 (2-3문장, 구체적 수치/사실 포함)"
-        }
+    // Action 1: Verify PIN and return API key for client-side AI call
+    if (action === "get_api_key") {
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) {
+        return Response.json({ error: "ANTHROPIC_API_KEY가 설정되지 않았습니다" }, { status: 500 });
       }
+      return Response.json({ success: true, apiKey });
     }
-  },
-  "overall_index": number,
-  "overall_status": "안정|주의|경고|위험",
-  "overall_summary": "전체 CPI 확산 위험 종합 판단 (3-5문장)",
-  "key_signals": ["주요 신호 1", "주요 신호 2", "주요 신호 3"],
-  "scenario_update": {
-    "base": "베이스 시나리오 업데이트 (2-3문장)",
-    "upside": "상방(구조적 인플레) 시나리오 변화 (2-3문장)",
-    "downside": "하방(스파이크 후 둔화) 시나리오 변화 (2-3문장)"
-  }
-}`;
 
-      const categories = INDICATOR_FRAMEWORK.categories;
-      const categoryDescriptions = categories.map((c) => {
-        const indDesc = c.indicators.map((ind) => `  - ${ind.id}: ${ind.name} — ${ind.description}`).join("\n");
-        return `### ${c.name} (${c.id}, 가중치 ${c.weight})\n${c.description}\n${indDesc}`;
-      }).join("\n\n");
-
-      const userPrompt = `다음 인플레이션 확산 모니터링 프레임워크의 모든 카테고리와 지표를 최신 데이터 기반으로 업데이트해주세요.
-
-${categoryDescriptions}
-
-특히 다음을 중점 확인하세요:
-1. 호르무즈/중동 리스크가 에너지·원료 가격에 미치는 현재 영향
-2. 해상운임/보험료가 이벤트성 스파이크인지, 고점 고착화인지
-3. PE/PP 등 중간재 스프레드 방향
-4. 미국/한국 코어 서비스 물가 최근 추이 (MoM)
-5. 5Y5Y 브레이크이븐, 기간프리미엄 움직임
-6. 임금/기업 가격전가 최근 동향
-
-JSON 형식으로만 응답하세요.`;
-
-      const aiResponse = await callClaude(systemPrompt, userPrompt);
-      const parsed = extractJSON(aiResponse);
-
-      if (!parsed) {
-        return Response.json({ error: "AI 응답 파싱 실패", raw: aiResponse.substring(0, 500) }, { status: 500 });
+    // Action 2: Save AI analysis result to Supabase
+    if (action === "save_result") {
+      const { analysisData } = body;
+      if (!analysisData) {
+        return Response.json({ error: "분석 데이터가 없습니다" }, { status: 400 });
       }
 
-      // Save to Supabase
       const supabase = getSupabase();
       const record = {
-        data: parsed,
+        data: analysisData,
         framework_version: "1.0",
         updated_at: new Date().toISOString(),
         updated_by: "ai_auto",
