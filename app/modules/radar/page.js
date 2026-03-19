@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
@@ -46,11 +46,17 @@ function PinModal({ admin }) {
 
 // ── Kelly ──
 function calcKelly(wp, wlr) {
-  if (!wp || !wlr) return { full: 0, half: 0, quarter: 0 };
+  if (!wp || !wlr || wp <= 0 || wlr <= 0) return { full: 0, half: 0, quarter: 0 };
   const q = 1 - wp;
   const k = Math.max(0, Math.min((wp * wlr - q) / wlr, 1));
   return { full: +(k * 100).toFixed(1), half: +(k * 50).toFixed(1), quarter: +(k * 25).toFixed(1) };
 }
+
+const KELLY_FRACTIONS = [
+  { key: "full", label: "Full Kelly", mult: 1, color: "#ef4444", desc: "최대 기대수익, 높은 변동성" },
+  { key: "half", label: "Half Kelly", mult: 0.5, color: "#d4a843", desc: "수익의 75%, 변동성 절반" },
+  { key: "quarter", label: "Quarter Kelly", mult: 0.25, color: "#4ade80", desc: "보수적 배분, 안정적 성장" },
+];
 
 const CC = {
   BTC_TREASURY:"#f7931a",AI_INFRA:"#8b5cf6",AI_APP:"#a78bfa",BIOTECH:"#10b981",
@@ -148,8 +154,140 @@ function MomentumSection({ momentum }) {
   );
 }
 
-// ── Detail Panel ──
-function DetailPanel({ stock, onClose, onUpdate, onDelete, admin }) {
+// ══════════════════════════════════════════════════════════════
+// ── PORTFOLIO KELLY PANEL ──
+// ══════════════════════════════════════════════════════════════
+function PortfolioKellyPanel({ stocks, kellyFraction, setKellyFraction }) {
+  const selected = stocks.filter(s => s.in_portfolio);
+
+  const allocations = useMemo(() => {
+    if (selected.length === 0) return [];
+
+    const fraction = KELLY_FRACTIONS.find(f => f.key === kellyFraction) || KELLY_FRACTIONS[1];
+
+    // 1) 개별 raw Kelly % 계산
+    const raw = selected.map(s => {
+      const k = calcKelly(s.kelly_win_prob, s.kelly_wl_ratio);
+      return {
+        id: s.id, ticker: s.ticker, category: s.category || "OTHER",
+        score: calcTotalScore(s.indicators || []),
+        winProb: s.kelly_win_prob, wlRatio: s.kelly_wl_ratio,
+        rawKelly: k.full, // raw full Kelly %
+      };
+    });
+
+    // 2) raw Kelly 합계 기준으로 정규화 → 비중 합이 fraction의 총 배분 한도가 되도록
+    const totalRaw = raw.reduce((sum, r) => sum + r.rawKelly, 0);
+    if (totalRaw === 0) return raw.map(r => ({ ...r, allocation: 0 }));
+
+    return raw.map(r => ({
+      ...r,
+      allocation: +((r.rawKelly / totalRaw) * totalRaw * fraction.mult).toFixed(1),
+    }));
+  }, [selected, kellyFraction]);
+
+  const totalAllocation = allocations.reduce((sum, a) => sum + a.allocation, 0);
+  const cashPct = Math.max(0, +(100 - totalAllocation).toFixed(1));
+
+  if (selected.length === 0) return null;
+
+  const currentFraction = KELLY_FRACTIONS.find(f => f.key === kellyFraction) || KELLY_FRACTIONS[1];
+
+  return (
+    <div className="bg-gradient-to-b from-[#111730] to-[#0d1220] border border-amber-500/15 rounded-2xl overflow-hidden">
+      {/* Header */}
+      <div className="px-4 pt-4 pb-3 border-b border-white/[0.04]">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <div className="text-[11px] font-bold text-amber-500 tracking-[2px] font-mono">PORTFOLIO KELLY</div>
+            <div className="text-[10px] text-slate-600 mt-0.5">{selected.length}종목 편입 · 포트폴리오 기준 자금배분</div>
+          </div>
+          <div className="text-right">
+            <div className="text-xl font-black font-mono" style={{ color: currentFraction.color }}>
+              {totalAllocation.toFixed(1)}%
+            </div>
+            <div className="text-[9px] text-slate-600">투자비중</div>
+          </div>
+        </div>
+
+        {/* Kelly Fraction Selector */}
+        <div className="flex gap-1.5">
+          {KELLY_FRACTIONS.map(f => (
+            <button key={f.key} onClick={() => setKellyFraction(f.key)}
+              className="flex-1 py-2 rounded-lg text-[10px] font-bold font-mono transition-all"
+              style={{
+                background: kellyFraction === f.key ? `${f.color}18` : "rgba(255,255,255,0.02)",
+                border: `1px solid ${kellyFraction === f.key ? `${f.color}40` : "rgba(255,255,255,0.04)"}`,
+                color: kellyFraction === f.key ? f.color : "#475569",
+              }}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="text-[9px] text-slate-600 mt-1.5 text-center italic">{currentFraction.desc}</div>
+      </div>
+
+      {/* Allocation Table */}
+      <div className="px-4 py-3 space-y-1.5">
+        {allocations.sort((a, b) => b.allocation - a.allocation).map(a => (
+          <div key={a.id} className="flex items-center gap-2">
+            <div className="flex-1 flex items-center gap-2">
+              <span className="text-[11px] font-mono font-bold text-slate-200 w-16 shrink-0">{a.ticker}</span>
+              <div className="flex-1 h-5 bg-black/30 rounded-md overflow-hidden relative">
+                <div className="h-full rounded-md transition-all duration-500"
+                  style={{
+                    width: `${Math.min(100, (a.allocation / Math.max(totalAllocation, 1)) * 100)}%`,
+                    background: `linear-gradient(90deg, ${CC[a.category]}80, ${CC[a.category]}30)`,
+                  }} />
+                <span className="absolute inset-0 flex items-center justify-center text-[9px] font-mono font-bold text-white/70">
+                  {a.allocation > 0 ? `${a.allocation}%` : "—"}
+                </span>
+              </div>
+            </div>
+            <div className="text-right shrink-0 w-20">
+              <span className="text-[9px] text-slate-600">
+                {a.winProb ? `${(a.winProb * 100).toFixed(0)}%` : "—"} / {a.wlRatio ? `${a.wlRatio.toFixed(1)}x` : "—"}
+              </span>
+            </div>
+          </div>
+        ))}
+
+        {/* Cash row */}
+        <div className="flex items-center gap-2 pt-1.5 border-t border-white/[0.04]">
+          <div className="flex-1 flex items-center gap-2">
+            <span className="text-[11px] font-mono font-bold text-slate-500 w-16 shrink-0">CASH</span>
+            <div className="flex-1 h-5 bg-black/30 rounded-md overflow-hidden relative">
+              <div className="h-full rounded-md transition-all duration-500"
+                style={{ width: `${Math.min(100, (cashPct / 100) * 100)}%`, background: "rgba(100,116,139,0.3)" }} />
+              <span className="absolute inset-0 flex items-center justify-center text-[9px] font-mono font-bold text-slate-500">
+                {cashPct}%
+              </span>
+            </div>
+          </div>
+          <div className="text-right shrink-0 w-20">
+            <span className="text-[9px] text-slate-600">현금</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Summary footer */}
+      <div className="px-4 py-2.5 bg-black/20 border-t border-white/[0.04] flex items-center justify-between">
+        <span className="text-[9px] text-slate-600">
+          개별 Kelly 합: {allocations.reduce((s, a) => s + a.rawKelly, 0).toFixed(1)}% →
+          {" "}{currentFraction.label}: {totalAllocation.toFixed(1)}%
+        </span>
+        <span className="text-[9px] font-mono" style={{ color: currentFraction.color }}>
+          {currentFraction.mult * 100}% 적용
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+// ── DETAIL PANEL ──
+// ══════════════════════════════════════════════════════════════
+function DetailPanel({ stock, onClose, onUpdate, onDelete, onTogglePortfolio, admin }) {
   const thesis = stock.thesis_json || {};
   const indicators = stock.indicators || [];
   const momentum = stock.momentum || null;
@@ -157,7 +295,6 @@ function DetailPanel({ stock, onClose, onUpdate, onDelete, admin }) {
   const [evalResult, setEvalResult] = useState(null);
   const totalScore = calcTotalScore(indicators);
 
-  // 🔒 AI 평가 — PIN 필요
   const handleEvaluate = useCallback(async () => {
     if (!admin.isAdmin) { admin.openModal(); return; }
     setEvaluating(true);
@@ -189,7 +326,6 @@ function DetailPanel({ stock, onClose, onUpdate, onDelete, admin }) {
     setEvaluating(false);
   }, [stock, indicators, momentum, onUpdate, admin]);
 
-  // 🔒 삭제 — PIN 필요
   const handleDelete = useCallback(() => {
     if (!admin.isAdmin) { admin.openModal(); return; }
     onDelete(stock.id); dbDelete(stock.id); onClose();
@@ -214,6 +350,11 @@ function DetailPanel({ stock, onClose, onUpdate, onDelete, admin }) {
                     style={{ background: `${CC[stock.category || "OTHER"]}15`, color: CC[stock.category || "OTHER"], borderColor: `${CC[stock.category || "OTHER"]}33` }}>
                     {stock.category || "OTHER"}
                   </span>
+                  {stock.in_portfolio && (
+                    <span className="text-[8px] px-1.5 py-0.5 rounded-full font-semibold bg-amber-500/15 text-amber-500 border border-amber-500/30">
+                      편입
+                    </span>
+                  )}
                 </div>
                 <div className="text-[11px] text-slate-500">{stock.name} · {stock.exchange}</div>
               </div>
@@ -221,6 +362,21 @@ function DetailPanel({ stock, onClose, onUpdate, onDelete, admin }) {
             <button onClick={onClose} className="text-slate-600 hover:text-slate-300 text-xl">✕</button>
           </div>
           <div className="text-[12px] text-amber-400/80 italic">{stock.thesis_oneliner || "—"}</div>
+
+          {/* Portfolio Toggle in Detail */}
+          <button
+            onClick={() => {
+              if (!admin.isAdmin) { admin.openModal(); return; }
+              onTogglePortfolio(stock.id, !stock.in_portfolio);
+            }}
+            className="mt-3 w-full py-2 rounded-lg text-xs font-bold font-mono transition-all"
+            style={{
+              background: stock.in_portfolio ? "rgba(212,168,67,0.12)" : "rgba(255,255,255,0.03)",
+              border: `1px solid ${stock.in_portfolio ? "rgba(212,168,67,0.3)" : "rgba(255,255,255,0.08)"}`,
+              color: stock.in_portfolio ? "#d4a843" : "#475569",
+            }}>
+            {stock.in_portfolio ? "✓ 포트폴리오 편입됨 — 클릭하여 제외" : "+ 포트폴리오에 편입"}
+          </button>
         </div>
 
         <div className="p-5 space-y-5">
@@ -232,7 +388,6 @@ function DetailPanel({ stock, onClose, onUpdate, onDelete, admin }) {
               {totalScore}<span className="text-lg opacity-50">/100</span>
             </div>
             <div className="text-[10px] text-slate-600 mt-1">{indicators.length}개 지표 · 가중평균</div>
-            {/* 🔒 AI 평가 버튼 */}
             <button onClick={handleEvaluate} disabled={evaluating || !admin.isAdmin}
               className="mt-3 px-5 py-2 rounded-lg text-xs font-bold bg-amber-600/20 text-amber-500 border border-amber-500/30 hover:bg-amber-600/30 transition disabled:opacity-40">
               {evaluating ? "🔍 AI 평가 중..." : admin.isAdmin ? "🔄 AI 자동 평가" : "🔒 AI 자동 평가"}
@@ -296,9 +451,9 @@ function DetailPanel({ stock, onClose, onUpdate, onDelete, admin }) {
             ))}
           </div>
 
-          {/* Kelly */}
+          {/* Individual Kelly (참고용) */}
           <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-4">
-            <div className="text-[11px] font-bold text-slate-400 tracking-wider font-mono mb-3">KELLY CRITERION</div>
+            <div className="text-[11px] font-bold text-slate-400 tracking-wider font-mono mb-3">KELLY CRITERION (개별)</div>
             <div className="flex gap-3 mb-3">
               <div className="flex-1 bg-black/20 rounded-lg py-2 px-3">
                 <div className="text-[9px] text-slate-600 mb-0.5">승률 (Win Prob)</div>
@@ -320,7 +475,7 @@ function DetailPanel({ stock, onClose, onUpdate, onDelete, admin }) {
             <div className="text-[9px] text-slate-600 mt-2 text-center italic">AI 자동 평가 시 승률·승패비가 현재 주가 수준 반영하여 업데이트됩니다</div>
           </div>
 
-          {/* 🔒 Delete — PIN 필요 */}
+          {/* Delete */}
           <div className="flex justify-end pt-2">
             <button onClick={handleDelete}
               className="px-4 py-2 rounded-md text-xs border border-red-500/20 text-red-400 hover:bg-red-500/10 transition">
@@ -333,14 +488,45 @@ function DetailPanel({ stock, onClose, onUpdate, onDelete, admin }) {
   );
 }
 
-// ── Stock Card ──
-function StockCard({ stock, onClick }) {
+// ══════════════════════════════════════════════════════════════
+// ── STOCK CARD (with portfolio toggle) ──
+// ══════════════════════════════════════════════════════════════
+function StockCard({ stock, onClick, onTogglePortfolio, admin }) {
   const cat = stock.category || "OTHER";
   const indicators = stock.indicators || [];
   const totalScore = calcTotalScore(indicators);
+  const inPf = stock.in_portfolio;
+
+  const handleToggle = (e) => {
+    e.stopPropagation();
+    if (!admin.isAdmin) { admin.openModal(); return; }
+    onTogglePortfolio(stock.id, !inPf);
+  };
+
   return (
     <div onClick={onClick}
-      className="flex items-center gap-3 px-4 py-3 rounded-xl border border-white/[0.04] bg-white/[0.015] hover:bg-white/[0.03] hover:border-white/[0.08] transition-all cursor-pointer">
+      className="flex items-center gap-2 px-3 py-3 rounded-xl border transition-all cursor-pointer"
+      style={{
+        background: inPf ? "rgba(212,168,67,0.04)" : "rgba(255,255,255,0.015)",
+        borderColor: inPf ? "rgba(212,168,67,0.15)" : "rgba(255,255,255,0.04)",
+      }}>
+      {/* Portfolio Toggle */}
+      <button onClick={handleToggle}
+        className="shrink-0 w-6 h-6 rounded-md flex items-center justify-center transition-all"
+        style={{
+          background: inPf ? "rgba(212,168,67,0.2)" : "rgba(255,255,255,0.03)",
+          border: `1.5px solid ${inPf ? "rgba(212,168,67,0.5)" : "rgba(255,255,255,0.08)"}`,
+        }}
+        title={inPf ? "포트폴리오에서 제외" : "포트폴리오에 편입"}>
+        {inPf ? (
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M2 6L5 9L10 3" stroke="#d4a843" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        ) : (
+          <div className="w-2 h-2 rounded-sm bg-white/10" />
+        )}
+      </button>
+
       <ScoreRing score={totalScore} size={40} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
@@ -360,7 +546,9 @@ function StockCard({ stock, onClick }) {
   );
 }
 
-// ── Main ──
+// ══════════════════════════════════════════════════════════════
+// ── MAIN PAGE ──
+// ══════════════════════════════════════════════════════════════
 export default function RadarPage() {
   const [stocks, setStocks] = useState([]);
   const [selectedStock, setSelectedStock] = useState(null);
@@ -369,13 +557,21 @@ export default function RadarPage() {
   const [searchResult, setSearchResult] = useState(null);
   const [loading, setLoading] = useState(true);
   const [registerError, setRegisterError] = useState(null);
+  const [kellyFraction, setKellyFraction] = useState("half"); // default: Half Kelly
 
-  // 🔒 Admin PIN
   const admin = useAdminPin('wolf-radar');
 
   useEffect(() => { dbFetch().then(d => { setStocks(d); setLoading(false); }); }, []);
 
-  // 🔒 검색 — PIN 필요
+  // ── 포트폴리오 편입/제외 토글 ──
+  const handleTogglePortfolio = useCallback(async (id, value) => {
+    setStocks(prev => prev.map(s => s.id === id ? { ...s, in_portfolio: value } : s));
+    // selectedStock도 업데이트
+    setSelectedStock(prev => prev && prev.id === id ? { ...prev, in_portfolio: value } : prev);
+    await dbUpdate(id, { in_portfolio: value });
+  }, []);
+
+  // 🔒 검색
   const handleSearch = useCallback(async () => {
     if (!searchQuery.trim()) return;
     if (!admin.isAdmin) { admin.openModal(); return; }
@@ -394,7 +590,7 @@ export default function RadarPage() {
     setSearching(false);
   }, [searchQuery, admin]);
 
-  // 🔒 등록 — PIN 필요 (검색 후이므로 이미 인증됨)
+  // 🔒 등록
   const handleRegister = useCallback(async (result) => {
     if (!admin.isAdmin) { admin.openModal(); return; }
     setRegisterError(null);
@@ -417,6 +613,7 @@ export default function RadarPage() {
         )),
         momentum: result.momentum ? JSON.parse(JSON.stringify(result.momentum)) : null,
         kelly_win_prob: result.kelly_win_prob || 0.5, kelly_wl_ratio: result.kelly_wl_ratio || 2.0,
+        in_portfolio: false,
       };
       const saved = await dbInsert(row);
       if (saved?.__error) { setRegisterError("저장 오류: " + saved.__error); return; }
@@ -426,10 +623,10 @@ export default function RadarPage() {
   }, [admin]);
 
   const existingTickers = new Set(stocks.map(s => s.ticker));
+  const portfolioCount = stocks.filter(s => s.in_portfolio).length;
 
   return (
     <div className="min-h-screen bg-[#0a0e18] text-slate-200">
-      {/* 🔒 PIN Modal */}
       <PinModal admin={admin} />
 
       <header className="sticky top-0 z-40 border-b border-white/[0.04] bg-[#0a0e18]/95 backdrop-blur-md">
@@ -439,9 +636,11 @@ export default function RadarPage() {
             <div className="flex items-center justify-between mt-1">
               <div>
                 <h1 className="text-lg font-extrabold font-mono text-amber-500 tracking-[3px]">🐺 WOLF RADAR</h1>
-                <p className="text-[11px] text-slate-600 mt-0.5">종목 검색 · AI 분석 · 모니터링 스코어링 · {stocks.length}개 추적 중</p>
+                <p className="text-[11px] text-slate-600 mt-0.5">
+                  종목 검색 · AI 분석 · 모니터링 스코어링 · {stocks.length}개 추적 중
+                  {portfolioCount > 0 && <span className="text-amber-500/60"> · {portfolioCount}개 편입</span>}
+                </p>
               </div>
-              {/* 🔒 Admin Lock */}
               {admin.isAdmin ? (
                 <button onClick={admin.logout} className="px-3 py-1.5 rounded-lg text-xs border border-green-500/30 bg-green-500/10 text-green-400">🔓</button>
               ) : (
@@ -528,6 +727,11 @@ export default function RadarPage() {
       </header>
 
       <main className="max-w-2xl mx-auto px-4 py-4 pb-24 flex flex-col gap-2.5">
+        {/* Portfolio Kelly Panel — 편입된 종목이 있을 때만 표시 */}
+        {portfolioCount > 0 && (
+          <PortfolioKellyPanel stocks={stocks} kellyFraction={kellyFraction} setKellyFraction={setKellyFraction} />
+        )}
+
         {loading ? (
           <div className="text-center py-20 text-slate-600 text-sm animate-pulse">로딩 중...</div>
         ) : stocks.length === 0 && !searchResult ? (
@@ -540,7 +744,12 @@ export default function RadarPage() {
             </div>
           </div>
         ) : (
-          stocks.map(s => (<StockCard key={s.id} stock={s} onClick={() => setSelectedStock(s)} />))
+          stocks.map(s => (
+            <StockCard key={s.id} stock={s}
+              onClick={() => setSelectedStock(s)}
+              onTogglePortfolio={handleTogglePortfolio}
+              admin={admin} />
+          ))
         )}
       </main>
 
@@ -550,6 +759,7 @@ export default function RadarPage() {
           onClose={() => setSelectedStock(null)}
           onUpdate={u => { setStocks(prev => prev.map(p => p.id === u.id ? u : p)); setSelectedStock(u); }}
           onDelete={id => { setStocks(prev => prev.filter(p => p.id !== id)); setSelectedStock(null); }}
+          onTogglePortfolio={handleTogglePortfolio}
           admin={admin}
         />
       )}
