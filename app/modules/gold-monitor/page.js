@@ -265,6 +265,10 @@ export default function GoldMonitorPage() {
   const [liveEvents, setLiveEvents] = useState(BASE.events);
   const [liveIB, setLiveIB] = useState(BASE.ibForecasts);
   const [liveCountries, setLiveCountries] = useState(BASE.countries);
+  const [showPriceEdit, setShowPriceEdit] = useState(false);
+  const [priceInput, setPriceInput] = useState("");
+  const [changePctInput, setChangePctInput] = useState("");
+  const [priceSaving, setPriceSaving] = useState(false);
 
   // 🔒 Admin PIN
   const admin = useAdminPin('gold-monitor');
@@ -281,8 +285,27 @@ export default function GoldMonitorPage() {
     loadSaved();
   }, []);
 
+  // ── 금가격 수동 입력 ──
+  const saveManualPrice = useCallback(async () => {
+    const price = parseFloat(priceInput);
+    const pct = parseFloat(changePctInput);
+    if (isNaN(price) || price <= 0) return;
+    setPriceSaving(true);
+    const newPrice = { price, change_pct: isNaN(pct) ? 0 : pct, updated: new Date().toISOString().slice(0, 10) };
+    setLivePrice(newPrice);
+    setShowPriceEdit(false);
+    try {
+      const { data: existing } = await supabase.from("gold_monitor_data").select("data").eq("id", "latest").single();
+      const currentData = existing?.data || {};
+      currentData.price = newPrice;
+      await supabase.from("gold_monitor_data").upsert({ id: "latest", data: currentData, updated_at: new Date().toISOString() });
+    } catch (e) { console.error("Price save error:", e); }
+    setPriceSaving(false);
+  }, [priceInput, changePctInput]);
+
   function applyUpdate(result) {
-    if (result.price?.price) setLivePrice(result.price);
+    // 금가격은 수동 입력 — AI 업데이트에서 덮어쓰지 않음
+    if (result.price?.price && !result._skipPrice) setLivePrice(result.price);
     if (result.news?.length > 0) {
       const tagColors = { "지정학":RED, "전망":BLU, "중앙은행":GRN, "시장":ORG, "데이터":T2, "정책":PUR };
       setLiveNews(result.news.map(n => ({ ...n, color: tagColors[n.tag] || T2 })));
@@ -311,7 +334,7 @@ export default function GoldMonitorPage() {
   const handleAIUpdate = useCallback(async () => {
     if (!admin.isAdmin) { admin.openModal(); return; }
     setUpdating(true);
-    setUpdateLog(["🔍 웹 검색 중... 금가격, CB 매입, IB 전망, 뉴스"]);
+    setUpdateLog(["🔍 웹 검색 중... CB 매입, IB 전망, 뉴스"]);
     try {
       const res = await fetch("/api/gold-update", { method: "POST", headers: { "x-admin-pin": admin.pin } });
       if (res.status === 401) { setUpdateLog(prev => [...prev, "⚠️ 인증 만료"]); admin.logout(); admin.openModal(); setUpdating(false); return; }
@@ -321,13 +344,21 @@ export default function GoldMonitorPage() {
       setUpdateLog(prev => [...prev, "✅ 데이터 수신 완료"]);
       applyUpdate(result);
       setLastUpdate(result.updated_at);
-      setUpdateLog(prev => [...prev,
-        result.price?.price ? `💰 금가격: $${result.price.price.toLocaleString()} (${result.price.change_pct > 0 ? "+" : ""}${result.price.change_pct}%)` : "⚠️ 금가격 업데이트 실패",
-        result.cb?.year2025_total ? `🏦 2025 CB 매입: ${result.cb.year2025_total}t` : "⚠️ CB 데이터 부분 실패",
+
+      const logItems = [
+        result.cb?.countries ? `🏦 CB 데이터 ${Object.keys(result.cb.countries).length}개국 업데이트` : "⚠️ CB 데이터 업데이트 실패",
         result.ib?.forecasts?.length ? `🔮 IB 전망 ${result.ib.forecasts.length}개 업데이트` : "⚠️ IB 전망 업데이트 실패",
         result.news?.length ? `📰 뉴스 ${result.news.length}건 업데이트` : "⚠️ 뉴스 업데이트 실패",
-        "───────────────────", "🎉 업데이트 완료!",
-      ]);
+      ];
+      const failCount = logItems.filter(l => l.startsWith("⚠️")).length;
+      const successCount = logItems.length - failCount;
+      const finalMsg = failCount === 0
+        ? "🎉 업데이트 완료!"
+        : successCount === 0
+          ? "❌ 전체 업데이트 실패 — 잠시 후 다시 시도해주세요"
+          : `⚠️ 부분 완료 (${successCount}/${logItems.length} 성공, ${failCount}건 실패)`;
+
+      setUpdateLog(prev => [...prev, ...logItems, "───────────────────", finalMsg]);
     } catch (err) { setUpdateLog(prev => [...prev, `❌ 오류: ${err.message}`]); } finally { setUpdating(false); }
   }, [admin]);
 
@@ -362,12 +393,33 @@ export default function GoldMonitorPage() {
             <p style={{ color:T2,fontSize:11,margin:0 }}>2026 중앙은행 금 매입 900t 돌파 가능성 추적</p>
           </div>
           <div style={{ textAlign:"right" }}>
-            <div style={{ display:"flex",alignItems:"center",gap:6 }}>
-              <span style={{ fontSize:10,color:T2 }}>XAU/USD</span>
-              <span style={{ fontSize:22,fontWeight:800,color:GOLD }}>${currentPrice.toLocaleString()}</span>
-              <span style={{ fontSize:10,fontWeight:600,color:changePct>=0?GRN:RED,background:changePct>=0?"rgba(62,207,142,0.12)":"rgba(232,72,85,0.12)",padding:"2px 6px",borderRadius:4 }}>{changePct>0?"+":""}{changePct}%</span>
-            </div>
-            <p style={{ fontSize:9,color:T3,margin:"2px 0 0" }}>{livePrice?.updated || time.toLocaleDateString("ko-KR")} 기준</p>
+            {showPriceEdit && admin.isAdmin ? (
+              <div style={{ display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end" }}>
+                <div style={{ display:"flex",gap:4,alignItems:"center" }}>
+                  <span style={{ fontSize:10,color:T2 }}>$/oz</span>
+                  <input value={priceInput} onChange={e=>setPriceInput(e.target.value)} placeholder="5278" type="number"
+                    style={{ width:90,padding:"4px 8px",background:"rgba(0,0,0,0.4)",border:`1px solid ${GOLD}40`,borderRadius:5,fontSize:14,fontWeight:800,color:GOLD,outline:"none",textAlign:"right",fontFamily:"monospace" }} autoFocus />
+                  <input value={changePctInput} onChange={e=>setChangePctInput(e.target.value)} placeholder="±%" type="number" step="0.01"
+                    style={{ width:60,padding:"4px 8px",background:"rgba(0,0,0,0.4)",border:`1px solid ${BD}`,borderRadius:5,fontSize:12,color:T1,outline:"none",textAlign:"right",fontFamily:"monospace" }} />
+                  <span style={{ fontSize:9,color:T3 }}>%</span>
+                </div>
+                <div style={{ display:"flex",gap:4 }}>
+                  <button onClick={()=>setShowPriceEdit(false)} style={{ padding:"3px 10px",fontSize:10,border:`1px solid ${BD}`,borderRadius:4,background:"transparent",color:T3,cursor:"pointer" }}>취소</button>
+                  <button onClick={saveManualPrice} disabled={priceSaving} style={{ padding:"3px 10px",fontSize:10,border:"none",borderRadius:4,background:GOLD,color:BG,fontWeight:700,cursor:"pointer" }}>{priceSaving?"저장중...":"저장"}</button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div style={{ display:"flex",alignItems:"center",gap:6 }}>
+                  <span style={{ fontSize:10,color:T2 }}>XAU/USD</span>
+                  <span style={{ fontSize:22,fontWeight:800,color:GOLD }}>${currentPrice.toLocaleString()}</span>
+                  <span style={{ fontSize:10,fontWeight:600,color:changePct>=0?GRN:RED,background:changePct>=0?"rgba(62,207,142,0.12)":"rgba(232,72,85,0.12)",padding:"2px 6px",borderRadius:4 }}>{changePct>0?"+":""}{changePct}%</span>
+                  {admin.isAdmin && <button onClick={()=>{setPriceInput(String(currentPrice));setChangePctInput(String(changePct));setShowPriceEdit(true);}}
+                    style={{ padding:"2px 6px",fontSize:10,border:`1px solid ${BD}`,borderRadius:4,background:"rgba(255,255,255,0.04)",color:T3,cursor:"pointer" }}>✏️</button>}
+                </div>
+                <p style={{ fontSize:9,color:T3,margin:"2px 0 0" }}>{livePrice?.updated || time.toLocaleDateString("ko-KR")} 기준</p>
+              </>
+            )}
           </div>
         </div>
 
