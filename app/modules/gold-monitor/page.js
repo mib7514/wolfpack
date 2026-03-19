@@ -334,29 +334,40 @@ export default function GoldMonitorPage() {
   const handleAIUpdate = useCallback(async () => {
     if (!admin.isAdmin) { admin.openModal(); return; }
     setUpdating(true);
-    setUpdateLog(["🔍 웹 검색 중... CB 매입, IB 전망, 뉴스"]);
+    setUpdateLog(["🔍 웹 검색 중... CB 매입, IB 전망, 뉴스 (병렬 실행)"]);
     try {
       const res = await fetch("/api/gold-update", { method: "POST", headers: { "x-admin-pin": admin.pin } });
       if (res.status === 401) { setUpdateLog(prev => [...prev, "⚠️ 인증 만료"]); admin.logout(); admin.openModal(); setUpdating(false); return; }
-      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`API ${res.status}: ${body.slice(0, 200)}`);
+      }
       const result = await res.json();
       if (result.error) throw new Error(result.error);
-      setUpdateLog(prev => [...prev, "✅ 데이터 수신 완료"]);
+
+      setUpdateLog(prev => [...prev, "✅ 응답 수신"]);
       applyUpdate(result);
       setLastUpdate(result.updated_at);
 
       const logItems = [
-        result.cb?.countries ? `🏦 CB 데이터 ${Object.keys(result.cb.countries).length}개국 업데이트` : "⚠️ CB 데이터 업데이트 실패",
-        result.ib?.forecasts?.length ? `🔮 IB 전망 ${result.ib.forecasts.length}개 업데이트` : "⚠️ IB 전망 업데이트 실패",
-        result.news?.length ? `📰 뉴스 ${result.news.length}건 업데이트` : "⚠️ 뉴스 업데이트 실패",
+        result.cb?.countries ? `🏦 CB 데이터 ${Object.keys(result.cb.countries).length}개국` : "⚠️ CB 데이터 실패",
+        result.ib?.forecasts?.length ? `🔮 IB 전망 ${result.ib.forecasts.length}개` : "⚠️ IB 전망 실패",
+        result.news?.length ? `📰 뉴스 ${result.news.length}건` : "⚠️ 뉴스 실패",
       ];
+
+      // 서버에서 보낸 에러 상세 표시
+      if (result.errors?.length > 0) {
+        logItems.push("─── 에러 상세 ───");
+        result.errors.forEach(e => logItems.push(`   → ${e}`));
+      }
+
       const failCount = logItems.filter(l => l.startsWith("⚠️")).length;
-      const successCount = logItems.length - failCount;
+      const successCount = 3 - failCount;
       const finalMsg = failCount === 0
         ? "🎉 업데이트 완료!"
         : successCount === 0
-          ? "❌ 전체 업데이트 실패 — 잠시 후 다시 시도해주세요"
-          : `⚠️ 부분 완료 (${successCount}/${logItems.length} 성공, ${failCount}건 실패)`;
+          ? "❌ 전체 실패 — 잠시 후 재시도"
+          : `⚠️ 부분 완료 (${successCount}/3 성공)`;
 
       setUpdateLog(prev => [...prev, ...logItems, "───────────────────", finalMsg]);
     } catch (err) { setUpdateLog(prev => [...prev, `❌ 오류: ${err.message}`]); } finally { setUpdating(false); }
