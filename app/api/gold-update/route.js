@@ -2,7 +2,10 @@ import { NextResponse } from 'next/server';
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
-async function callClaude(prompt, maxTokens = 4096, timeoutMs = 50000) {
+// Haiku: 더 저렴하고, Tier 1에서도 50K ITPM (Sonnet 30K 대비 높음)
+const MODEL = 'claude-haiku-4-5-20251001';
+
+async function callClaude(prompt, maxTokens = 3000, timeoutMs = 45000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -15,7 +18,7 @@ async function callClaude(prompt, maxTokens = 4096, timeoutMs = 50000) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: MODEL,
         max_tokens: maxTokens,
         tools: [{ type: 'web_search_20250305', name: 'web_search' }],
         messages: [{ role: 'user', content: prompt }],
@@ -36,9 +39,7 @@ async function callClaude(prompt, maxTokens = 4096, timeoutMs = 50000) {
       .map((b) => b.text)
       .join('\n');
 
-    if (!text || text.trim().length < 5) {
-      throw new Error('Empty response from Claude');
-    }
+    if (!text || text.trim().length < 5) throw new Error('Empty response');
     return text;
   } finally {
     clearTimeout(timer);
@@ -48,21 +49,19 @@ async function callClaude(prompt, maxTokens = 4096, timeoutMs = 50000) {
 function safeJSON(raw, fallback) {
   if (!raw) return fallback;
   try {
-    const cleaned = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-    return JSON.parse(cleaned);
+    return JSON.parse(raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim());
   } catch {}
-  const matches = raw.match(/[\[{][\s\S]*[\]}]/g);
-  if (matches) {
-    for (const m of matches.sort((a, b) => b.length - a.length)) {
-      try { return JSON.parse(m); } catch {}
-    }
+  const m = raw.match(/[\[{][\s\S]*[\]}]/g);
+  if (m) for (const s of m.sort((a, b) => b.length - a.length)) {
+    try { return JSON.parse(s); } catch {}
   }
   return fallback;
 }
 
+const delay = (ms) => new Promise(r => setTimeout(r, ms));
+
 export async function POST(request) {
   try {
-    // ─── PIN ───
     const adminPin = process.env.ADMIN_PIN;
     const userPin = request.headers.get('x-admin-pin');
     if (!adminPin || userPin !== adminPin) {
@@ -72,55 +71,46 @@ export async function POST(request) {
       return NextResponse.json({ error: 'ANTHROPIC_API_KEY not set' }, { status: 500 });
     }
 
-    // ═══ 두 호출을 병렬 실행 (Vercel 60s 타임아웃 대응) ═══
-    const [cbibResult, newsResult] = await Promise.allSettled([
-
-      // ── Call 1: CB + IB ──
-      callClaude(`Search for "central bank gold purchases 2026" and "gold price forecast 2026 investment banks".
-
-Return a JSON object with CB gold reserves data and IB forecasts. Use null for unknown values. No markdown.
-
-{"cb":{"year2025_total":null,"countries":{"poland":{"current_reserves":null,"latest_month":"","latest_month_tonnes":null,"note":""},"china":{"current_reserves":null,"latest_month":"","latest_month_tonnes":null,"note":""},"czech":{"current_reserves":null,"latest_month":"","latest_month_tonnes":null,"note":""},"india":{"current_reserves":null,"latest_month":"","latest_month_tonnes":null,"note":""},"kazakhstan":{"current_reserves":null,"latest_month":"","latest_month_tonnes":null,"note":""},"turkey":{"current_reserves":null,"latest_month":"","latest_month_tonnes":null,"note":""},"brazil":{"current_reserves":null,"latest_month":"","latest_month_tonnes":null,"note":""},"uzbekistan":{"current_reserves":null,"latest_month":"","latest_month_tonnes":null,"note":""},"malaysia":{"current_reserves":null,"latest_month":"","latest_month_tonnes":null,"note":""},"korea":{"current_reserves":null,"latest_month":"","latest_month_tonnes":null,"note":""}}},"ib":{"forecasts":[{"bank":"","target_2026":"","cb_forecast":"","stance":""}]}}`, 4096, 50000),
-
-      // ── Call 2: News + Events ──
-      callClaude(`Search for "gold market news today" and "gold price FOMC 2026".
-
-Return JSON with recent gold news and upcoming events. No markdown. Only verified facts.
-
-{"news":[{"date":"2026.03.19","title":"","tag":"지정학","impact":"↑"}],"events":[{"date":"3/19","event":"","note":""}]}
-
-Tags: 지정학, 전망, 중앙은행, 시장, 데이터, 정책. Impact: ↑ ↓ →. Max 8 news, 6 events.`, 3000, 50000),
-    ]);
-
-    // ─── 결과 처리 ───
     const errors = [];
+    let cbData = null, ibData = null, newsData = [], eventsData = [];
 
-    let cbData = null, ibData = null;
-    if (cbibResult.status === 'fulfilled') {
-      const parsed = safeJSON(cbibResult.value, {});
-      if (parsed.cb?.countries && Object.keys(parsed.cb.countries).length > 0) cbData = parsed.cb;
-      else errors.push('CB: JSON 파싱 성공했으나 countries 데이터 없음');
+    // ═══ Call 1: CB + IB (순차 — rate limit 방지) ═══
+    try {
+      const raw = await callClaude(
+`Search "central bank gold purchases 2026" and "gold price forecast 2026".
+Return ONLY JSON. No markdown. null for unknowns.
+{"cb":{"year2025_total":null,"countries":{"poland":{"current_reserves":null,"note":""},"china":{"current_reserves":null,"note":""},"czech":{"current_reserves":null,"note":""},"india":{"current_reserves":null,"note":""},"kazakhstan":{"current_reserves":null,"note":""},"turkey":{"current_reserves":null,"note":""},"brazil":{"current_reserves":null,"note":""},"uzbekistan":{"current_reserves":null,"note":""},"malaysia":{"current_reserves":null,"note":""},"korea":{"current_reserves":null,"note":""}}},"ib":{"forecasts":[{"bank":"","target_2026":"","stance":""}]}}`, 3000, 45000);
+
+      const parsed = safeJSON(raw, {});
+      if (parsed.cb?.countries) cbData = parsed.cb;
+      else errors.push('CB: 데이터 없음');
       if (parsed.ib?.forecasts?.length > 0) ibData = parsed.ib;
-      else errors.push('IB: JSON 파싱 성공했으나 forecasts 데이터 없음');
-    } else {
-      errors.push(`CB+IB 호출 실패: ${cbibResult.reason?.message || cbibResult.reason}`);
+      else errors.push('IB: 데이터 없음');
+    } catch (e) {
+      errors.push(`CB+IB: ${e.message?.slice(0, 150)}`);
     }
 
-    let newsData = [], eventsData = [];
-    if (newsResult.status === 'fulfilled') {
-      const parsed = safeJSON(newsResult.value, {});
+    // ── 60초 대기 (분당 토큰 한도 리셋) ──
+    await delay(5000);
+
+    // ═══ Call 2: News + Events ═══
+    try {
+      const raw = await callClaude(
+`Search "gold news today March 2026".
+Return ONLY JSON. No markdown.
+{"news":[{"date":"2026.03.19","title":"","tag":"시장","impact":"↑"}],"events":[{"date":"3/19","event":"","note":""}]}
+Tags: 지정학/전망/중앙은행/시장/데이터. Impact: ↑/↓/→. Max 6 news, 4 events.`, 2000, 45000);
+
+      const parsed = safeJSON(raw, {});
       if (Array.isArray(parsed.news) && parsed.news.length > 0) newsData = parsed.news;
-      else errors.push('뉴스: JSON 파싱 성공했으나 news 배열 없음');
+      else errors.push('뉴스: 데이터 없음');
       if (Array.isArray(parsed.events) && parsed.events.length > 0) eventsData = parsed.events;
-    } else {
-      errors.push(`뉴스 호출 실패: ${newsResult.reason?.message || newsResult.reason}`);
+    } catch (e) {
+      errors.push(`뉴스: ${e.message?.slice(0, 150)}`);
     }
 
     const result = {
-      cb: cbData,
-      ib: ibData,
-      news: newsData,
-      events: eventsData,
+      cb: cbData, ib: ibData, news: newsData, events: eventsData,
       errors: errors.length > 0 ? errors : undefined,
       updated_at: new Date().toISOString(),
     };
