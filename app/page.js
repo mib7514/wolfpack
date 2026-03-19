@@ -55,6 +55,16 @@ const MODULES = [
     layer: "macro",
     status: "live",
   },
+  {
+    id: "hartnett-monitor",
+    name: "하트넷 2008 모니터",
+    subtitle: "Hartnett 2008 Framework Monitor",
+    icon: "🔴",
+    description: "유가·신용·달러·금리 4대 트리거 추적 · FRED 자동수집 · 정책풋 확률 평가",
+    path: "/modules/hartnett-monitor",
+    layer: "macro",
+    status: "live",
+  },
   // ─── Layer 2: MARKET ───
   {
     id: "narrative-tracker",
