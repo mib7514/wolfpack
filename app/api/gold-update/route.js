@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
-async function callClaude(prompt) {
+async function callClaude(prompt, maxTokens = 4096) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -12,115 +12,185 @@ async function callClaude(prompt) {
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
+      max_tokens: maxTokens,
       tools: [{ type: 'web_search_20250305', name: 'web_search' }],
       messages: [{ role: 'user', content: prompt }],
     }),
   });
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '');
+    throw new Error(`Anthropic API ${res.status}: ${errBody.slice(0, 200)}`);
+  }
   const data = await res.json();
-  return data.content
+  if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+  const text = data.content
     ?.filter((b) => b.type === 'text')
     .map((b) => b.text)
     .join('\n');
+  if (!text) throw new Error('No text content in response');
+  return text;
+}
+
+function safeJSON(raw, fallback) {
+  if (!raw) return fallback;
+  try {
+    const cleaned = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+    return JSON.parse(cleaned);
+  } catch {}
+  // Try to find the largest JSON block
+  const matches = raw.match(/[\[{][\s\S]*[\]}]/g);
+  if (matches) {
+    for (const m of matches.sort((a, b) => b.length - a.length)) {
+      try { return JSON.parse(m); } catch {}
+    }
+  }
+  return fallback;
 }
 
 export async function POST(request) {
   try {
-    // ─── 관리자 PIN 검증 ───
+    // ─── PIN 검증 ───
     const adminPin = process.env.ADMIN_PIN;
     const userPin = request.headers.get('x-admin-pin');
     if (!adminPin || userPin !== adminPin) {
       return NextResponse.json({ error: '관리자 인증이 필요합니다' }, { status: 401 });
     }
-    // ─────────────────────────
 
     if (!ANTHROPIC_API_KEY) {
       return NextResponse.json({ error: 'ANTHROPIC_API_KEY not set' }, { status: 500 });
     }
 
-    const priceRaw = await callClaude(
-      `Search for the current gold price (XAU/USD) today and the daily change percentage, plus ATH and YTD performance.
-Return ONLY valid JSON, no markdown, no backticks:
-{"price":number,"change_pct":number,"ath":number,"ytd_pct":number,"updated":"YYYY-MM-DD"}`
-    );
+    const errors = [];
 
-    const cbRaw = await callClaude(
-      `Search for the latest World Gold Council (WGC) monthly central bank gold statistics report. Also search "central bank gold purchases 2026" and "WGC central bank gold statistics".
-I need the latest monthly net purchases data for these 11 countries: Poland, China, Czech Republic, Serbia, India, Kazakhstan, Turkey, Brazil, Uzbekistan, Malaysia, South Korea (BOK).
-Also include: total global CB net purchases for 2025 full year, and any 2026 monthly data available (especially January 2026).
-Note: BOK announced plans to incorporate overseas-listed physical gold ETFs into reserves from Q1 2026.
-Return ONLY valid JSON, no markdown:
+    // ═══ Call 1: CB + IB (구조적 데이터) ═══
+    let cbData = null, ibData = null;
+    try {
+      const raw = await callClaude(`You are a gold market research analyst. Please search for the following two topics:
+
+TOPIC 1: Central bank gold purchases
+- Search "World Gold Council central bank gold purchases 2026" and "central bank gold buying 2026"
+- Find: total CB net purchases for 2025, any 2026 monthly data
+- For these countries, find latest reserves (tonnes) and any recent purchase data:
+  Poland, China, Czech Republic, Serbia, India, Kazakhstan, Turkey, Brazil, Uzbekistan, Malaysia, South Korea (BOK)
+
+TOPIC 2: Investment bank gold forecasts
+- Search "gold price forecast 2026 investment bank"
+- Find 2026 year-end gold price targets from: JPMorgan, Goldman Sachs, UBS, Deutsche Bank, Bank of America, Morgan Stanley, Standard Chartered, Jefferies
+
+CRITICAL INSTRUCTIONS:
+- Return ONLY a raw JSON object. No markdown fences, no explanation text before or after.
+- Use null for any data you cannot verify. Do NOT invent numbers.
+- Start your response with { and end with }
+
 {
-  "year2025_total":number,
-  "year2025_yoy":number,
-  "latest_month":"Jan 2026",
-  "latest_month_total":number,
-  "countries":{
-    "poland":{"current_reserves":number,"2025_total":number,"latest_month":"","latest_month_tonnes":number},
-    "china":{"current_reserves":number,"2025_total":number,"latest_month":"","latest_month_tonnes":number},
-    "czech":{"current_reserves":number,"2025_total":number,"latest_month":"","latest_month_tonnes":number},
-    "serbia":{"current_reserves":number,"2025_total":number,"latest_month":"","latest_month_tonnes":number},
-    "india":{"current_reserves":number,"2025_total":number,"latest_month":"","latest_month_tonnes":number},
-    "kazakhstan":{"current_reserves":number,"2025_total":number,"latest_month":"","latest_month_tonnes":number},
-    "turkey":{"current_reserves":number,"2025_total":number,"latest_month":"","latest_month_tonnes":number},
-    "brazil":{"current_reserves":number,"2025_total":number,"latest_month":"","latest_month_tonnes":number},
-    "uzbekistan":{"current_reserves":number,"2025_total":number,"latest_month":"","latest_month_tonnes":number},
-    "malaysia":{"current_reserves":number,"2025_total":number,"latest_month":"","latest_month_tonnes":number},
-    "korea":{"current_reserves":number,"2025_total":number,"latest_month":"","latest_month_tonnes":number,"note":"ETF"}
+  "cb": {
+    "year2025_total": null,
+    "countries": {
+      "poland": {"current_reserves": null, "latest_month": "", "latest_month_tonnes": null, "note": ""},
+      "china": {"current_reserves": null, "latest_month": "", "latest_month_tonnes": null, "note": ""},
+      "czech": {"current_reserves": null, "latest_month": "", "latest_month_tonnes": null, "note": ""},
+      "serbia": {"current_reserves": null, "latest_month": "", "latest_month_tonnes": null, "note": ""},
+      "india": {"current_reserves": null, "latest_month": "", "latest_month_tonnes": null, "note": ""},
+      "kazakhstan": {"current_reserves": null, "latest_month": "", "latest_month_tonnes": null, "note": ""},
+      "turkey": {"current_reserves": null, "latest_month": "", "latest_month_tonnes": null, "note": ""},
+      "brazil": {"current_reserves": null, "latest_month": "", "latest_month_tonnes": null, "note": ""},
+      "uzbekistan": {"current_reserves": null, "latest_month": "", "latest_month_tonnes": null, "note": ""},
+      "malaysia": {"current_reserves": null, "latest_month": "", "latest_month_tonnes": null, "note": ""},
+      "korea": {"current_reserves": null, "latest_month": "", "latest_month_tonnes": null, "note": ""}
+    }
+  },
+  "ib": {
+    "forecasts": [
+      {"bank": "JPMorgan", "target_2026": "$6,300", "cb_forecast": "755t/yr", "stance": "Very Bullish"}
+    ]
   }
-}`
-    );
+}`, 4096);
 
-    const ibRaw = await callClaude(
-      `Search for the latest 2026 gold price forecasts from major investment banks (JPMorgan, Goldman Sachs, UBS, Deutsche Bank, Bank of America, Morgan Stanley, Standard Chartered, Jefferies, etc).
-Also search for their central bank gold purchase forecasts for 2026.
-Return ONLY valid JSON, no markdown:
-{"forecasts":[{"bank":"","target_2026":"","cb_forecast":"","stance":""}]}`
-    );
-
-    const newsRaw = await callClaude(
-      `Search for the latest gold market news from the past 2 weeks. Focus on: central bank gold purchases, geopolitical events affecting gold, major price movements, and IB forecast updates.
-Return ONLY valid JSON array, no markdown:
-[{"date":"YYYY.MM.DD","title":"","tag":"","impact":"↑ or ↓ or →"}]
-Return maximum 10 items, most recent first.`
-    );
-
-    const eventsRaw = await callClaude(
-      `Search for upcoming events in the next 4 weeks that could impact gold prices: FOMC meetings, economic data releases (CPI, NFP, PMI), geopolitical events, WGC reports.
-Return ONLY valid JSON array, no markdown:
-[{"date":"MM/DD","event":"","note":""}]
-Return maximum 8 items.`
-    );
-
-    function safeJSON(raw, fallback) {
-      if (!raw) return fallback;
-      try {
-        const cleaned = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-        return JSON.parse(cleaned);
-      } catch {}
-      const matches = raw.match(/[\[{][\s\S]*[\]}]/g);
-      if (matches) {
-        for (const m of matches.sort((a, b) => b.length - a.length)) {
-          try { return JSON.parse(m); } catch {}
-        }
+      const parsed = safeJSON(raw, {});
+      if (parsed.cb?.countries && Object.keys(parsed.cb.countries).length > 0) {
+        cbData = parsed.cb;
       }
-      return fallback;
+      if (parsed.ib?.forecasts?.length > 0) {
+        ibData = parsed.ib;
+      }
+    } catch (e) {
+      errors.push(`CB+IB: ${e.message}`);
+      console.error('Call 1 (CB+IB) failed:', e.message);
+    }
+
+    // ═══ Call 2: News + Events (동적 데이터) ═══
+    let newsData = [], eventsData = [];
+    try {
+      const raw = await callClaude(`You are a gold market news analyst. Please search for:
+
+1. Latest gold market news (past 2 weeks):
+   - Search "gold price news today" and "central bank gold news 2026"
+   - Focus on: CB gold purchases, geopolitical events, major price moves, IB forecast changes
+
+2. Upcoming events (next 4 weeks):
+   - Search "FOMC meeting 2026" and "economic calendar gold"
+   - Include: Fed meetings, CPI/NFP releases, WGC reports, geopolitical events
+
+CRITICAL INSTRUCTIONS:
+- Return ONLY a raw JSON object. No markdown fences, no explanation before or after.
+- Only include real, verified news. Do NOT fabricate.
+- Start your response with { and end with }
+
+{
+  "news": [
+    {"date": "2026.03.19", "title": "headline", "tag": "지정학", "impact": "↑"}
+  ],
+  "events": [
+    {"date": "3/19", "event": "event name", "note": "impact note"}
+  ]
+}
+
+Tags must be one of: 지정학, 전망, 중앙은행, 시장, 데이터, 정책
+Impact must be one of: ↑, ↓, →
+Max 8 news (most recent first), max 6 events.`, 3000);
+
+      const parsed = safeJSON(raw, {});
+      if (Array.isArray(parsed.news) && parsed.news.length > 0) {
+        newsData = parsed.news;
+      }
+      if (Array.isArray(parsed.events) && parsed.events.length > 0) {
+        eventsData = parsed.events;
+      }
+    } catch (e) {
+      errors.push(`News: ${e.message}`);
+      console.error('Call 2 (News+Events) failed:', e.message);
     }
 
     const result = {
-      price: safeJSON(priceRaw, null),
-      cb: safeJSON(cbRaw, null),
-      ib: safeJSON(ibRaw, null),
-      news: safeJSON(newsRaw, []),
-      events: safeJSON(eventsRaw, []),
+      cb: cbData,
+      ib: ibData,
+      news: newsData,
+      events: eventsData,
+      errors: errors.length > 0 ? errors : undefined,
       updated_at: new Date().toISOString(),
     };
 
+    // ─── Supabase 저장 (기존 수동 금가격 보존) ───
     const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
     if (SUPABASE_URL && SUPABASE_KEY) {
       try {
+        // 기존 데이터 조회 (수동 입력한 금가격 보존)
+        const existingRes = await fetch(`${SUPABASE_URL}/rest/v1/gold_monitor_data?id=eq.latest`, {
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+        });
+        const rows = await existingRes.json();
+        const prevData = rows?.[0]?.data || {};
+
+        // 수동 금가격은 보존, 나머지만 AI 데이터로 업데이트
+        const mergedData = { ...prevData };
+        if (cbData) mergedData.cb = cbData;
+        if (ibData) mergedData.ib = ibData;
+        if (newsData.length > 0) mergedData.news = newsData;
+        if (eventsData.length > 0) mergedData.events = eventsData;
+        mergedData.updated_at = result.updated_at;
+
         await fetch(`${SUPABASE_URL}/rest/v1/gold_monitor_data`, {
           method: 'POST',
           headers: {
@@ -131,7 +201,7 @@ Return maximum 8 items.`
           },
           body: JSON.stringify({
             id: 'latest',
-            data: result,
+            data: mergedData,
             updated_at: result.updated_at,
           }),
         });
