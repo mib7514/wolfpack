@@ -1,974 +1,849 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
-import {
-  Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, ReferenceLine, ComposedChart
-} from "recharts";
+import { useState, useMemo, useCallback } from "react";
 
-// ─── Default macro data (verified Mar 2026) ───
-const DEFAULT_DATA = {
-  us: {
-    currentCPI: 2.4,
-    currentRate: 3.75,
-    energyWeightDirect: 0.075,
-    energyWeightIndirect: 0.045,
-    oilPassThrough: { "1y": 0.038, "3y": 0.035, "5y": 0.032, "10y": 0.028 },
-    indirectMultiplier: { "1y": 1.55, "3y": 1.65, "5y": 1.70, "10y": 1.80 },
-    history: [
-      { date: "2023-01", cpi: 6.4, rate: 4.50, brent: 84, wti: 79, usdkrw: 1230 },
-      { date: "2023-04", cpi: 4.9, rate: 5.00, brent: 80, wti: 76, usdkrw: 1320 },
-      { date: "2023-07", cpi: 3.2, rate: 5.50, brent: 80, wti: 77, usdkrw: 1280 },
-      { date: "2023-10", cpi: 3.2, rate: 5.50, brent: 90, wti: 85, usdkrw: 1350 },
-      { date: "2024-01", cpi: 3.1, rate: 5.50, brent: 80, wti: 75, usdkrw: 1310 },
-      { date: "2024-04", cpi: 3.4, rate: 5.50, brent: 88, wti: 83, usdkrw: 1370 },
-      { date: "2024-07", cpi: 2.9, rate: 5.50, brent: 82, wti: 78, usdkrw: 1380 },
-      { date: "2024-10", cpi: 2.6, rate: 5.00, brent: 73, wti: 69, usdkrw: 1370 },
-      { date: "2025-01", cpi: 3.0, rate: 4.50, brent: 76, wti: 73, usdkrw: 1450 },
-      { date: "2025-04", cpi: 2.3, rate: 4.25, brent: 66, wti: 62, usdkrw: 1420 },
-      { date: "2025-07", cpi: 2.5, rate: 4.25, brent: 65, wti: 62, usdkrw: 1390 },
-      { date: "2025-10", cpi: 2.7, rate: 4.00, brent: 72, wti: 69, usdkrw: 1410 },
-      { date: "2026-01", cpi: 2.4, rate: 3.75, brent: 67, wti: 64, usdkrw: 1430 },
-    ],
+// ═══════════════════════════════════════════════════════════════
+// 기저 데이터: 2025 월별 CPI 지수 (2020=100 기준, 한국 / 1982-84=100, 미국)
+// 관리자가 수정 가능. 새 데이터 발표 시 업데이트.
+// ═══════════════════════════════════════════════════════════════
+const DEFAULT_KR_2025 = [115.72, 116.08, 115.50, 115.70, 115.30, 115.50, 115.80, 116.10, 116.30, 116.70, 117.10, 117.57];
+const DEFAULT_US_2025 = [310.5, 311.0, 312.0, 313.0, 313.5, 314.0, 314.8, 315.5, 316.0, 316.5, 317.5, 318.4];
+
+// 2026 실현값 (발표된 월만 입력, 나머지 null)
+const DEFAULT_KR_2026 = [118.03, 118.40, null, null, null, null, null, null, null, null, null, null];
+const DEFAULT_US_2026 = [317.9, 318.5, null, null, null, null, null, null, null, null, null, null];
+
+// 2025 월별 유가(WTI $/bbl) 및 환율(USDKRW) - 기저효과 계산용
+const DEFAULT_OIL_2025 = [75, 72, 68, 62, 60, 70, 73, 68, 70, 72, 68, 70];
+const DEFAULT_FX_2025 = [1450, 1440, 1460, 1370, 1380, 1390, 1380, 1350, 1330, 1360, 1400, 1470];
+
+// 2026 실현 유가/환율 (발표된 월만)
+const DEFAULT_OIL_2026 = [73, 72, null, null, null, null, null, null, null, null, null, null];
+const DEFAULT_FX_2026 = [1450, 1440, null, null, null, null, null, null, null, null, null, null];
+
+const MONTHS = ["1월","2월","3월","4월","5월","6월","7월","8월","9월","10월","11월","12월"];
+const MONTHS_EN = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+// ═══════════════════════════════════════════════════════════════
+// 패스스루 파라미터
+// ═══════════════════════════════════════════════════════════════
+const PARAMS = {
+  KR: {
+    energy_weight: 0.075,      // CPI 내 에너지 가중치 ~7.5%
+    oil_passthrough: 0.60,     // 유가 변동의 60%가 에너지CPI에 반영
+    oil_lag: [0.40, 0.35, 0.25], // t, t-1, t-2 월 가중치
+    fx_passthrough: 0.03,      // 환율 변동의 3%가 비에너지CPI에 반영
+    fx_lag: [0.25, 0.25, 0.25, 0.25], // 4개월 분산
+    label: "한국",
+    unit: "2020=100",
   },
-  kr: {
-    currentCPI: 2.0,
-    currentRate: 2.50,
-    energyWeightDirect: 0.095,
-    energyWeightIndirect: 0.055,
-    oilPassThrough: { "1y": 0.045, "3y": 0.042, "5y": 0.038, "10y": 0.033 },
-    indirectMultiplier: { "1y": 1.60, "3y": 1.70, "5y": 1.80, "10y": 1.90 },
-    // FX pass-through: KRW depreciation → import prices → CPI
-    // BOK WP: 10% KRW depreciation → ~0.3%p CPI (short-run), ~0.5%p (long-run)
-    // Decomposed: non-oil import PT + oil-FX amplification
-    fxPassThrough: {
-      "1y": { nonOilImport: 0.030, oilFxAmplifier: 1.10 },
-      "3y": { nonOilImport: 0.035, oilFxAmplifier: 1.12 },
-      "5y": { nonOilImport: 0.032, oilFxAmplifier: 1.10 },
-      "10y": { nonOilImport: 0.028, oilFxAmplifier: 1.08 },
-    },
-    history: [
-      { date: "2023-01", cpi: 5.2, rate: 3.50, brent: 84, wti: 79, usdkrw: 1230 },
-      { date: "2023-04", cpi: 3.7, rate: 3.50, brent: 80, wti: 76, usdkrw: 1320 },
-      { date: "2023-07", cpi: 2.3, rate: 3.50, brent: 80, wti: 77, usdkrw: 1280 },
-      { date: "2023-10", cpi: 3.8, rate: 3.50, brent: 90, wti: 85, usdkrw: 1350 },
-      { date: "2024-01", cpi: 2.8, rate: 3.50, brent: 80, wti: 75, usdkrw: 1310 },
-      { date: "2024-04", cpi: 2.9, rate: 3.50, brent: 88, wti: 83, usdkrw: 1370 },
-      { date: "2024-07", cpi: 2.6, rate: 3.50, brent: 82, wti: 78, usdkrw: 1380 },
-      { date: "2024-10", cpi: 1.3, rate: 3.25, brent: 73, wti: 69, usdkrw: 1370 },
-      { date: "2025-01", cpi: 2.2, rate: 3.00, brent: 76, wti: 73, usdkrw: 1450 },
-      { date: "2025-04", cpi: 2.1, rate: 2.75, brent: 66, wti: 62, usdkrw: 1420 },
-      { date: "2025-07", cpi: 2.1, rate: 2.50, brent: 65, wti: 62, usdkrw: 1390 },
-      { date: "2025-10", cpi: 2.4, rate: 2.50, brent: 72, wti: 69, usdkrw: 1410 },
-      { date: "2026-01", cpi: 2.0, rate: 2.50, brent: 67, wti: 64, usdkrw: 1430 },
-    ],
+  US: {
+    energy_weight: 0.073,
+    oil_passthrough: 0.65,
+    oil_lag: [0.50, 0.35, 0.15],
+    fx_passthrough: 0.0,       // 미국은 FX 패스스루 무시
+    fx_lag: [],
+    label: "미국",
+    unit: "1982-84=100",
   },
-  currentBrent: 93,
-  currentWTI: 91,
-  currentUSDKRW: 1430,
 };
 
-// ─── Styling constants ───
-const COLORS = {
-  bg: "#0a0e17",
-  card: "#111827",
-  cardBorder: "#1e293b",
-  accent: "#f59e0b",
-  accentDim: "#92400e",
-  blue: "#3b82f6",
-  cyan: "#06b6d4",
-  red: "#ef4444",
-  green: "#10b981",
-  purple: "#a855f7",
-  text: "#e2e8f0",
-  textDim: "#64748b",
-  textMuted: "#475569",
-  gridLine: "#1e293b",
-};
+// ═══════════════════════════════════════════════════════════════
+// 시나리오 프리셋
+// ═══════════════════════════════════════════════════════════════
+const SCENARIO_PRESETS = [
+  { name: "🕊️ 평화 (유가 하락)", oil: 70, fx: 1380, desc: "이란 분쟁 해소, 유가 70$ 복귀" },
+  { name: "📊 기본 (현 수준 유지)", oil: 95, fx: 1430, desc: "현재 유가/환율 수준 지속" },
+  { name: "🔥 긴장 지속", oil: 110, fx: 1470, desc: "호르무즈 긴장 지속, 유가 110$" },
+  { name: "💥 위기 심화", oil: 130, fx: 1520, desc: "해협 봉쇄 장기화, 유가 130$" },
+];
 
-const FONT = "'JetBrains Mono', 'SF Mono', 'Fira Code', monospace";
+// ═══════════════════════════════════════════════════════════════
+// CPI 투사 엔진
+// ═══════════════════════════════════════════════════════════════
+function projectCPI({ cpi2025, cpi2026Realized, oil2025, fx2025, oil2026Realized, fx2026Realized, oilScenario, fxScenario, nonEnergyMom, params }) {
+  const n = 12;
+  // 2026 유가/환율 배열 구성 (실현 + 시나리오)
+  const oil2026 = Array.from({ length: n }, (_, i) =>
+    oil2026Realized[i] !== null ? oil2026Realized[i] : oilScenario
+  );
+  const fx2026 = Array.from({ length: n }, (_, i) =>
+    fx2026Realized[i] !== null ? fx2026Realized[i] : fxScenario
+  );
 
-export default function OilCPIMonitor() {
-  const [data, setData] = useState(DEFAULT_DATA);
-  const [timeframe, setTimeframe] = useState("3y");
-  const [benchmark, setBenchmark] = useState("brent");
-  const currentOilPrice = benchmark === "brent" ? data.currentBrent : data.currentWTI;
-  const [oilScenario, setOilScenario] = useState(data.currentBrent);
-  const [fxScenario, setFxScenario] = useState(data.currentUSDKRW);
-  const [includeIndirect, setIncludeIndirect] = useState(false);
-  const [includeFx, setIncludeFx] = useState(true);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiStatus, setAiStatus] = useState(null);
+  // CPI 지수 투사
+  const cpi2026 = [...cpi2026Realized];
+  const firstNull = cpi2026.findIndex(v => v === null);
 
-  const handleBenchmarkChange = (b) => {
-    setBenchmark(b);
-    setOilScenario(b === "brent" ? data.currentBrent : data.currentWTI);
-  };
+  if (firstNull === -1) {
+    // 모든 월 실현됨
+    const yy = cpi2026.map((v, i) => ((v / cpi2025[i]) - 1) * 100);
+    const avgCpi2026 = cpi2026.reduce((a, b) => a + b, 0) / n;
+    const avgCpi2025 = cpi2025.reduce((a, b) => a + b, 0) / n;
+    return { cpi2026, yy, yearEndYY: yy[11], annualAvgYY: ((avgCpi2026 / avgCpi2025) - 1) * 100 };
+  }
 
-  // ─── CPI Impact Calculation (US: oil only) ───
-  const calculateUSImpact = useCallback(
-    (oilPrice, tf, indirect) => {
-      const c = data.us;
-      const oilChange = ((oilPrice - currentOilPrice) / currentOilPrice) * 100;
-      const passThrough = c.oilPassThrough[tf];
-      let directImpact = oilChange * passThrough;
-      let totalImpact = directImpact;
-      if (indirect) {
-        totalImpact = directImpact * c.indirectMultiplier[tf];
+  for (let m = firstNull; m < n; m++) {
+    // 에너지 MoM 기여도 계산
+    let energyMom = 0;
+    for (let lag = 0; lag < params.oil_lag.length; lag++) {
+      const mLag = m - lag;
+      if (mLag >= 0) {
+        // 유가(원화) MoM 변동
+        const oilKrwCur = oil2026[mLag] * fx2026[mLag];
+        const oilKrwPrev = mLag > 0
+          ? oil2026[mLag - 1] * fx2026[mLag - 1]
+          : oil2025[11] * fx2025[11]; // 전년 12월
+        const oilMom = oilKrwPrev > 0 ? (oilKrwCur / oilKrwPrev - 1) : 0;
+        energyMom += params.oil_lag[lag] * oilMom * params.oil_passthrough;
       }
-      return {
-        directImpact: Math.round(directImpact * 100) / 100,
-        indirectImpact: Math.round((totalImpact - directImpact) * 100) / 100,
-        totalImpact: Math.round(totalImpact * 100) / 100,
-        newCPI: Math.round((c.currentCPI + totalImpact) * 100) / 100,
-        newRealRate: Math.round((c.currentRate - (c.currentCPI + totalImpact)) * 100) / 100,
-        currentRealRate: Math.round((c.currentRate - c.currentCPI) * 100) / 100,
-        oilChangePct: Math.round(oilChange * 10) / 10,
-        // No FX components for US
-        fxNonOilImpact: 0,
-        fxOilAmplifyImpact: 0,
-        fxTotalImpact: 0,
-      };
-    },
-    [data, currentOilPrice]
-  );
-
-  // ─── CPI Impact Calculation (KR: oil + FX) ───
-  const calculateKRImpact = useCallback(
-    (oilPrice, fxRate, tf, indirect, useFx) => {
-      const c = data.kr;
-      const oilChange = ((oilPrice - currentOilPrice) / currentOilPrice) * 100;
-      const fxChange = ((fxRate - data.currentUSDKRW) / data.currentUSDKRW) * 100;
-      const passThrough = c.oilPassThrough[tf];
-      const fxPT = c.fxPassThrough[tf];
-
-      // 1) Oil direct effect
-      let oilDirect = oilChange * passThrough;
-      // 2) Oil indirect (transport, production costs)
-      let oilTotal = indirect ? oilDirect * c.indirectMultiplier[tf] : oilDirect;
-      let oilIndirect = oilTotal - oilDirect;
-
-      // 3) FX effects (Korean CPI only)
-      let fxNonOilImpact = 0;
-      let fxOilAmplifyImpact = 0;
-      if (useFx && fxChange !== 0) {
-        // a) Non-oil import price channel: KRW depreciation → import prices → CPI
-        fxNonOilImpact = fxChange * fxPT.nonOilImport;
-        // b) Oil-FX amplification: oil priced in USD → KRW depreciation amplifies oil CPI effect
-        fxOilAmplifyImpact = oilTotal * (fxPT.oilFxAmplifier - 1);
-      }
-      let fxTotalImpact = fxNonOilImpact + fxOilAmplifyImpact;
-
-      let totalImpact = oilTotal + fxTotalImpact;
-
-      return {
-        directImpact: Math.round(oilDirect * 100) / 100,
-        indirectImpact: Math.round(oilIndirect * 100) / 100,
-        oilTotalImpact: Math.round(oilTotal * 100) / 100,
-        fxNonOilImpact: Math.round(fxNonOilImpact * 100) / 100,
-        fxOilAmplifyImpact: Math.round(fxOilAmplifyImpact * 100) / 100,
-        fxTotalImpact: Math.round(fxTotalImpact * 100) / 100,
-        totalImpact: Math.round(totalImpact * 100) / 100,
-        newCPI: Math.round((c.currentCPI + totalImpact) * 100) / 100,
-        newRealRate: Math.round((c.currentRate - (c.currentCPI + totalImpact)) * 100) / 100,
-        currentRealRate: Math.round((c.currentRate - c.currentCPI) * 100) / 100,
-        oilChangePct: Math.round(oilChange * 10) / 10,
-        fxChangePct: Math.round(fxChange * 10) / 10,
-      };
-    },
-    [data, currentOilPrice]
-  );
-
-  const usImpact = useMemo(
-    () => calculateUSImpact(oilScenario, timeframe, includeIndirect),
-    [oilScenario, timeframe, includeIndirect, calculateUSImpact]
-  );
-  const krImpact = useMemo(
-    () => calculateKRImpact(oilScenario, fxScenario, timeframe, includeIndirect, includeFx),
-    [oilScenario, fxScenario, timeframe, includeIndirect, includeFx, calculateKRImpact]
-  );
-
-  // ─── History chart data ───
-  const buildHistoryData = useCallback(
-    (country) => {
-      const c = data[country];
-      return c.history.map((h) => ({
-        date: h.date,
-        cpi: h.cpi,
-        rate: h.rate,
-        oil: h[benchmark],
-        usdkrw: h.usdkrw,
-        realRate: Math.round((h.rate - h.cpi) * 100) / 100,
-      }));
-    },
-    [data, benchmark]
-  );
-
-  const usChartData = useMemo(() => buildHistoryData("us"), [buildHistoryData]);
-  const krChartData = useMemo(() => buildHistoryData("kr"), [buildHistoryData]);
-
-  // ─── AI Update ───
-  const handleAIUpdate = async () => {
-    setAiLoading(true);
-    setAiStatus(null);
-    try {
-      const response = await fetch("/api/oil-cpi-update", { method: "POST" });
-      if (!response.ok) throw new Error("API error");
-      const parsed = await response.json();
-      setData((prev) => ({
-        ...prev,
-        us: {
-          ...prev.us,
-          currentCPI: parsed.us_cpi ?? prev.us.currentCPI,
-          currentRate: parsed.us_rate ?? prev.us.currentRate,
-        },
-        kr: {
-          ...prev.kr,
-          currentCPI: parsed.kr_cpi ?? prev.kr.currentCPI,
-          currentRate: parsed.kr_rate ?? prev.kr.currentRate,
-        },
-        currentBrent: parsed.brent_oil ?? prev.currentBrent,
-        currentWTI: parsed.wti_oil ?? prev.currentWTI,
-        currentUSDKRW: parsed.usdkrw ?? prev.currentUSDKRW,
-      }));
-      const newPrice = benchmark === "brent"
-        ? (parsed.brent_oil ?? data.currentBrent)
-        : (parsed.wti_oil ?? data.currentWTI);
-      setOilScenario(newPrice);
-      setFxScenario(parsed.usdkrw ?? data.currentUSDKRW);
-      setAiStatus({ ok: true, msg: `Updated: ${parsed.notes || parsed.data_date}` });
-    } catch (e) {
-      console.error(e);
-      setAiStatus({ ok: false, msg: "업데이트 실패 — 재시도 해주세요" });
     }
-    setAiLoading(false);
+    const energyContrib = params.energy_weight * energyMom;
+
+    // 환율 → 비에너지 MoM 기여도 (한국만)
+    let fxContrib = 0;
+    if (params.fx_passthrough > 0) {
+      for (let lag = 0; lag < params.fx_lag.length; lag++) {
+        const mLag = m - lag;
+        if (mLag >= 0) {
+          const fxCur = fx2026[mLag];
+          const fxPrev = mLag > 0 ? fx2026[mLag - 1] : fx2025[11];
+          const fxMom = fxPrev > 0 ? (fxCur / fxPrev - 1) : 0;
+          fxContrib += params.fx_lag[lag] * fxMom * params.fx_passthrough;
+        }
+      }
+    }
+
+    const prevCpi = m > 0 ? cpi2026[m - 1] : cpi2025[11];
+    cpi2026[m] = prevCpi * (1 + nonEnergyMom / 100 + energyContrib + fxContrib);
+  }
+
+  // Y-Y 계산
+  const yy = cpi2026.map((v, i) => ((v / cpi2025[i]) - 1) * 100);
+  const avgCpi2026 = cpi2026.reduce((a, b) => a + b, 0) / n;
+  const avgCpi2025 = cpi2025.reduce((a, b) => a + b, 0) / n;
+
+  return {
+    cpi2026: cpi2026.map(v => Math.round(v * 100) / 100),
+    yy: yy.map(v => Math.round(v * 100) / 100),
+    yearEndYY: Math.round(yy[11] * 100) / 100,
+    annualAvgYY: Math.round(((avgCpi2026 / avgCpi2025) - 1) * 10000) / 100,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 민감도 매트릭스 계산
+// ═══════════════════════════════════════════════════════════════
+function calcSensitivity({ cpi2025, cpi2026Realized, oil2025, fx2025, oil2026Realized, fx2026Realized, nonEnergyMom, params, oilRange, fxRange }) {
+  const results = [];
+  for (const oil of oilRange) {
+    const row = [];
+    for (const fx of fxRange) {
+      const r = projectCPI({
+        cpi2025, cpi2026Realized, oil2025, fx2025,
+        oil2026Realized, fx2026Realized,
+        oilScenario: oil, fxScenario: fx,
+        nonEnergyMom, params,
+      });
+      row.push(r);
+    }
+    results.push(row);
+  }
+  return results;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 메인 컴포넌트
+// ═══════════════════════════════════════════════════════════════
+export default function OilCPIMonitor() {
+  const [country, setCountry] = useState("KR");
+  const [oilScenario, setOilScenario] = useState(95);
+  const [fxScenario, setFxScenario] = useState(1430);
+  const [nonEnergyMom, setNonEnergyMom] = useState(0.15); // 비에너지 MoM %
+  const [showDataEdit, setShowDataEdit] = useState(false);
+  const [showSensitivity, setShowSensitivity] = useState(false);
+  const [tab, setTab] = useState("projection"); // projection | sensitivity | params
+
+  // 편집 가능한 기저 데이터
+  const [krCpi2025, setKrCpi2025] = useState([...DEFAULT_KR_2025]);
+  const [usCpi2025, setUsCpi2025] = useState([...DEFAULT_US_2025]);
+  const [krCpi2026, setKrCpi2026] = useState([...DEFAULT_KR_2026]);
+  const [usCpi2026, setUsCpi2026] = useState([...DEFAULT_US_2026]);
+  const [oil2025, setOil2025] = useState([...DEFAULT_OIL_2025]);
+  const [fx2025, setFx2025] = useState([...DEFAULT_FX_2025]);
+  const [oil2026, setOil2026] = useState([...DEFAULT_OIL_2026]);
+  const [fx2026, setFx2026] = useState([...DEFAULT_FX_2026]);
+
+  const params = PARAMS[country];
+  const cpi2025 = country === "KR" ? krCpi2025 : usCpi2025;
+  const cpi2026Realized = country === "KR" ? krCpi2026 : usCpi2026;
+
+  // ─── 메인 투사 ───
+  const projection = useMemo(() => {
+    return projectCPI({
+      cpi2025, cpi2026Realized, oil2025, fx2025,
+      oil2026Realized: oil2026, fx2026Realized: fx2026,
+      oilScenario, fxScenario, nonEnergyMom, params,
+    });
+  }, [cpi2025, cpi2026Realized, oil2025, fx2025, oil2026, fx2026, oilScenario, fxScenario, nonEnergyMom, params]);
+
+  // ─── 멀티 시나리오 ───
+  const multiScenario = useMemo(() => {
+    return SCENARIO_PRESETS.map(s => ({
+      ...s,
+      result: projectCPI({
+        cpi2025, cpi2026Realized, oil2025, fx2025,
+        oil2026Realized: oil2026, fx2026Realized: fx2026,
+        oilScenario: s.oil, fxScenario: s.fx, nonEnergyMom, params,
+      }),
+    }));
+  }, [cpi2025, cpi2026Realized, oil2025, fx2025, oil2026, fx2026, nonEnergyMom, params]);
+
+  // ─── 민감도 매트릭스 ───
+  const oilRange = [70, 80, 90, 95, 100, 110, 120, 130];
+  const fxRange = country === "KR" ? [1350, 1400, 1430, 1470, 1520] : [100]; // US는 FX 무관
+  const sensitivity = useMemo(() => {
+    if (!showSensitivity) return null;
+    return calcSensitivity({
+      cpi2025, cpi2026Realized, oil2025, fx2025,
+      oil2026Realized: oil2026, fx2026Realized: fx2026,
+      nonEnergyMom, params, oilRange,
+      fxRange: country === "KR" ? fxRange : [1],
+    });
+  }, [showSensitivity, cpi2025, cpi2026Realized, oil2025, fx2025, oil2026, fx2026, nonEnergyMom, params, country]);
+
+  // 실현 월 수
+  const realizedCount = cpi2026Realized.filter(v => v !== null).length;
+
+  // YY 차트의 max/min
+  const yyMin = Math.min(...projection.yy) - 0.3;
+  const yyMax = Math.max(...projection.yy) + 0.3;
+
+  // 색상 함수
+  const yyColor = (v) => {
+    if (v >= 3.0) return "#ef4444";
+    if (v >= 2.5) return "#f97316";
+    if (v >= 2.0) return "#eab308";
+    if (v >= 1.5) return "#22c55e";
+    return "#3b82f6";
   };
 
-  // ─── Presets ───
-  const oilPresets = [
-    { label: "$50", value: 50 },
-    { label: "$60", value: 60 },
-    { label: "$70", value: 70 },
-    { label: "$80", value: 80 },
-    { label: "$90", value: 90 },
-    { label: "$100", value: 100 },
-    { label: "$120", value: 120 },
-  ];
-  const fxPresets = [
-    { label: "₩1,200", value: 1200 },
-    { label: "₩1,300", value: 1300 },
-    { label: "₩1,350", value: 1350 },
-    { label: "₩1,400", value: 1400 },
-    { label: "₩1,450", value: 1450 },
-    { label: "₩1,500", value: 1500 },
-    { label: "₩1,550", value: 1550 },
-  ];
-
-  // ─── Render helpers ───
-  const MetricCard = ({ label, value, unit, sub, color, small }) => (
-    <div style={{
-      background: "rgba(255,255,255,0.03)",
-      border: `1px solid ${COLORS.cardBorder}`,
-      borderRadius: 8,
-      padding: small ? "10px 14px" : "14px 18px",
-      minWidth: small ? 100 : 130,
-    }}>
-      <div style={{ fontSize: 10, color: COLORS.textDim, letterSpacing: 1, textTransform: "uppercase", fontFamily: FONT }}>
-        {label}
-      </div>
-      <div style={{ fontSize: small ? 20 : 26, fontWeight: 700, color: color || COLORS.text, fontFamily: FONT, marginTop: 2 }}>
-        {value}<span style={{ fontSize: 12, color: COLORS.textDim, marginLeft: 2 }}>{unit}</span>
-      </div>
-      {sub && <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2, fontFamily: FONT }}>{sub}</div>}
-    </div>
-  );
-
-  const ImpactPanel = ({ country, impact, countryData, flag }) => {
-    const cpiColor = impact.totalImpact > 0 ? COLORS.red : impact.totalImpact < 0 ? COLORS.green : COLORS.text;
-    const realRateColor = impact.newRealRate > 0 ? COLORS.green : COLORS.red;
-    const isKR = country === "kr";
-    return (
-      <div style={{
-        background: COLORS.card,
-        border: `1px solid ${COLORS.cardBorder}`,
-        borderRadius: 12,
-        padding: 20,
-        flex: 1,
-        minWidth: 300,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-          <span style={{ fontSize: 22 }}>{flag}</span>
-          <span style={{ fontSize: 15, fontWeight: 700, color: COLORS.text, fontFamily: FONT }}>
-            {isKR ? "한국 CPI 영향분석" : "미국 CPI 영향분석"}
-          </span>
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-          <MetricCard label="현재 CPI" value={countryData.currentCPI} unit="%" small />
-          <MetricCard label="시나리오 CPI" value={impact.newCPI} unit="%" color={cpiColor} small />
-          <MetricCard
-            label="유가 직접"
-            value={(impact.directImpact >= 0 ? "+" : "") + impact.directImpact}
-            unit="%p"
-            color={impact.directImpact > 0 ? "#fb923c" : impact.directImpact < 0 ? COLORS.green : COLORS.textDim}
-            small
-          />
-          {includeIndirect && (
-            <MetricCard
-              label="유가 간접"
-              value={(impact.indirectImpact >= 0 ? "+" : "") + impact.indirectImpact}
-              unit="%p"
-              color={impact.indirectImpact > 0 ? COLORS.red : impact.indirectImpact < 0 ? COLORS.green : COLORS.textDim}
-              small
-            />
-          )}
-          {/* FX effect cards — Korean only */}
-          {isKR && includeFx && (
-            <>
-              <MetricCard
-                label="환율→수입물가"
-                value={(impact.fxNonOilImpact >= 0 ? "+" : "") + impact.fxNonOilImpact}
-                unit="%p"
-                color={impact.fxNonOilImpact > 0 ? COLORS.cyan : impact.fxNonOilImpact < 0 ? COLORS.green : COLORS.textDim}
-                small
-              />
-              <MetricCard
-                label="환율→원유증폭"
-                value={(impact.fxOilAmplifyImpact >= 0 ? "+" : "") + impact.fxOilAmplifyImpact}
-                unit="%p"
-                color={impact.fxOilAmplifyImpact > 0 ? COLORS.purple : impact.fxOilAmplifyImpact < 0 ? COLORS.green : COLORS.textDim}
-                small
-              />
-            </>
-          )}
-          <MetricCard
-            label="총 영향"
-            value={(impact.totalImpact >= 0 ? "+" : "") + impact.totalImpact}
-            unit="%p"
-            color={cpiColor}
-            small
-          />
-          <MetricCard label="기준금리" value={countryData.currentRate} unit="%" small />
-          <MetricCard
-            label="현 실질금리"
-            value={impact.currentRealRate}
-            unit="%"
-            color={impact.currentRealRate > 0 ? COLORS.green : COLORS.red}
-            small
-          />
-          <MetricCard
-            label="시나리오 실질금리"
-            value={impact.newRealRate}
-            unit="%"
-            color={realRateColor}
-            small
-            sub={`${impact.newRealRate < impact.currentRealRate ? "▼" : "▲"} ${Math.abs(Math.round((impact.newRealRate - impact.currentRealRate) * 100) / 100)}%p`}
-          />
-        </div>
-        {/* FX decomposition box (KR only) */}
-        {isKR && includeFx && impact.fxTotalImpact !== 0 && (
-          <div style={{
-            marginTop: 14,
-            padding: "12px 16px",
-            borderRadius: 8,
-            background: `linear-gradient(135deg, rgba(6,182,212,0.04), rgba(168,85,247,0.04))`,
-            border: `1px solid rgba(6,182,212,0.15)`,
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span style={{ fontSize: 12 }}>💱</span>
-              <span style={{ fontSize: 11, fontWeight: 700, color: COLORS.cyan, fontFamily: FONT }}>
-                환율 효과 분해 (USD/KRW {fxScenario.toLocaleString()}원, {impact.fxChangePct > 0 ? "+" : ""}{impact.fxChangePct}%)
-              </span>
-            </div>
-            <div style={{ display: "flex", gap: 16 }}>
-              <div>
-                <div style={{ fontSize: 9, color: COLORS.textDim, fontFamily: FONT }}>비에너지 수입물가</div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: impact.fxNonOilImpact > 0 ? COLORS.red : COLORS.green, fontFamily: FONT }}>
-                  {impact.fxNonOilImpact >= 0 ? "+" : ""}{impact.fxNonOilImpact}%p
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: 9, color: COLORS.textDim, fontFamily: FONT }}>원유 달러표시 증폭</div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: impact.fxOilAmplifyImpact > 0 ? COLORS.red : COLORS.green, fontFamily: FONT }}>
-                  {impact.fxOilAmplifyImpact >= 0 ? "+" : ""}{impact.fxOilAmplifyImpact}%p
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: 9, color: COLORS.textDim, fontFamily: FONT }}>환율 효과 합계</div>
-                <div style={{ fontSize: 14, fontWeight: 800, color: impact.fxTotalImpact > 0 ? COLORS.red : COLORS.green, fontFamily: FONT }}>
-                  {impact.fxTotalImpact >= 0 ? "+" : ""}{impact.fxTotalImpact}%p
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    );
+  const S = {
+    page: { minHeight: "100vh", background: "#0a0e17", color: "#e2e8f0", fontFamily: "'Pretendard', -apple-system, sans-serif", padding: "0" },
+    header: { padding: "24px 24px 16px", borderBottom: "1px solid #1e293b" },
+    title: { fontSize: "20px", fontWeight: 700, color: "#f1f5f9", margin: 0, letterSpacing: "-0.5px" },
+    subtitle: { fontSize: "12px", color: "#64748b", marginTop: "4px", fontFamily: "monospace" },
+    body: { padding: "20px 24px", maxWidth: "1200px" },
+    card: { background: "#111827", border: "1px solid #1e293b", borderRadius: "8px", padding: "16px", marginBottom: "16px" },
+    label: { fontSize: "11px", color: "#64748b", textTransform: "uppercase", fontWeight: 600, letterSpacing: "0.5px", marginBottom: "8px" },
+    input: { background: "#0f172a", border: "1px solid #334155", borderRadius: "4px", padding: "6px 10px", color: "#e2e8f0", fontSize: "13px", width: "100%" },
+    btn: (active) => ({
+      padding: "6px 14px", borderRadius: "6px", border: active ? "1px solid #6366f1" : "1px solid #334155",
+      background: active ? "#312e81" : "transparent", color: active ? "#a5b4fc" : "#94a3b8",
+      fontSize: "12px", fontWeight: 600, cursor: "pointer",
+    }),
+    scenarioBtn: (active) => ({
+      padding: "8px 12px", borderRadius: "6px", border: active ? "1px solid #6366f1" : "1px solid #1e293b",
+      background: active ? "#1e1b4b" : "#0f172a", color: active ? "#c7d2fe" : "#94a3b8",
+      fontSize: "12px", cursor: "pointer", textAlign: "left", width: "100%",
+    }),
+    th: { padding: "6px 8px", fontSize: "11px", color: "#64748b", fontWeight: 600, textAlign: "center", borderBottom: "1px solid #1e293b" },
+    td: (highlight) => ({
+      padding: "5px 8px", fontSize: "12px", textAlign: "center", fontFamily: "monospace",
+      color: highlight ? "#f1f5f9" : "#94a3b8", borderBottom: "1px solid #0f172a",
+      background: highlight ? "#1e1b4b22" : "transparent",
+    }),
+    bigNum: { fontSize: "28px", fontWeight: 700, fontFamily: "monospace", letterSpacing: "-1px" },
+    tag: (color) => ({
+      display: "inline-block", padding: "2px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: 600,
+      background: color + "20", color: color, marginLeft: "8px",
+    }),
   };
 
-  const RateChart = ({ chartData, country, flag, impact, countryData }) => {
-    const allVals = chartData.flatMap(d => [d.cpi, d.rate, d.realRate]).filter(v => v != null);
-    allVals.push(impact.newCPI, impact.newRealRate);
-    const yMin = Math.floor(Math.min(...allVals) - 0.5);
-    const yMax = Math.ceil(Math.max(...allVals) + 0.5);
-
-    return (
-      <div style={{
-        background: COLORS.card,
-        border: `1px solid ${COLORS.cardBorder}`,
-        borderRadius: 12,
-        padding: 20,
-        flex: 1,
-        minWidth: 340,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-          <span style={{ fontSize: 18 }}>{flag}</span>
-          <span style={{ fontSize: 13, fontWeight: 700, color: COLORS.text, fontFamily: FONT }}>
-            {country === "us" ? "미국" : "한국"} 기준금리 · CPI · 실질금리
-          </span>
-        </div>
-        <ResponsiveContainer width="100%" height={280}>
-          <ComposedChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke={COLORS.gridLine} />
-            <XAxis dataKey="date" tick={{ fontSize: 9, fill: COLORS.textDim, fontFamily: FONT }} interval={1} />
-            <YAxis tick={{ fontSize: 9, fill: COLORS.textDim, fontFamily: FONT }} domain={[yMin, yMax]} />
-            <Tooltip
-              contentStyle={{
-                background: "#1a2233",
-                border: `1px solid ${COLORS.cardBorder}`,
-                borderRadius: 8,
-                fontFamily: FONT,
-                fontSize: 11,
-                color: COLORS.text,
-              }}
-            />
-            <ReferenceLine y={0} stroke={COLORS.textMuted} strokeDasharray="4 4" />
-            <Line type="stepAfter" dataKey="rate" stroke={COLORS.accent} strokeWidth={2.5} dot={false} name="기준금리" />
-            <Line type="monotone" dataKey="cpi" stroke={COLORS.blue} strokeWidth={2}
-              dot={(props) => {
-                const { cx, cy, index } = props;
-                if (index === chartData.length - 1) {
-                  return <circle cx={cx} cy={cy} r={5} fill={COLORS.blue} stroke="#fff" strokeWidth={1.5} />;
-                }
-                return null;
-              }}
-              name="CPI"
-            />
-            <Line type="monotone" dataKey="realRate" stroke={COLORS.green} strokeWidth={1.5} strokeDasharray="4 4"
-              dot={(props) => {
-                const { cx, cy, index } = props;
-                if (index === chartData.length - 1) {
-                  return <circle cx={cx} cy={cy} r={5} fill={COLORS.green} stroke="#fff" strokeWidth={1.5} />;
-                }
-                return null;
-              }}
-              name="실질금리"
-            />
-            <ReferenceLine y={impact.newCPI} stroke={COLORS.red} strokeDasharray="6 4" strokeWidth={1} opacity={0.5} />
-            <ReferenceLine y={impact.newRealRate} stroke={COLORS.purple} strokeDasharray="6 4" strokeWidth={1} opacity={0.5} />
-            <Legend wrapperStyle={{ fontSize: 10, fontFamily: FONT }} />
-          </ComposedChart>
-        </ResponsiveContainer>
-        <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
-          <ScenarioBadge label="시나리오 CPI" from={countryData.currentCPI} to={impact.newCPI} unit="%" color={COLORS.red}
-            direction={impact.totalImpact > 0 ? "up" : impact.totalImpact < 0 ? "down" : "flat"} />
-          <ScenarioBadge label="시나리오 실질금리" from={impact.currentRealRate} to={impact.newRealRate} unit="%" color={COLORS.purple}
-            direction={impact.newRealRate < impact.currentRealRate ? "down" : impact.newRealRate > impact.currentRealRate ? "up" : "flat"} />
-        </div>
-      </div>
-    );
+  // ─── 데이터 편집 핸들러 ───
+  const updateArr = (setter, idx, val) => {
+    setter(prev => {
+      const next = [...prev];
+      next[idx] = val === "" ? null : parseFloat(val);
+      return next;
+    });
   };
-
-  const ScenarioBadge = ({ label, from, to, unit, color, direction }) => {
-    const arrow = direction === "up" ? "↗" : direction === "down" ? "↘" : "→";
-    return (
-      <div style={{
-        background: `${color}12`,
-        border: `1px solid ${color}40`,
-        borderRadius: 8,
-        padding: "8px 14px",
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-      }}>
-        <span style={{ fontSize: 9, color: COLORS.textDim, fontFamily: FONT, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</span>
-        <span style={{ fontSize: 14, fontWeight: 700, color: COLORS.textDim, fontFamily: FONT }}>{from}{unit}</span>
-        <span style={{ fontSize: 18, color, fontWeight: 800, lineHeight: 1 }}>{arrow}</span>
-        <span style={{ fontSize: 16, fontWeight: 800, color, fontFamily: FONT }}>{to}{unit}</span>
-        <span style={{ fontSize: 10, color, fontFamily: FONT, fontWeight: 700, background: `${color}20`, borderRadius: 4, padding: "2px 6px" }}>
-          {to - from > 0 ? "+" : ""}{Math.round((to - from) * 100) / 100}%p
-        </span>
-      </div>
-    );
-  };
-
-  const oilChangePct = Math.round(((oilScenario - currentOilPrice) / currentOilPrice) * 1000) / 10;
-  const fxChangePct = Math.round(((fxScenario - data.currentUSDKRW) / data.currentUSDKRW) * 1000) / 10;
-  const benchmarkLabel = benchmark === "brent" ? "Brent" : "WTI";
 
   return (
-    <div style={{
-      background: COLORS.bg,
-      minHeight: "100vh",
-      color: COLORS.text,
-      fontFamily: FONT,
-      padding: "0 0 40px 0",
-    }}>
-      {/* ─── Header ─── */}
-      <div style={{
-        background: "linear-gradient(135deg, #0f172a 0%, #1a1a2e 50%, #16213e 100%)",
-        borderBottom: `1px solid ${COLORS.cardBorder}`,
-        padding: "20px 28px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        flexWrap: "wrap",
-        gap: 12,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <div style={{ fontSize: 28, filter: "drop-shadow(0 0 8px rgba(245,158,11,0.4))" }}>🐺</div>
+    <div style={S.page}>
+      {/* ═══ 헤더 ═══ */}
+      <div style={S.header}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
-            <div style={{ fontSize: 11, color: COLORS.accent, letterSpacing: 3, textTransform: "uppercase", fontWeight: 600 }}>
-              늑대무리원정단 WOLFPACK
-            </div>
-            <div style={{
-              fontSize: 20, fontWeight: 800,
-              background: "linear-gradient(90deg, #f59e0b, #06b6d4, #ef4444)",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-              letterSpacing: -0.5,
-            }}>
-              Oil + FX → CPI Monitor
-            </div>
+            <h1 style={S.title}>🛢️ Oil → CPI Projection Monitor</h1>
+            <p style={S.subtitle}>유가/환율 시나리오 → CPI Y-Y 연말값 · 연평균값 투사 (시차 반영 모델)</p>
           </div>
+          <a href="/" style={{ fontSize: "12px", color: "#64748b", textDecoration: "none" }}>← 컨트롤타워</a>
         </div>
-        <button
-          onClick={handleAIUpdate}
-          disabled={aiLoading}
-          style={{
-            background: aiLoading ? "rgba(245,158,11,0.15)" : "linear-gradient(135deg, #f59e0b, #d97706)",
-            color: aiLoading ? COLORS.accent : "#000",
-            border: "none", borderRadius: 8, padding: "10px 22px",
-            fontFamily: FONT, fontSize: 12, fontWeight: 700,
-            cursor: aiLoading ? "wait" : "pointer",
-            display: "flex", alignItems: "center", gap: 8, transition: "all 0.2s",
-          }}
-        >
-          {aiLoading ? (<><span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⟳</span> AI 업데이트 중...</>)
-            : (<>⚡ AI 데이터 업데이트</>)}
-        </button>
-        <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+
+        {/* 국가 전환 */}
+        <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
+          <button style={S.btn(country === "KR")} onClick={() => setCountry("KR")}>🇰🇷 한국</button>
+          <button style={S.btn(country === "US")} onClick={() => setCountry("US")}>🇺🇸 미국</button>
+          <div style={{ flex: 1 }} />
+          <button
+            style={{ ...S.btn(false), fontSize: "11px" }}
+            onClick={() => setShowDataEdit(!showDataEdit)}
+          >
+            {showDataEdit ? "📊 데이터 편집 닫기" : "✏️ 기저 데이터 편집"}
+          </button>
+        </div>
       </div>
 
-      {aiStatus && (
-        <div style={{
-          margin: "12px 28px 0", padding: "8px 16px", borderRadius: 6, fontSize: 11,
-          background: aiStatus.ok ? "rgba(16,185,129,0.1)" : "rgba(239,68,68,0.1)",
-          color: aiStatus.ok ? COLORS.green : COLORS.red,
-          border: `1px solid ${aiStatus.ok ? "rgba(16,185,129,0.3)" : "rgba(239,68,68,0.3)"}`,
-        }}>
-          {aiStatus.ok ? "✓" : "✗"} {aiStatus.msg}
+      <div style={S.body}>
+        {/* ═══ 핵심 요약 카드 ═══ */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "12px", marginBottom: "20px" }}>
+          {[
+            { label: "연말 CPI Y-Y", value: projection.yearEndYY, suffix: "%" },
+            { label: "연평균 CPI Y-Y", value: projection.annualAvgYY, suffix: "%" },
+            { label: "유가 시나리오", value: oilScenario, suffix: " $/bbl" },
+            { label: country === "KR" ? "환율 시나리오" : "Energy Wt.", value: country === "KR" ? fxScenario : (params.energy_weight * 100).toFixed(1), suffix: country === "KR" ? " ₩/$" : "%" },
+          ].map((item, i) => (
+            <div key={i} style={S.card}>
+              <div style={S.label}>{item.label}</div>
+              <div style={{ ...S.bigNum, color: i < 2 ? yyColor(item.value) : "#e2e8f0" }}>
+                {typeof item.value === "number" ? item.value.toFixed(i < 2 ? 2 : 0) : item.value}
+                <span style={{ fontSize: "14px", fontWeight: 400, color: "#64748b" }}>{item.suffix}</span>
+              </div>
+            </div>
+          ))}
         </div>
-      )}
 
-      <div style={{ padding: "20px 28px", display: "flex", flexDirection: "column", gap: 20 }}>
+        {/* ═══ 시나리오 입력 ═══ */}
+        <div style={S.card}>
+          <div style={S.label}>시나리오 입력</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "16px", marginBottom: "12px" }}>
+            {SCENARIO_PRESETS.map((s, i) => (
+              <button
+                key={i}
+                style={S.scenarioBtn(oilScenario === s.oil && fxScenario === s.fx)}
+                onClick={() => { setOilScenario(s.oil); setFxScenario(s.fx); }}
+              >
+                <div style={{ fontWeight: 600, marginBottom: "2px" }}>{s.name}</div>
+                <div style={{ fontSize: "11px", color: "#64748b" }}>WTI ${s.oil} · ₩{s.fx}</div>
+              </button>
+            ))}
+          </div>
 
-        {/* ─── Controls Row ─── */}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end" }}>
-          {/* Timeframe */}
-          <div>
-            <div style={{ fontSize: 10, color: COLORS.textDim, letterSpacing: 1, marginBottom: 6, textTransform: "uppercase" }}>패스스루 추정 기간</div>
-            <div style={{ display: "flex", gap: 4 }}>
-              {["1y", "3y", "5y", "10y"].map((tf) => (
-                <button key={tf} onClick={() => setTimeframe(tf)} style={{
-                  background: timeframe === tf ? COLORS.accent : "rgba(255,255,255,0.05)",
-                  color: timeframe === tf ? "#000" : COLORS.textDim,
-                  border: `1px solid ${timeframe === tf ? COLORS.accent : COLORS.cardBorder}`,
-                  borderRadius: 6, padding: "6px 14px", fontSize: 12,
-                  fontWeight: timeframe === tf ? 700 : 500, cursor: "pointer", fontFamily: FONT, transition: "all 0.15s",
-                }}>{tf.replace("y", "Y")}</button>
-              ))}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
+            <div>
+              <div style={{ fontSize: "11px", color: "#64748b", marginBottom: "4px" }}>WTI 유가 ($/bbl)</div>
+              <input
+                type="number" style={S.input} value={oilScenario}
+                onChange={e => setOilScenario(Number(e.target.value))}
+              />
+              <input
+                type="range" min="50" max="150" step="5" value={oilScenario}
+                onChange={e => setOilScenario(Number(e.target.value))}
+                style={{ width: "100%", marginTop: "4px", accentColor: "#6366f1" }}
+              />
             </div>
-          </div>
-
-          {/* Indirect toggle */}
-          <div>
-            <div style={{ fontSize: 10, color: COLORS.textDim, letterSpacing: 1, marginBottom: 6, textTransform: "uppercase" }}>간접효과</div>
-            <button onClick={() => setIncludeIndirect(!includeIndirect)} style={{
-              background: includeIndirect ? "rgba(239,68,68,0.15)" : "rgba(255,255,255,0.05)",
-              color: includeIndirect ? COLORS.red : COLORS.textDim,
-              border: `1px solid ${includeIndirect ? "rgba(239,68,68,0.4)" : COLORS.cardBorder}`,
-              borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer",
-              fontFamily: FONT, display: "flex", alignItems: "center", gap: 6, transition: "all 0.15s",
-            }}>
-              <span style={{
-                display: "inline-block", width: 14, height: 14, borderRadius: 3,
-                border: `2px solid ${includeIndirect ? COLORS.red : COLORS.textMuted}`,
-                background: includeIndirect ? COLORS.red : "transparent", transition: "all 0.15s", position: "relative",
-              }}>{includeIndirect && <span style={{ position: "absolute", top: -1, left: 1, fontSize: 10, color: "#fff" }}>✓</span>}</span>
-              간접적 기여도 포함
-            </button>
-          </div>
-
-          {/* FX toggle (NEW) */}
-          <div>
-            <div style={{ fontSize: 10, color: COLORS.textDim, letterSpacing: 1, marginBottom: 6, textTransform: "uppercase" }}>환율효과</div>
-            <button onClick={() => setIncludeFx(!includeFx)} style={{
-              background: includeFx ? "rgba(6,182,212,0.15)" : "rgba(255,255,255,0.05)",
-              color: includeFx ? COLORS.cyan : COLORS.textDim,
-              border: `1px solid ${includeFx ? "rgba(6,182,212,0.4)" : COLORS.cardBorder}`,
-              borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer",
-              fontFamily: FONT, display: "flex", alignItems: "center", gap: 6, transition: "all 0.15s",
-            }}>
-              <span style={{
-                display: "inline-block", width: 14, height: 14, borderRadius: 3,
-                border: `2px solid ${includeFx ? COLORS.cyan : COLORS.textMuted}`,
-                background: includeFx ? COLORS.cyan : "transparent", transition: "all 0.15s", position: "relative",
-              }}>{includeFx && <span style={{ position: "absolute", top: -1, left: 1, fontSize: 10, color: "#fff" }}>✓</span>}</span>
-              환율 기여도 포함 (🇰🇷)
-            </button>
-          </div>
-
-          {/* Benchmark */}
-          <div>
-            <div style={{ fontSize: 10, color: COLORS.textDim, letterSpacing: 1, marginBottom: 6, textTransform: "uppercase" }}>유종 선택</div>
-            <div style={{ display: "flex", gap: 4 }}>
-              {[{ id: "brent", label: "Brent", price: data.currentBrent }, { id: "wti", label: "WTI", price: data.currentWTI }].map((b) => (
-                <button key={b.id} onClick={() => handleBenchmarkChange(b.id)} style={{
-                  background: benchmark === b.id ? COLORS.accent : "rgba(255,255,255,0.05)",
-                  color: benchmark === b.id ? "#000" : COLORS.textDim,
-                  border: `1px solid ${benchmark === b.id ? COLORS.accent : COLORS.cardBorder}`,
-                  borderRadius: 6, padding: "6px 14px", fontSize: 12,
-                  fontWeight: benchmark === b.id ? 700 : 500, cursor: "pointer", fontFamily: FONT, transition: "all 0.15s",
-                }}>{b.label} <span style={{ opacity: 0.6, fontSize: 10 }}>${b.price}</span></button>
-              ))}
-            </div>
-          </div>
-
-          {/* Current info */}
-          <div style={{ marginLeft: "auto", textAlign: "right" }}>
-            <div style={{ fontSize: 10, color: COLORS.textDim, letterSpacing: 1, textTransform: "uppercase" }}>현재 {benchmarkLabel}</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: COLORS.accent }}>
-              ${currentOilPrice}<span style={{ fontSize: 11, color: COLORS.textDim }}>/bbl</span>
-            </div>
-            <div style={{ fontSize: 9, color: COLORS.textMuted }}>
-              Brent ${data.currentBrent} · WTI ${data.currentWTI} · Spread ${data.currentBrent - data.currentWTI} · USD/KRW {data.currentUSDKRW.toLocaleString()}
+            {country === "KR" && (
+              <div>
+                <div style={{ fontSize: "11px", color: "#64748b", marginBottom: "4px" }}>USDKRW 환율</div>
+                <input
+                  type="number" style={S.input} value={fxScenario}
+                  onChange={e => setFxScenario(Number(e.target.value))}
+                />
+                <input
+                  type="range" min="1250" max="1600" step="10" value={fxScenario}
+                  onChange={e => setFxScenario(Number(e.target.value))}
+                  style={{ width: "100%", marginTop: "4px", accentColor: "#6366f1" }}
+                />
+              </div>
+            )}
+            <div>
+              <div style={{ fontSize: "11px", color: "#64748b", marginBottom: "4px" }}>비에너지 MoM 추세 (%)</div>
+              <input
+                type="number" step="0.01" style={S.input} value={nonEnergyMom}
+                onChange={e => setNonEnergyMom(Number(e.target.value))}
+              />
+              <input
+                type="range" min="0" max="0.4" step="0.01" value={nonEnergyMom}
+                onChange={e => setNonEnergyMom(Number(e.target.value))}
+                style={{ width: "100%", marginTop: "4px", accentColor: "#6366f1" }}
+              />
             </div>
           </div>
         </div>
 
-        {/* ─── Oil + FX Scenario Sliders ─── */}
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-          {/* Oil Slider */}
-          <div style={{
-            background: COLORS.card, border: `1px solid ${COLORS.cardBorder}`,
-            borderRadius: 12, padding: "18px 24px", flex: 1, minWidth: 340,
-          }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.text }}>🛢️ {benchmarkLabel} 유가 시나리오</div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                <span style={{ fontSize: 32, fontWeight: 800, color: COLORS.accent }}>${oilScenario}</span>
-                <span style={{ fontSize: 12, color: COLORS.textDim }}>/bbl</span>
-                <span style={{ fontSize: 13, fontWeight: 700, color: oilChangePct > 0 ? COLORS.red : oilChangePct < 0 ? COLORS.green : COLORS.textDim, marginLeft: 8 }}>
-                  {oilChangePct > 0 ? "+" : ""}{oilChangePct}%
+        {/* ═══ 탭 전환 ═══ */}
+        <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+          <button style={S.btn(tab === "projection")} onClick={() => setTab("projection")}>📈 월별 투사</button>
+          <button style={S.btn(tab === "scenario")} onClick={() => setTab("scenario")}>🔀 시나리오 비교</button>
+          <button style={S.btn(tab === "sensitivity")} onClick={() => { setTab("sensitivity"); setShowSensitivity(true); }}>📊 민감도 매트릭스</button>
+          <button style={S.btn(tab === "params")} onClick={() => setTab("params")}>⚙️ 모델 설명</button>
+        </div>
+
+        {/* ═══ 탭: 월별 투사 ═══ */}
+        {tab === "projection" && (
+          <>
+            {/* CPI Y-Y 월별 바 차트 */}
+            <div style={S.card}>
+              <div style={S.label}>{params.label} CPI Y-Y 월별 추이 (2026)</div>
+              <div style={{ display: "flex", alignItems: "flex-end", gap: "4px", height: "180px", marginTop: "8px" }}>
+                {projection.yy.map((v, i) => {
+                  const isRealized = i < realizedCount;
+                  const barH = Math.max(4, ((v - yyMin) / (yyMax - yyMin)) * 150);
+                  return (
+                    <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
+                      <div style={{ fontSize: "10px", fontFamily: "monospace", color: yyColor(v), fontWeight: 600, marginBottom: "2px" }}>
+                        {v.toFixed(1)}
+                      </div>
+                      <div style={{
+                        width: "100%", height: `${barH}px`, borderRadius: "3px 3px 0 0",
+                        background: isRealized
+                          ? `linear-gradient(180deg, ${yyColor(v)}, ${yyColor(v)}88)`
+                          : `repeating-linear-gradient(135deg, ${yyColor(v)}40, ${yyColor(v)}40 2px, ${yyColor(v)}20 2px, ${yyColor(v)}20 4px)`,
+                        border: isRealized ? "none" : `1px dashed ${yyColor(v)}60`,
+                        transition: "height 0.3s ease",
+                      }} />
+                      <div style={{ fontSize: "10px", color: isRealized ? "#94a3b8" : "#475569", marginTop: "4px" }}>
+                        {MONTHS_EN[i]}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ display: "flex", gap: "16px", marginTop: "8px", justifyContent: "center" }}>
+                <span style={{ fontSize: "10px", color: "#64748b" }}>
+                  <span style={{ display: "inline-block", width: "12px", height: "8px", background: "#6366f1", borderRadius: "2px", marginRight: "4px" }} />
+                  실현
+                </span>
+                <span style={{ fontSize: "10px", color: "#64748b" }}>
+                  <span style={{ display: "inline-block", width: "12px", height: "8px", background: "repeating-linear-gradient(135deg, #6366f140, #6366f140 2px, #6366f120 2px, #6366f120 4px)", border: "1px dashed #6366f160", borderRadius: "2px", marginRight: "4px" }} />
+                  투사
                 </span>
               </div>
             </div>
-            <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
-              {oilPresets.map((p) => (
-                <button key={p.value} onClick={() => setOilScenario(p.value)} style={{
-                  background: oilScenario === p.value ? "rgba(245,158,11,0.2)" : "rgba(255,255,255,0.04)",
-                  color: oilScenario === p.value ? COLORS.accent : COLORS.textDim,
-                  border: `1px solid ${oilScenario === p.value ? COLORS.accentDim : COLORS.cardBorder}`,
-                  borderRadius: 5, padding: "4px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: FONT,
-                }}>{p.label}</button>
-              ))}
-            </div>
-            <input type="range" min={30} max={150} step={1} value={oilScenario}
-              onChange={(e) => setOilScenario(Number(e.target.value))}
-              style={{
-                width: "100%", height: 6, appearance: "none",
-                background: `linear-gradient(to right, ${COLORS.green} 0%, ${COLORS.accent} 40%, ${COLORS.red} 100%)`,
-                borderRadius: 3, outline: "none", cursor: "pointer",
-              }}
-            />
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
-              <span style={{ fontSize: 9, color: COLORS.textMuted }}>$30</span>
-              <span style={{ fontSize: 9, color: COLORS.textMuted }}>$70</span>
-              <span style={{ fontSize: 9, color: COLORS.textMuted }}>$100</span>
-              <span style={{ fontSize: 9, color: COLORS.textMuted }}>$150</span>
-            </div>
-          </div>
 
-          {/* FX Slider (NEW) */}
-          <div style={{
-            background: COLORS.card, border: `1px solid ${COLORS.cardBorder}`,
-            borderRadius: 12, padding: "18px 24px", flex: 1, minWidth: 340,
-            opacity: includeFx ? 1 : 0.4, transition: "opacity 0.3s",
-            pointerEvents: includeFx ? "auto" : "none",
-          }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.text }}>💱 USD/KRW 환율 시나리오</div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                <span style={{ fontSize: 32, fontWeight: 800, color: COLORS.cyan }}>₩{fxScenario.toLocaleString()}</span>
-                <span style={{ fontSize: 13, fontWeight: 700, color: fxChangePct > 0 ? COLORS.red : fxChangePct < 0 ? COLORS.green : COLORS.textDim, marginLeft: 8 }}>
-                  {fxChangePct > 0 ? "+" : ""}{fxChangePct}%
-                </span>
+            {/* 월별 상세 테이블 */}
+            <div style={S.card}>
+              <div style={S.label}>{params.label} 2026 월별 CPI 투사 상세</div>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr>
+                      <th style={S.th}></th>
+                      {MONTHS.map((m, i) => (
+                        <th key={i} style={{ ...S.th, color: i < realizedCount ? "#a5b4fc" : "#475569" }}>{m}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style={{ ...S.td(false), textAlign: "left", fontWeight: 600, fontSize: "11px" }}>2025 CPI</td>
+                      {cpi2025.map((v, i) => <td key={i} style={S.td(false)}>{v.toFixed(1)}</td>)}
+                    </tr>
+                    <tr>
+                      <td style={{ ...S.td(true), textAlign: "left", fontWeight: 600, fontSize: "11px" }}>2026 CPI</td>
+                      {projection.cpi2026.map((v, i) => (
+                        <td key={i} style={{ ...S.td(i < realizedCount), fontWeight: i < realizedCount ? 600 : 400 }}>
+                          {v.toFixed(1)}
+                        </td>
+                      ))}
+                    </tr>
+                    <tr>
+                      <td style={{ ...S.td(false), textAlign: "left", fontWeight: 600, fontSize: "11px", color: "#eab308" }}>Y-Y %</td>
+                      {projection.yy.map((v, i) => (
+                        <td key={i} style={{ ...S.td(false), color: yyColor(v), fontWeight: 600 }}>
+                          {v.toFixed(2)}
+                        </td>
+                      ))}
+                    </tr>
+                    <tr>
+                      <td style={{ ...S.td(false), textAlign: "left", fontWeight: 600, fontSize: "11px" }}>유가 $/bbl</td>
+                      {Array.from({ length: 12 }, (_, i) => oil2026[i] !== null ? oil2026[i] : oilScenario).map((v, i) => (
+                        <td key={i} style={S.td(false)}>{v}</td>
+                      ))}
+                    </tr>
+                    {country === "KR" && (
+                      <tr>
+                        <td style={{ ...S.td(false), textAlign: "left", fontWeight: 600, fontSize: "11px" }}>USDKRW</td>
+                        {Array.from({ length: 12 }, (_, i) => fx2026[i] !== null ? fx2026[i] : fxScenario).map((v, i) => (
+                          <td key={i} style={S.td(false)}>{v}</td>
+                        ))}
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
-            <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
-              {fxPresets.map((p) => (
-                <button key={p.value} onClick={() => setFxScenario(p.value)} style={{
-                  background: fxScenario === p.value ? "rgba(6,182,212,0.2)" : "rgba(255,255,255,0.04)",
-                  color: fxScenario === p.value ? COLORS.cyan : COLORS.textDim,
-                  border: `1px solid ${fxScenario === p.value ? "rgba(6,182,212,0.4)" : COLORS.cardBorder}`,
-                  borderRadius: 5, padding: "4px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: FONT,
-                }}>{p.label}</button>
-              ))}
-            </div>
-            <input type="range" min={1100} max={1650} step={10} value={fxScenario}
-              onChange={(e) => setFxScenario(Number(e.target.value))}
-              style={{
-                width: "100%", height: 6, appearance: "none",
-                background: `linear-gradient(to right, ${COLORS.green} 0%, ${COLORS.cyan} 50%, ${COLORS.red} 100%)`,
-                borderRadius: 3, outline: "none", cursor: "pointer",
-              }}
-            />
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
-              <span style={{ fontSize: 9, color: COLORS.textMuted }}>₩1,100</span>
-              <span style={{ fontSize: 9, color: COLORS.textMuted }}>₩1,300</span>
-              <span style={{ fontSize: 9, color: COLORS.textMuted }}>₩1,500</span>
-              <span style={{ fontSize: 9, color: COLORS.textMuted }}>₩1,650</span>
-            </div>
-          </div>
-        </div>
+          </>
+        )}
 
-        {/* ─── Impact Panels ─── */}
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-          <ImpactPanel country="us" impact={usImpact} countryData={data.us} flag="🇺🇸" />
-          <ImpactPanel country="kr" impact={krImpact} countryData={data.kr} flag="🇰🇷" />
-        </div>
-
-        {/* ─── Oil × FX Cross Scenario Heatmap (NEW) ─── */}
-        {includeFx && (
-          <div style={{
-            background: COLORS.card, border: `1px solid ${COLORS.cardBorder}`,
-            borderRadius: 12, padding: 20, overflowX: "auto",
-          }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.text, marginBottom: 14 }}>
-              🔥 유가 × 환율 교차 시나리오 → 🇰🇷 CPI
-            </div>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+        {/* ═══ 탭: 시나리오 비교 ═══ */}
+        {tab === "scenario" && (
+          <div style={S.card}>
+            <div style={S.label}>{params.label} 시나리오별 CPI Y-Y 비교</div>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  <th style={{ ...thStyle, textAlign: "left" }}>{benchmarkLabel} \ USD/KRW</th>
-                  {[1200, 1300, 1400, 1500, 1600].map(fx => (
-                    <th key={fx} style={{ ...thStyle, color: COLORS.cyan }}>₩{fx.toLocaleString()}</th>
-                  ))}
+                  <th style={S.th}>시나리오</th>
+                  <th style={S.th}>WTI</th>
+                  {country === "KR" && <th style={S.th}>USDKRW</th>}
+                  <th style={S.th}>연말 Y-Y</th>
+                  <th style={S.th}>연평균 Y-Y</th>
+                  <th style={S.th}>6월 Y-Y</th>
+                  <th style={S.th}>9월 Y-Y</th>
                 </tr>
               </thead>
               <tbody>
-                {[50, 60, 70, 80, 90, 100, 120].map((oil) => (
-                  <tr key={oil}>
-                    <td style={{ ...tdStyle, textAlign: "left", fontWeight: 700, color: COLORS.accent }}>${oil}</td>
-                    {[1200, 1300, 1400, 1500, 1600].map((fx) => {
-                      const kr = calculateKRImpact(oil, fx, timeframe, includeIndirect, true);
-                      const intensity = Math.min(Math.abs(kr.totalImpact) / 3, 1);
-                      const bg = kr.totalImpact >= 0
-                        ? `rgba(239,68,68,${intensity * 0.3})`
-                        : `rgba(16,185,129,${intensity * 0.3})`;
-                      const isSelected = oil === oilScenario && fx === fxScenario;
-                      return (
-                        <td key={fx}
-                          onClick={() => { setOilScenario(oil); setFxScenario(fx); }}
-                          style={{
-                            ...tdStyle, background: bg, fontWeight: 600,
-                            color: kr.totalImpact >= 0 ? COLORS.red : COLORS.green,
-                            outline: isSelected ? `2px solid ${COLORS.accent}` : "none",
-                            cursor: "pointer",
-                          }}
-                        >
-                          {kr.newCPI}%
-                          <div style={{ fontSize: 9, color: COLORS.textMuted, fontWeight: 400 }}>
-                            ({kr.totalImpact >= 0 ? "+" : ""}{kr.totalImpact}%p)
-                          </div>
-                        </td>
-                      );
-                    })}
+                {multiScenario.map((s, i) => (
+                  <tr key={i}>
+                    <td style={{ ...S.td(false), textAlign: "left" }}>
+                      <div style={{ fontWeight: 600 }}>{s.name}</div>
+                      <div style={{ fontSize: "10px", color: "#64748b" }}>{s.desc}</div>
+                    </td>
+                    <td style={S.td(false)}>${s.oil}</td>
+                    {country === "KR" && <td style={S.td(false)}>₩{s.fx}</td>}
+                    <td style={{ ...S.td(true), color: yyColor(s.result.yearEndYY), fontWeight: 700, fontSize: "14px" }}>
+                      {s.result.yearEndYY.toFixed(2)}%
+                    </td>
+                    <td style={{ ...S.td(true), color: yyColor(s.result.annualAvgYY), fontWeight: 700, fontSize: "14px" }}>
+                      {s.result.annualAvgYY.toFixed(2)}%
+                    </td>
+                    <td style={{ ...S.td(false), color: yyColor(s.result.yy[5]) }}>
+                      {s.result.yy[5].toFixed(2)}%
+                    </td>
+                    <td style={{ ...S.td(false), color: yyColor(s.result.yy[8]) }}>
+                      {s.result.yy[8].toFixed(2)}%
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 6, textAlign: "center", fontFamily: FONT }}>
-              셀 클릭 시 해당 시나리오로 이동 · 현재 선택: ${oilScenario} / ₩{fxScenario.toLocaleString()}
-            </div>
-          </div>
-        )}
 
-        {/* ─── Oil Sensitivity Table ─── */}
-        <div style={{
-          background: COLORS.card, border: `1px solid ${COLORS.cardBorder}`,
-          borderRadius: 12, padding: 20, overflowX: "auto",
-        }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.text, marginBottom: 14 }}>
-            📊 유가 시나리오별 CPI 민감도 ({includeIndirect ? "직접+간접" : "직접 효과만"}{includeFx ? ` · 환율 ₩${fxScenario.toLocaleString()} 고정` : ""})
-          </div>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-            <thead>
-              <tr>
-                <th style={thStyle}>{benchmarkLabel}</th>
-                <th style={thStyle}>변동률</th>
-                <th style={{ ...thStyle, color: COLORS.blue }}>🇺🇸 CPI 변동</th>
-                <th style={{ ...thStyle, color: COLORS.blue }}>🇺🇸 예상 CPI</th>
-                <th style={{ ...thStyle, color: COLORS.blue }}>🇺🇸 실질금리</th>
-                <th style={{ ...thStyle, color: COLORS.cyan }}>🇰🇷 CPI 변동</th>
-                {includeFx && <th style={{ ...thStyle, color: COLORS.cyan, fontSize: 9 }}>🇰🇷 환율효과</th>}
-                <th style={{ ...thStyle, color: COLORS.cyan }}>🇰🇷 예상 CPI</th>
-                <th style={{ ...thStyle, color: COLORS.cyan }}>🇰🇷 실질금리</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[50, 60, 70, 80, 90, 100, 120].map((oil) => {
-                const us = calculateUSImpact(oil, timeframe, includeIndirect);
-                const kr = calculateKRImpact(oil, fxScenario, timeframe, includeIndirect, includeFx);
-                const isActive = oil === oilScenario;
-                return (
-                  <tr key={oil} onClick={() => setOilScenario(oil)}
-                    style={{ cursor: "pointer", background: isActive ? "rgba(245,158,11,0.08)" : "transparent", transition: "background 0.15s" }}>
-                    <td style={{ ...tdStyle, fontWeight: 700, color: isActive ? COLORS.accent : COLORS.text }}>${oil}</td>
-                    <td style={{ ...tdStyle, color: us.oilChangePct > 0 ? COLORS.red : us.oilChangePct < 0 ? COLORS.green : COLORS.textDim }}>
-                      {us.oilChangePct > 0 ? "+" : ""}{us.oilChangePct}%
-                    </td>
-                    <td style={{ ...tdStyle, color: us.totalImpact > 0 ? COLORS.red : us.totalImpact < 0 ? COLORS.green : COLORS.textDim }}>
-                      {us.totalImpact > 0 ? "+" : ""}{us.totalImpact}%p
-                    </td>
-                    <td style={{ ...tdStyle, fontWeight: 700, color: us.newCPI > 3 ? COLORS.red : COLORS.text }}>{us.newCPI}%</td>
-                    <td style={{ ...tdStyle, color: us.newRealRate > 0 ? COLORS.green : COLORS.red }}>{us.newRealRate}%</td>
-                    <td style={{ ...tdStyle, color: kr.oilTotalImpact > 0 ? COLORS.red : kr.oilTotalImpact < 0 ? COLORS.green : COLORS.textDim }}>
-                      {kr.oilTotalImpact > 0 ? "+" : ""}{kr.oilTotalImpact}%p
-                    </td>
-                    {includeFx && (
-                      <td style={{ ...tdStyle, color: kr.fxTotalImpact > 0 ? COLORS.red : kr.fxTotalImpact < 0 ? COLORS.green : COLORS.textDim, fontSize: 10 }}>
-                        {kr.fxTotalImpact > 0 ? "+" : ""}{kr.fxTotalImpact}%p
-                      </td>
-                    )}
-                    <td style={{ ...tdStyle, fontWeight: 700, color: kr.newCPI > 3 ? COLORS.red : COLORS.text }}>{kr.newCPI}%</td>
-                    <td style={{ ...tdStyle, color: kr.newRealRate > 0 ? COLORS.green : COLORS.red }}>{kr.newRealRate}%</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {/* ─── FX Sensitivity Table (NEW — KR only) ─── */}
-        {includeFx && (
-          <div style={{
-            background: COLORS.card, border: `1px solid ${COLORS.cardBorder}`,
-            borderRadius: 12, padding: 20, overflowX: "auto",
-          }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.text, marginBottom: 14 }}>
-              💱 환율 시나리오별 🇰🇷 CPI 민감도 (유가 ${oilScenario}/bbl 고정)
-            </div>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>USD/KRW</th>
-                  <th style={thStyle}>변동률</th>
-                  <th style={{ ...thStyle, color: COLORS.cyan }}>수입물가 경로</th>
-                  <th style={{ ...thStyle, color: COLORS.purple }}>원유 증폭 효과</th>
-                  <th style={{ ...thStyle, color: COLORS.cyan, fontWeight: 800 }}>환율효과 합계</th>
-                  <th style={{ ...thStyle, color: COLORS.text }}>유가효과</th>
-                  <th style={{ ...thStyle, color: COLORS.red, fontWeight: 800 }}>🇰🇷 예상 CPI</th>
-                  <th style={{ ...thStyle, color: COLORS.green }}>🇰🇷 실질금리</th>
-                </tr>
-              </thead>
-              <tbody>
-                {fxPresets.map(({ value: fx }) => {
-                  const kr = calculateKRImpact(oilScenario, fx, timeframe, includeIndirect, true);
-                  const isActive = fx === fxScenario;
+            {/* 시나리오별 월별 YY 비교 차트 */}
+            <div style={{ marginTop: "20px" }}>
+              <div style={S.label}>시나리오별 월별 CPI Y-Y 경로</div>
+              <div style={{ position: "relative", height: "200px", marginTop: "8px" }}>
+                {/* Y축 눈금 */}
+                {[1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0].map(v => {
+                  const allYY = multiScenario.flatMap(s => s.result.yy);
+                  const chartMin = Math.min(...allYY, v) - 0.3;
+                  const chartMax = Math.max(...allYY, v) + 0.3;
+                  const top = ((chartMax - v) / (chartMax - chartMin)) * 200;
+                  if (top < 0 || top > 200) return null;
                   return (
-                    <tr key={fx} onClick={() => setFxScenario(fx)}
-                      style={{ cursor: "pointer", background: isActive ? "rgba(6,182,212,0.08)" : "transparent", transition: "background 0.15s" }}>
-                      <td style={{ ...tdStyle, fontWeight: 700, color: isActive ? COLORS.cyan : COLORS.text }}>₩{fx.toLocaleString()}</td>
-                      <td style={{ ...tdStyle, color: kr.fxChangePct > 0 ? COLORS.red : kr.fxChangePct < 0 ? COLORS.green : COLORS.textDim }}>
-                        {kr.fxChangePct > 0 ? "+" : ""}{kr.fxChangePct}%
-                      </td>
-                      <td style={{ ...tdStyle, color: kr.fxNonOilImpact > 0 ? COLORS.red : kr.fxNonOilImpact < 0 ? COLORS.green : COLORS.textDim }}>
-                        {kr.fxNonOilImpact >= 0 ? "+" : ""}{kr.fxNonOilImpact}%p
-                      </td>
-                      <td style={{ ...tdStyle, color: kr.fxOilAmplifyImpact > 0 ? COLORS.red : kr.fxOilAmplifyImpact < 0 ? COLORS.green : COLORS.textDim }}>
-                        {kr.fxOilAmplifyImpact >= 0 ? "+" : ""}{kr.fxOilAmplifyImpact}%p
-                      </td>
-                      <td style={{ ...tdStyle, fontWeight: 700, color: kr.fxTotalImpact > 0 ? COLORS.red : kr.fxTotalImpact < 0 ? COLORS.green : COLORS.textDim }}>
-                        {kr.fxTotalImpact >= 0 ? "+" : ""}{kr.fxTotalImpact}%p
-                      </td>
-                      <td style={{ ...tdStyle, color: kr.oilTotalImpact > 0 ? COLORS.red : kr.oilTotalImpact < 0 ? COLORS.green : COLORS.textDim }}>
-                        {kr.oilTotalImpact >= 0 ? "+" : ""}{kr.oilTotalImpact}%p
-                      </td>
-                      <td style={{ ...tdStyle, fontWeight: 700, color: kr.newCPI > 3 ? COLORS.red : COLORS.text }}>{kr.newCPI}%</td>
-                      <td style={{ ...tdStyle, color: kr.newRealRate > 0 ? COLORS.green : COLORS.red }}>{kr.newRealRate}%</td>
-                    </tr>
+                    <div key={v} style={{ position: "absolute", top: `${top}px`, left: 0, right: 0, borderTop: "1px solid #1e293b", fontSize: "9px", color: "#475569" }}>
+                      {v.toFixed(1)}%
+                    </div>
                   );
                 })}
-              </tbody>
-            </table>
+                {/* 라인들 */}
+                <svg width="100%" height="200" style={{ position: "absolute", top: 0, left: "30px", width: "calc(100% - 30px)" }}>
+                  {multiScenario.map((s, si) => {
+                    const allYY = multiScenario.flatMap(sc => sc.result.yy);
+                    const chartMin = Math.min(...allYY) - 0.3;
+                    const chartMax = Math.max(...allYY) + 0.3;
+                    const colors = ["#22c55e", "#6366f1", "#f97316", "#ef4444"];
+                    const points = s.result.yy.map((v, i) => {
+                      const x = (i / 11) * 100;
+                      const y = ((chartMax - v) / (chartMax - chartMin)) * 200;
+                      return `${x}%,${y}`;
+                    }).join(" ");
+                    return (
+                      <polyline key={si} points={points} fill="none" stroke={colors[si]}
+                        strokeWidth="2" strokeDasharray={si > 0 ? "4 2" : "none"} opacity={0.8} />
+                    );
+                  })}
+                </svg>
+              </div>
+              <div style={{ display: "flex", gap: "16px", marginTop: "8px", paddingLeft: "30px" }}>
+                {multiScenario.map((s, i) => {
+                  const colors = ["#22c55e", "#6366f1", "#f97316", "#ef4444"];
+                  return (
+                    <span key={i} style={{ fontSize: "10px", color: colors[i] }}>
+                      ● {s.name.replace(/[^\w가-힣 ]/g, "").trim()}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
 
-        {/* ─── Charts ─── */}
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-          <RateChart chartData={usChartData} country="us" flag="🇺🇸" impact={usImpact} countryData={data.us} />
-          <RateChart chartData={krChartData} country="kr" flag="🇰🇷" impact={krImpact} countryData={data.kr} />
-        </div>
+        {/* ═══ 탭: 민감도 매트릭스 ═══ */}
+        {tab === "sensitivity" && sensitivity && (
+          <div style={S.card}>
+            <div style={S.label}>
+              {params.label} 민감도 매트릭스 — 연말 CPI Y-Y (%)
+              {country === "KR" && <span style={{ color: "#475569", fontWeight: 400 }}> · 유가 × 환율</span>}
+            </div>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr>
+                    <th style={{ ...S.th, textAlign: "left" }}>WTI \ {country === "KR" ? "USDKRW" : ""}</th>
+                    {fxRange.map(fx => (
+                      <th key={fx} style={S.th}>{country === "KR" ? `₩${fx}` : "—"}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {oilRange.map((oil, oi) => (
+                    <tr key={oil}>
+                      <td style={{ ...S.td(false), textAlign: "left", fontWeight: 600 }}>${oil}</td>
+                      {sensitivity[oi].map((r, fi) => {
+                        const v = r.yearEndYY;
+                        const isBase = oil === oilScenario && (country !== "KR" || fxRange[fi] === fxScenario);
+                        return (
+                          <td key={fi} style={{
+                            ...S.td(isBase), color: yyColor(v), fontWeight: isBase ? 700 : 400,
+                            background: isBase ? "#312e8144" : "transparent",
+                            border: isBase ? "1px solid #6366f1" : "none",
+                            borderBottom: "1px solid #0f172a",
+                          }}>
+                            {v.toFixed(2)}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-        {/* ─── Methodology Note ─── */}
-        <div style={{
-          background: "rgba(255,255,255,0.02)",
-          border: `1px solid ${COLORS.cardBorder}`,
-          borderRadius: 8,
-          padding: "14px 18px",
-          fontSize: 10,
-          color: COLORS.textMuted,
-          lineHeight: 1.7,
-        }}>
-          <span style={{ color: COLORS.textDim, fontWeight: 700 }}>📐 산출 방법론</span>
+            {country === "KR" && (
+              <>
+                <div style={{ ...S.label, marginTop: "20px" }}>
+                  {params.label} 민감도 매트릭스 — 연평균 CPI Y-Y (%)
+                </div>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr>
+                        <th style={{ ...S.th, textAlign: "left" }}>WTI \ USDKRW</th>
+                        {fxRange.map(fx => <th key={fx} style={S.th}>₩{fx}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {oilRange.map((oil, oi) => (
+                        <tr key={oil}>
+                          <td style={{ ...S.td(false), textAlign: "left", fontWeight: 600 }}>${oil}</td>
+                          {sensitivity[oi].map((r, fi) => {
+                            const v = r.annualAvgYY;
+                            const isBase = oil === oilScenario && fxRange[fi] === fxScenario;
+                            return (
+                              <td key={fi} style={{
+                                ...S.td(isBase), color: yyColor(v), fontWeight: isBase ? 700 : 400,
+                                background: isBase ? "#312e8144" : "transparent",
+                              }}>
+                                {v.toFixed(2)}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ═══ 탭: 모델 설명 ═══ */}
+        {tab === "params" && (
+          <div style={S.card}>
+            <div style={S.label}>투사 모델 구조 및 파라미터</div>
+            <div style={{ fontSize: "13px", lineHeight: "1.9", color: "#94a3b8" }}>
+              <p style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: "8px" }}>
+                ✅ 수정된 모델: 시차(lag) 반영 CPI 월별 투사
+              </p>
+              <p>
+                <strong style={{ color: "#c7d2fe" }}>핵심 변경:</strong> 현재 CPI에 현재 유가가 이미 반영됐다는 가정을 폐기.
+                대신 2025 월별 CPI(기저) + 2026 실현 CPI를 기반으로, 유가/환율 시나리오를 <em>시차를 두고</em> 남은 월의 CPI에 반영하여 투사.
+              </p>
+              <p style={{ marginTop: "12px" }}>
+                <strong style={{ color: "#c7d2fe" }}>월별 CPI 지수 투사 공식:</strong>
+              </p>
+              <div style={{ background: "#0f172a", padding: "12px", borderRadius: "6px", fontFamily: "monospace", fontSize: "12px", margin: "8px 0" }}>
+                CPI(m) = CPI(m-1) × (1 + 비에너지_MoM + 에너지_기여도 + 환율_기여도)<br /><br />
+                에너지_기여도 = 에너지가중치 × Σᵢ lag(i) × [유가원화(m-i)/유가원화(m-i-1) - 1] × 전가율<br /><br />
+                유가원화 = WTI × USDKRW
+              </div>
+              <p style={{ marginTop: "12px" }}>
+                <strong style={{ color: "#c7d2fe" }}>파라미터 ({params.label}):</strong>
+              </p>
+              <table style={{ borderCollapse: "collapse", marginTop: "4px" }}>
+                <tbody>
+                  {[
+                    ["에너지 CPI 가중치", `${(params.energy_weight * 100).toFixed(1)}%`],
+                    ["유가 전가율", `${(params.oil_passthrough * 100)}%`],
+                    ["유가 시차 구조", params.oil_lag.map((v, i) => `t${i > 0 ? `-${i}` : ""}: ${(v * 100)}%`).join(", ")],
+                    ["환율 전가율", `${(params.fx_passthrough * 100)}%`],
+                    ["환율 시차 구조", params.fx_lag.length > 0 ? params.fx_lag.map((v, i) => `t${i > 0 ? `-${i}` : ""}: ${(v * 100)}%`).join(", ") : "N/A"],
+                  ].map(([k, v], i) => (
+                    <tr key={i}>
+                      <td style={{ padding: "4px 12px 4px 0", fontSize: "12px", color: "#64748b" }}>{k}</td>
+                      <td style={{ padding: "4px 0", fontSize: "12px", fontFamily: "monospace", color: "#a5b4fc" }}>{v}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p style={{ marginTop: "16px" }}>
+                <strong style={{ color: "#c7d2fe" }}>출력 지표:</strong>
+              </p>
+              <div style={{ fontSize: "12px", lineHeight: "2" }}>
+                • <strong>연말 CPI Y-Y</strong> = CPI(2026.12) / CPI(2025.12) - 1<br />
+                • <strong>연평균 CPI Y-Y</strong> = avg(CPI 2026 전월) / avg(CPI 2025 전월) - 1<br />
+                • 실현 월은 실제 발표값 사용, 미래 월만 투사<br />
+                • 비에너지 MoM은 사용자 가정 (기본 0.15%/월 ≈ 연 1.8%)
+              </div>
+
+              <p style={{ marginTop: "16px", padding: "10px", background: "#1e1b4b33", borderRadius: "6px", border: "1px solid #312e81", fontSize: "12px" }}>
+                ⚠️ <strong>한계:</strong> 이 모델은 에너지 직접효과와 환율 1차효과만 반영. 2차효과(운송비→식품가격 등),
+                정부 보조금/유류세 조정, 수요 변동에 따른 근원물가 변화는 비에너지 MoM 추세 조정으로 대응.
+                BOK/Fed 전망과 교차 검증 권장.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ 기저 데이터 편집 (접이식) ═══ */}
+        {showDataEdit && (
+          <div style={{ ...S.card, marginTop: "8px" }}>
+            <div style={{ ...S.label, marginBottom: "12px" }}>기저 데이터 편집 — 새 CPI 발표 시 업데이트</div>
+
+            {/* 2025 CPI */}
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ fontSize: "11px", color: "#64748b", marginBottom: "4px" }}>
+                {params.label} 2025 월별 CPI 지수 ({params.unit})
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: "4px" }}>
+                {MONTHS_EN.map((m, i) => (
+                  <div key={i}>
+                    <div style={{ fontSize: "9px", color: "#475569", textAlign: "center" }}>{m}</div>
+                    <input
+                      type="number" step="0.01"
+                      style={{ ...S.input, fontSize: "11px", padding: "4px", textAlign: "center" }}
+                      value={cpi2025[i] || ""}
+                      onChange={e => updateArr(country === "KR" ? setKrCpi2025 : setUsCpi2025, i, e.target.value)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 2026 CPI (실현) */}
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ fontSize: "11px", color: "#64748b", marginBottom: "4px" }}>
+                {params.label} 2026 실현 CPI 지수 (미발표월은 비워두기)
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: "4px" }}>
+                {MONTHS_EN.map((m, i) => (
+                  <div key={i}>
+                    <div style={{ fontSize: "9px", color: "#475569", textAlign: "center" }}>{m}</div>
+                    <input
+                      type="number" step="0.01"
+                      style={{ ...S.input, fontSize: "11px", padding: "4px", textAlign: "center", borderColor: cpi2026Realized[i] !== null ? "#6366f1" : "#334155" }}
+                      value={cpi2026Realized[i] !== null ? cpi2026Realized[i] : ""}
+                      onChange={e => updateArr(country === "KR" ? setKrCpi2026 : setUsCpi2026, i, e.target.value)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 2025 유가 */}
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ fontSize: "11px", color: "#64748b", marginBottom: "4px" }}>
+                2025 월별 WTI 유가 ($/bbl)
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: "4px" }}>
+                {MONTHS_EN.map((m, i) => (
+                  <div key={i}>
+                    <div style={{ fontSize: "9px", color: "#475569", textAlign: "center" }}>{m}</div>
+                    <input
+                      type="number"
+                      style={{ ...S.input, fontSize: "11px", padding: "4px", textAlign: "center" }}
+                      value={oil2025[i] || ""}
+                      onChange={e => updateArr(setOil2025, i, e.target.value)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 2025 환율 */}
+            {country === "KR" && (
+              <div style={{ marginBottom: "16px" }}>
+                <div style={{ fontSize: "11px", color: "#64748b", marginBottom: "4px" }}>
+                  2025 월별 USDKRW 환율
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: "4px" }}>
+                  {MONTHS_EN.map((m, i) => (
+                    <div key={i}>
+                      <div style={{ fontSize: "9px", color: "#475569", textAlign: "center" }}>{m}</div>
+                      <input
+                        type="number"
+                        style={{ ...S.input, fontSize: "11px", padding: "4px", textAlign: "center" }}
+                        value={fx2025[i] || ""}
+                        onChange={e => updateArr(setFx2025, i, e.target.value)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 2026 실현 유가/환율 */}
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ fontSize: "11px", color: "#64748b", marginBottom: "4px" }}>
+                2026 실현 WTI 유가 (미래월은 비워두기 → 시나리오 값 사용)
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: "4px" }}>
+                {MONTHS_EN.map((m, i) => (
+                  <div key={i}>
+                    <div style={{ fontSize: "9px", color: "#475569", textAlign: "center" }}>{m}</div>
+                    <input
+                      type="number"
+                      style={{ ...S.input, fontSize: "11px", padding: "4px", textAlign: "center", borderColor: oil2026[i] !== null ? "#22c55e" : "#334155" }}
+                      value={oil2026[i] !== null ? oil2026[i] : ""}
+                      onChange={e => updateArr(setOil2026, i, e.target.value)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {country === "KR" && (
+              <div>
+                <div style={{ fontSize: "11px", color: "#64748b", marginBottom: "4px" }}>
+                  2026 실현 USDKRW (미래월은 비워두기)
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: "4px" }}>
+                  {MONTHS_EN.map((m, i) => (
+                    <div key={i}>
+                      <div style={{ fontSize: "9px", color: "#475569", textAlign: "center" }}>{m}</div>
+                      <input
+                        type="number"
+                        style={{ ...S.input, fontSize: "11px", padding: "4px", textAlign: "center", borderColor: fx2026[i] !== null ? "#22c55e" : "#334155" }}
+                        value={fx2026[i] !== null ? fx2026[i] : ""}
+                        onChange={e => updateArr(setFx2026, i, e.target.value)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══ 푸터 ═══ */}
+        <div style={{ marginTop: "24px", padding: "12px 0", borderTop: "1px solid #1e293b", fontSize: "11px", color: "#475569", textAlign: "center" }}>
+          Oil → CPI Projection Monitor v2.0 · 시차 반영 모델 · 늑대무리원정단
           <br />
-          • <b style={{ color: COLORS.textDim }}>직접 효과</b>: CPI 에너지 항목 가중치 × 유가 변동률 × 패스스루 계수 (기간별 회귀분석 기반)
-          <br />
-          • <b style={{ color: COLORS.textDim }}>간접 효과</b>: 직접 효과 × 간접 승수 (운송비, 생산비용, 서비스 물가 등 2차 파급효과)
-          <br />
-          • <b style={{ color: COLORS.cyan }}>환율 → 수입물가 경로</b>: 환율 변동률 × 수입물가 패스스루 계수 (BOK/KDI 실증분석 기반, 10% 원화 절하 시 ~0.3%p CPI)
-          <br />
-          • <b style={{ color: COLORS.purple }}>환율 → 원유 증폭 효과</b>: 원유가 USD 표시 → 원화 절하 시 원화 환산 유가 추가 상승분 반영
-          <br />
-          • 미국 에너지 CPI 가중치 ~7.5%, 한국 석유류 CPI 가중치 ~9.5%
-          <br />
-          • 한국 수입물가 환율 전가율: 단기 ~20-30%, 장기 ~40-50% (BOK Working Paper) · 수입물가→소비자물가 전가: ~15-20% (KDI)
-          <br />
-          • 실질금리 = 기준금리 − CPI (사후적 실질금리 기준)
-          <br />
-          • AI 업데이트 시 최신 CPI, 기준금리, 유가, 환율 데이터가 반영됩니다
+          기저 데이터 최종 업데이트: 2026.02 CPI 기준 · 모델 한계: 에너지 직접효과 + 환율 1차효과만 반영
         </div>
       </div>
     </div>
   );
 }
-
-const thStyle = {
-  padding: "8px 10px",
-  textAlign: "right",
-  borderBottom: `1px solid ${COLORS.cardBorder}`,
-  color: COLORS.textDim,
-  fontSize: 10,
-  fontFamily: FONT,
-  letterSpacing: 0.5,
-  fontWeight: 600,
-};
-
-const tdStyle = {
-  padding: "7px 10px",
-  textAlign: "right",
-  borderBottom: `1px solid rgba(30,41,59,0.5)`,
-  fontFamily: FONT,
-  fontSize: 11,
-};
