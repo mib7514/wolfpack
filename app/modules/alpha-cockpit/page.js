@@ -173,6 +173,9 @@ export default function AlphaCockpit() {
   const [rateBoardDate, setRateBoardDate] = useState('');
   const [activeTab, setActiveTab] = useState('dashboard');
   const [loading, setLoading] = useState(true);
+  const [nav, setNav] = useState('');
+  const [repoAmount, setRepoAmount] = useState('');
+  const [navSaved, setNavSaved] = useState(false);
 
   useEffect(() => { loadData(); }, []);
   useEffect(() => {
@@ -183,12 +186,18 @@ export default function AlphaCockpit() {
   async function loadData() {
     setLoading(true);
     try {
-      const [pR, rR] = await Promise.all([
+      const [pR, rR, fR] = await Promise.all([
         supabase.from('bcp_portfolio').select('*').eq('is_active',true).order('maturity_date'),
         supabase.from('bcp_regime_snapshots').select('*').order('snapshot_date',{ascending:false}).limit(4),
+        supabase.from('bcp_fund_info').select('*').order('updated_at',{ascending:false}).limit(1),
       ]);
       if (pR.data) setBonds(pR.data);
       if (rR.data) setSnapshots(rR.data);
+      if (fR.data && fR.data.length > 0) {
+        setNav(String(fR.data[0].nav || ''));
+        setRepoAmount(String(fR.data[0].repo_amount || ''));
+        setNavSaved(true);
+      }
     } catch(e) { console.error(e); }
     setLoading(false);
   }
@@ -199,6 +208,17 @@ export default function AlphaCockpit() {
       if (r.ok) { setIsAdmin(true); sessionStorage.setItem('adminPin',pinInput); }
       else alert('PIN 불일치');
     } catch { alert('인증 오류'); }
+  }
+
+  // ─── FUND INFO (NAV, REPO) ───
+  async function saveFundInfo() {
+    const navVal = parseFloat(nav) || 0;
+    const repoVal = parseFloat(repoAmount) || 0;
+    // upsert: delete old, insert new
+    await supabase.from('bcp_fund_info').delete().neq('id', 0); // delete all
+    const { error } = await supabase.from('bcp_fund_info').insert({ nav: navVal, repo_amount: repoVal });
+    if (error) { alert('저장 실패: ' + error.message); return; }
+    setNavSaved(true);
   }
 
   // ─── PORTFOLIO CRUD ───
@@ -270,10 +290,14 @@ export default function AlphaCockpit() {
   }
 
   // ─── COMPUTED ───
+  const navNum = parseFloat(nav) || 0;
+  const repoNum = parseFloat(repoAmount) || 0;
+
   const ps = useMemo(() => {
     if (!bonds.length) return null;
     const totalAmt = bonds.reduce((s,b) => s+(b.face_amount||0), 0);
     if (!totalAmt) return null;
+    const base = navNum > 0 ? navNum : totalAmt; // NAV 기준, 없으면 총액면 기준
     const bd = {}; BUCKETS.forEach(bk => { bd[bk.id]={count:0,amount:0,pct:0,durC:0}; });
     let totalDur=0, aAmt=0;
     const rd2 = {};
@@ -287,19 +311,21 @@ export default function AlphaCockpit() {
       rd2[b.rating] = (rd2[b.rating]||0) + (b.face_amount||0);
       if(A_GRADE.includes(b.rating)) aAmt += b.face_amount||0;
     });
-    Object.keys(bd).forEach(k => { bd[k].pct = (bd[k].amount/totalAmt)*100; });
-    const aPct = (aAmt/totalAmt)*100;
+    Object.keys(bd).forEach(k => { bd[k].pct = (bd[k].amount/base)*100; });
+    const aPct = (aAmt/base)*100;
     const zPct = bd['Z']?.pct||0;
+    const repoPct = navNum > 0 ? (repoNum/navNum)*100 : 0;
     return {
-      totalAmt, bd, totalDur, ratingDist:rd2, aPct, zPct, n:bonds.length,
+      totalAmt, base, bd, totalDur, ratingDist:rd2, aPct, zPct, repoPct, n:bonds.length,
       cst: {
         dur: { ok:totalDur>=1&&totalDur<=2, warn:totalDur>2&&totalDur<=2.3, v:totalDur },
         rf: { ok:bonds.every(b=>RATINGS_ORDER.indexOf(b.rating)>=0&&RATINGS_ORDER.indexOf(b.rating)<=6), viol:bonds.filter(b=>RATINGS_ORDER.indexOf(b.rating)<0||RATINGS_ORDER.indexOf(b.rating)>6) },
         ag: { ok:aPct<50, v:aPct },
         zb: { ok:zPct>=5, v:zPct },
+        repo: { ok: navNum > 0 ? repoPct < 50 : true, v: repoPct },
       }
     };
-  }, [bonds]);
+  }, [bonds, navNum, repoNum]);
 
   const regime = useMemo(() => determineRegime(snapshots), [snapshots]);
 
@@ -348,7 +374,7 @@ export default function AlphaCockpit() {
           activeTab==='dashboard' ? renderDash() : renderArch()}
       </div>
       <footer style={{ textAlign:'center', padding:'20px 16px 40px', borderTop:'1px solid #1f2937', fontSize:10, color:'#4b5563' }}>
-        Alpha Cockpit v2.1 · 가이드라인 반영 · Regime → Engines → Construction OS → Portfolio
+        Alpha Cockpit v2.2 · 가이드라인 반영 · Regime → Engines → Construction OS → Portfolio
       </footer>
     </div>
   );
@@ -371,6 +397,35 @@ export default function AlphaCockpit() {
           </div>
         )}
         {!rateBoard && <span style={{ fontSize:10, color:'#4b5563' }}>금리판 TXT 파일을 올리면 레짐 판단 + 포트폴리오 분석이 자동 실행됩니다</span>}
+      </div>
+
+      {/* NAV & REPO */}
+      <div style={{ ...S.card, padding:'12px 16px' }}>
+        <div style={{ display:'flex', flexWrap:'wrap', alignItems:'center', gap:12 }}>
+          <div style={{ fontSize:12, fontWeight:700, color:'#e5e7eb' }}>💰 펀드 현황</div>
+          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+            <label style={{ fontSize:10, color:'#9ca3af' }}>NAV (억원)</label>
+            <input type="number" step="0.1" value={nav} onChange={e=>{setNav(e.target.value);setNavSaved(false);}}
+              style={{ ...S.input, width:120 }} placeholder="100" disabled={!isAdmin} />
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+            <label style={{ fontSize:10, color:'#9ca3af' }}>레포매도 (억원)</label>
+            <input type="number" step="0.1" value={repoAmount} onChange={e=>{setRepoAmount(e.target.value);setNavSaved(false);}}
+              style={{ ...S.input, width:120 }} placeholder="0" disabled={!isAdmin} />
+          </div>
+          {isAdmin && (
+            <button onClick={saveFundInfo} style={{ ...S.btn, ...S.btnP, fontSize:10, padding:'4px 12px', opacity:navSaved?0.5:1 }}>
+              {navSaved ? '✅ 저장됨' : '저장'}
+            </button>
+          )}
+          {navNum > 0 && (
+            <div style={{ display:'flex', gap:12, flexWrap:'wrap', alignItems:'center' }}>
+              <span style={{ fontSize:11, color:'#3b82f6', ...S.mono }}>NAV: {fmtAmt(navNum)}억</span>
+              {repoNum > 0 && <span style={{ fontSize:11, color: (repoNum/navNum)*100 < 50 ? '#f59e0b' : '#ef4444', ...S.mono }}>레포: {fmtAmt(repoNum)}억 ({fmt((repoNum/navNum)*100,1)}%)</span>}
+              {ps && <span style={{ fontSize:11, color:'#9ca3af', ...S.mono }}>채권/NAV: {fmt((ps.totalAmt/navNum)*100,1)}%</span>}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* TOP ROW: Regime + Summary */}
@@ -464,10 +519,11 @@ export default function AlphaCockpit() {
         </div>
         {ps ? (
           <div>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8, marginBottom:12 }}>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:8, marginBottom:12 }}>
               {[
                 {l:'보유 종목', v:ps.n+'개', c:'#e5e7eb'},
-                {l:'총 액면', v:fmtAmt(ps.totalAmt)+'억', c:'#3b82f6'},
+                {l: navNum>0?'NAV':'총 액면', v:fmtAmt(navNum>0?navNum:ps.totalAmt)+'억', c:'#3b82f6'},
+                {l:'채권 총액면', v:fmtAmt(ps.totalAmt)+'억'+(navNum>0?' ('+fmt((ps.totalAmt/navNum)*100,1)+'%)':''), c:'#9ca3af'},
                 {l:'듀레이션', v:fmt(ps.totalDur,2)+'Y', c:ps.cst.dur.ok?'#10b981':ps.cst.dur.warn?'#f59e0b':'#ef4444'},
                 {l:'A급 비중', v:fmt(ps.aPct,1)+'%', c:ps.cst.ag.ok?'#10b981':'#ef4444'},
               ].map((x,i)=>(
@@ -505,13 +561,14 @@ export default function AlphaCockpit() {
       {l:'신용등급 ≥ A-', st:c.rf.ok?'ok':'fail', d:c.rf.ok?'전 종목 충족':`${c.rf.viol.length}건 위반`},
       {l:'A급 < 50%', st:c.ag.ok?'ok':'fail', d:`${fmt(c.ag.v,1)}% / 50%`},
       {l:'Z 유동성 ≥ 5%', st:c.zb.ok?'ok':'fail', d:`${fmt(c.zb.v,1)}% / 5%`},
+      {l:'레포 < 50%', st: navNum>0 ? (c.repo.ok?'ok':'fail') : 'ok', d: navNum>0 ? `${fmt(c.repo.v,1)}% / 50%` : 'NAV 미입력'},
     ];
     const sc = {ok:'#10b981',warn:'#f59e0b',fail:'#ef4444'};
     const si = {ok:'✅',warn:'⚠️',fail:'❌'};
     return (
       <div style={{ ...S.card, border: items.some(i=>i.st==='fail')?'1px solid #ef444444':'1px solid #1f2937' }}>
         <div style={S.sTitle}>🚦 Constraint Monitor</div>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:8 }}>
           {items.map((x,i)=>(
             <div key={i} style={{padding:'8px 10px',borderRadius:8,background:'#0d1117',border:`1px solid ${sc[x.st]}33`}}>
               <div style={{fontSize:14,marginBottom:2}}>{si[x.st]}</div>
@@ -569,7 +626,9 @@ export default function AlphaCockpit() {
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
               <thead>
                 <tr style={{borderBottom:'2px solid #1f2937'}}>
-                  {['버킷','종목명','발행사','등급','이자율','만기','잔존','액면(억)','매수YTM',
+                  {['버킷','종목명','발행사','등급','이자율','만기','잔존','액면(억)',
+                    ...(navNum>0 ? ['비중(NAV)'] : []),
+                    '매수YTM',
                     ...(rateBoard ? ['시장YTM','차이','상태'] : []),
                     'KR코드',''
                   ].map((h,i)=>(
@@ -591,6 +650,7 @@ export default function AlphaCockpit() {
                       <td style={{padding:'5px 6px',...S.mono,whiteSpace:'nowrap',fontSize:10}}>{b.maturity_date}</td>
                       <td style={{padding:'5px 6px',...S.mono}}>{fmt(b.remainYrs,1)}Y</td>
                       <td style={{padding:'5px 6px',...S.mono,textAlign:'right'}}>{fmtAmt(b.face_amount)}</td>
+                      {navNum>0 && <td style={{padding:'5px 6px',...S.mono,textAlign:'right',fontWeight:700,color:'#f59e0b'}}>{fmt((b.face_amount||0)/navNum*100,1)}%</td>}
                       <td style={{padding:'5px 6px',...S.mono}}>{b.purchase_yield?fmt(b.purchase_yield,2)+'%':'-'}</td>
                       {rateBoard && <>
                         <td style={{padding:'5px 6px',...S.mono,color:'#3b82f6'}}>
