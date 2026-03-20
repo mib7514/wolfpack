@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { createClient } from '@/lib/supabase';
 
 // ═══════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -161,7 +161,7 @@ const S = {
 // MAIN
 // ═══════════════════════════════════════════════════════════════
 export default function AlphaCockpit() {
-  const supabase = createClientComponentClient();
+  const supabase = createClient();
   const [isAdmin, setIsAdmin] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [bonds, setBonds] = useState([]);
