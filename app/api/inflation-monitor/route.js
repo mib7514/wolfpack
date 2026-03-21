@@ -174,7 +174,6 @@ export async function POST(request) {
             headers: { Prefer: "return=representation" },
             body: JSON.stringify({
               data: analysisData,
-              framework: FRAMEWORK,
               updated_at: now.toISOString(),
             }),
           }
@@ -186,7 +185,6 @@ export async function POST(request) {
           headers: { Prefer: "return=representation" },
           body: JSON.stringify({
             data: analysisData,
-            framework: FRAMEWORK,
             snapshot_date: kstDate,
             updated_at: now.toISOString(),
           }),
