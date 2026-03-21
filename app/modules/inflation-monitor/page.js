@@ -65,40 +65,34 @@ function formatDateTime(dateStr) {
 function buildPrompts(framework) {
   const systemPrompt = `당신은 인플레이션 확산 모니터링 전문 분석가입니다. 현재 중동발 에너지/물류 쇼크가 다양한 품목으로 확산되어 CPI가 상승할 우려가 있는 상황을 모니터링하고 있습니다.
 
-각 지표에 대해 가장 최근 학습 데이터를 기반으로 분석해주세요.
-점수 기준:
-- 0~25: 안정 (인플레 확산 위험 낮음)
-- 26~50: 주의 (일부 상승 신호, 아직 제한적)
-- 51~75: 경고 (확산 진행 중, 모니터링 강화 필요)
-- 76~100: 위험 (광범위한 확산, 구조적 인플레 위험)
+각 지표를 최신 데이터 기반으로 분석. 점수: 0~25 안정, 26~50 주의, 51~75 경고, 76~100 위험.
+한국·미국·글로벌 관점. 오늘: ${new Date().toISOString().split("T")[0]}
 
-한국과 미국 양쪽 모두 고려하되 글로벌 관점에서 분석하세요.
-오늘 날짜: ${new Date().toISOString().split("T")[0]}
-
-응답은 반드시 다음 JSON 형식으로만 응답하세요 (다른 텍스트 없이, markdown 코드블록도 없이):
+중요: 토큰 절약을 위해 모든 텍스트 필드는 반드시 1문장(30자 이내)으로 작성하세요. 길게 쓰지 마세요.
+응답은 반드시 다음 JSON 형식으로만 (다른 텍스트 없이, markdown 코드블록도 없이):
 {
   "categories": {
     "[category_id]": {
       "score": number,
       "status": "안정|주의|경고|위험",
-      "summary": "카테고리 전체 요약 (2-3문장)",
+      "summary": "1문장 요약",
       "indicators": {
         "[indicator_id]": {
           "score": number,
           "trend": "상승|하락|보합|급등|급락",
-          "analysis": "지표별 분석 (2-3문장, 구체적 수치/사실 포함)"
+          "analysis": "핵심 수치 포함 1문장"
         }
       }
     }
   },
   "overall_index": number,
   "overall_status": "안정|주의|경고|위험",
-  "overall_summary": "전체 CPI 확산 위험 종합 판단 (3-5문장)",
-  "key_signals": ["주요 신호 1", "주요 신호 2", "주요 신호 3"],
+  "overall_summary": "종합 판단 2문장 이내",
+  "key_signals": ["신호1", "신호2", "신호3"],
   "scenario_update": {
-    "base": "베이스 시나리오 업데이트 (2-3문장)",
-    "upside": "상방(구조적 인플레) 시나리오 변화 (2-3문장)",
-    "downside": "하방(스파이크 후 둔화) 시나리오 변화 (2-3문장)"
+    "base": "1문장",
+    "upside": "1문장",
+    "downside": "1문장"
   }
 }`;
 
@@ -108,19 +102,11 @@ function buildPrompts(framework) {
     return `### ${c.name} (${c.id}, 가중치 ${c.weight})\n${c.description}\n${indDesc}`;
   }).join("\n\n");
 
-  const userPrompt = `다음 인플레이션 확산 모니터링 프레임워크의 모든 카테고리와 지표를 분석해주세요.
+  const userPrompt = `아래 프레임워크의 모든 카테고리·지표를 분석. 중동/호르무즈 리스크, 운임 고착화, 중간재 스프레드, 코어서비스 MoM, BEI/기간프리미엄, 임금전가 중점. 반드시 JSON만, 각 analysis는 1문장.
 
 ${categoryDescriptions}
 
-특히 다음을 중점 확인하세요:
-1. 호르무즈/중동 리스크가 에너지·원료 가격에 미치는 현재 영향
-2. 해상운임/보험료가 이벤트성 스파이크인지, 고점 고착화인지
-3. PE/PP 등 중간재 스프레드 방향
-4. 미국/한국 코어 서비스 물가 최근 추이 (MoM)
-5. 5Y5Y 브레이크이븐, 기간프리미엄 움직임
-6. 임금/기업 가격전가 최근 동향
-
-JSON 형식으로만 응답하세요.`;
+JSON 형식으로만 응답.`;
 
   return { systemPrompt, userPrompt };
 }
