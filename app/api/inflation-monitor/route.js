@@ -1,165 +1,213 @@
-import { createClient } from "@supabase/supabase-js";
+import { NextResponse } from "next/server";
 
-const supabaseUrl = `https://${process.env.NEXT_PUBLIC_SUPABASE_PROJECT_ID || "aclamququfgdpwavbjsi"}.supabase.co`;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-function getSupabase() {
-  return createClient(supabaseUrl, supabaseKey);
+async function supaFetch(path, options = {}) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...options,
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`,
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+  return res;
 }
 
-const INDICATOR_FRAMEWORK = {
+// ─── Framework Definition ───
+const FRAMEWORK = {
   categories: [
     {
       id: "energy_raw",
       name: "에너지/원료 충격",
       emoji: "🛢️",
-      weight: 0.20,
-      description: "1차 충격: 원유·나프타·LPG 등 원료 가격과 크랙스프레드",
+      weight: 0.25,
+      description: "국제유가, 천연가스, 원자재 가격 및 중동 지정학 리스크",
       indicators: [
-        { id: "brent_level", name: "Brent 유가 수준", description: "Brent 원유 현물/선물 가격 수준 및 변동폭" },
-        { id: "naphtha_lpg", name: "나프타/LPG 가격", description: "석유화학 핵심 원료인 나프타·LPG 현물가격 및 유가 대비 프리미엄" },
-        { id: "crack_spread", name: "제품 크랙스프레드", description: "가솔린/디젤/항공유 크랙마진. 정제마진이 확대되면 에너지 비용이 광범위하게 전이" },
-        { id: "oil_curve", name: "원유 선물곡선 구조", description: "백워데이션/콘탱고 구조. 뒷단(6-12개월)까지 상승하면 시장이 장기 차질을 가격에 반영 중" }
-      ]
+        { id: "crude_oil", name: "국제유가 (WTI/Brent)", description: "유가 수준 및 변동성, 호르무즈 해협 리스크 반영" },
+        { id: "natural_gas", name: "천연가스/LNG", description: "유럽·아시아 LNG 가격, 재고 수준" },
+        { id: "commodity_index", name: "원자재 종합지수", description: "CRB/블룸버그 원자재 지수 추이" },
+        { id: "middle_east_risk", name: "중동 지정학 리스크", description: "호르무즈 해협, 이란 제재, 예멘 후티 리스크" },
+      ],
     },
     {
       id: "logistics",
       name: "물류/보험 비용",
       emoji: "🚢",
-      weight: 0.20,
-      description: "1.5차 전이: 해상운임·보험료·우회항로가 비용 구조로 고착화되는지",
+      weight: 0.15,
+      description: "해상운임, 항공운임, 보험료, 공급망 병목",
       indicators: [
-        { id: "freight_rate", name: "해상운임 지수", description: "SCFI/BDI 등 컨테이너·벌크 운임. 이벤트성 스파이크 vs 고점 유지 구분이 핵심" },
-        { id: "war_insurance", name: "전쟁위험 보험료", description: "호르무즈/홍해 등 고위험 해역 통과 시 추가 보험료. 고착화되면 원가의 상시 항목화" },
-        { id: "route_diversion", name: "우회항로/리드타임", description: "주요 항로 우회에 따른 항해일수 증가, 선복 부족, 체선 비용" },
-        { id: "logistics_duration", name: "물류비 지속기간", description: "운임·보험료 상승이 수주 vs 분기 vs 반년 이상 지속되는지 판단" }
-      ]
+        { id: "container_freight", name: "컨테이너 운임 (SCFI/BDI)", description: "상하이 컨테이너 운임지수, 발틱 건화물 지수" },
+        { id: "war_risk_premium", name: "전쟁위험 보험료", description: "해상 전쟁위험 할증료 수준" },
+        { id: "supply_chain", name: "공급망 압력", description: "NY Fed 글로벌 공급망 압력 지수, 리드타임" },
+      ],
     },
     {
       id: "intermediate",
       name: "중간재 스프레드",
       emoji: "🧪",
       weight: 0.15,
-      description: "2차 전이: 올레핀/수지/포장재 등 중간재 가격과 마진 변동",
+      description: "석유화학, 철강, 비철금속 등 중간재 가격 전가 상황",
       indicators: [
-        { id: "pe_pp_spread", name: "PE/PP 스프레드", description: "PE/PP 제품가 - 원료가 마진. 가격 상승이 마진 개선으로 이어지는지가 핵심" },
-        { id: "ethylene_margin", name: "에틸렌/프로필렌 마진", description: "기초유분 마진. 원료 대비 올레핀 스프레드가 확대·유지되는지" },
-        { id: "packaging_cost", name: "포장재/화학 단가", description: "플라스틱 필름, 골판지, 화학원료 등 산업 전반의 포장·소재 단가" }
-      ]
+        { id: "pe_pp_spread", name: "PE/PP 스프레드", description: "폴리에틸렌/폴리프로필렌 마진 방향" },
+        { id: "steel_price", name: "철강재 가격", description: "열연/냉연 코일 가격 추이" },
+        { id: "ppi_trend", name: "PPI 추이", description: "한국/미국 생산자물가 MoM 추세" },
+      ],
     },
     {
       id: "core_services",
       name: "코어 서비스 물가",
-      emoji: "🏪",
+      emoji: "🏠",
       weight: 0.20,
-      description: "3차 전이(구조적 결정): 서비스 물가가 끈적하게 올라붙는지",
+      description: "주거비, 서비스물가, 근원 CPI 추세",
       indicators: [
-        { id: "dining_services", name: "외식/개인서비스", description: "외식비, 미용, 세탁 등 개인서비스. 한국에서 체감이 가장 빠른 서비스 물가" },
-        { id: "housing_cost", name: "주거비", description: "임대료, 관리비 등 주거 관련 비용. 한번 오르면 잘 안 내려오는 대표적 끈적한 항목" },
-        { id: "transport_services", name: "운송서비스", description: "택시/버스/택배/항공 등 운송서비스 가격. 에너지 비용 전가의 직접 경로" }
-      ]
+        { id: "shelter_cpi", name: "주거비/임대료", description: "미국 Shelter CPI, 한국 전월세 지수" },
+        { id: "services_cpi", name: "서비스물가 MoM", description: "코어 서비스(주거 제외) 월간 변화" },
+        { id: "sticky_cpi", name: "Sticky CPI", description: "애틀랜타 연은 Sticky CPI 추이" },
+      ],
     },
     {
       id: "expectations",
       name: "기대인플레/금리",
       emoji: "📊",
       weight: 0.15,
-      description: "시장의 '기간(duration)' 평가: 기대인플레와 기간프리미엄 움직임",
+      description: "BEI, 기간프리미엄, 서베이 기반 인플레이션 기대",
       indicators: [
-        { id: "breakeven_5y5y", name: "5Y5Y 브레이크이븐", description: "5년후 5년 기대인플레. 추세적 재상승이면 시장이 구조적 인플레를 가격에 반영" },
-        { id: "term_premium", name: "기간프리미엄", description: "장기금리에서 기대단기금리를 뺀 부분. 인플레 불확실성이 커질 때 상승" },
-        { id: "cb_communication", name: "중앙은행 커뮤니케이션", description: "연준/한은이 '헤드라인 무시' 스탠스를 유지하는지, 2차 파급 경계로 전환하는지" }
-      ]
+        { id: "bei_5y5y", name: "5Y5Y BEI", description: "5년 후 5년 브레이크이븐 인플레이션" },
+        { id: "term_premium", name: "기간프리미엄", description: "ACM 기간프리미엄 모델 추이" },
+        { id: "survey_expectations", name: "서베이 기대인플레", description: "미시간대/한은 기대인플레이션" },
+      ],
     },
     {
       id: "wage_second",
       name: "임금/2차 파급",
       emoji: "💼",
       weight: 0.10,
-      description: "고착화 루프: 임금·가격결정력·소비자 기대가 인플레를 자기강화하는지",
+      description: "임금 상승, 기업 가격전가, 2차 효과 고착화",
       indicators: [
-        { id: "wage_growth", name: "임금 상승률", description: "명목임금 증가율. '원가 상승 → 임금 인상 요구'로 번지면 2차 파급의 핵심" },
-        { id: "pricing_power", name: "기업 가격전가 행태", description: "실적 콜에서 '원가 전가'가 아니라 '리스트프라이스 인상+유지'가 반복되는지" },
-        { id: "consumer_expectation", name: "소비자 기대인플레", description: "한은/미시간대 소비자 기대인플레 서베이. 고착화되면 구조적 인플레의 마지막 퍼즐" }
-      ]
-    }
-  ]
+        { id: "wage_growth", name: "임금 상승률", description: "미국 평균시급, 한국 상용근로자 임금 추이" },
+        { id: "corporate_pricing", name: "기업 가격전가", description: "ISM/PMI 가격 컴포넌트, 기업 실적 가이던스" },
+        { id: "unit_labor_cost", name: "단위노동비용", description: "단위노동비용 추이 (생산성 대비 임금)" },
+      ],
+    },
+  ],
 };
 
-// GET: Fetch latest data + framework
-export async function GET() {
+// ─── GET: 최신 데이터 + 프레임워크 + 히스토리 목록 ───
+export async function GET(request) {
   try {
-    const supabase = getSupabase();
-    const { data, error } = await supabase
-      .from("inflation_monitor")
-      .select("*")
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .single();
+    const { searchParams } = new URL(request.url);
+    const action = searchParams.get("action");
 
-    if (error && error.code !== "PGRST116") {
-      return Response.json({ error: error.message }, { status: 500 });
+    // 히스토리 전체 조회 (시계열용)
+    if (action === "history") {
+      const res = await supaFetch(
+        "inflation_monitor?select=id,snapshot_date,data,updated_at&order=snapshot_date.desc&limit=100"
+      );
+      if (!res.ok) {
+        return NextResponse.json({ error: "히스토리 조회 실패" }, { status: 500 });
+      }
+      const rows = await res.json();
+      return NextResponse.json({ history: rows });
     }
 
-    return Response.json({
-      data: data || null,
-      framework: INDICATOR_FRAMEWORK,
+    // 기본: 최신 1건 + 프레임워크
+    const res = await supaFetch(
+      "inflation_monitor?order=snapshot_date.desc,updated_at.desc&limit=1"
+    );
+    if (!res.ok) {
+      return NextResponse.json({ framework: FRAMEWORK, data: null });
+    }
+    const rows = await res.json();
+    return NextResponse.json({
+      framework: FRAMEWORK,
+      data: rows.length > 0 ? rows[0] : null,
     });
   } catch (err) {
-    return Response.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
 
-// POST: PIN verify + get API key, or save AI result
+// ─── POST: 관리자 액션 ───
 export async function POST(request) {
   try {
-    const adminPin = request.headers.get("x-admin-pin");
-    if (!adminPin || adminPin !== process.env.ADMIN_PIN) {
-      return Response.json({ error: "관리자 인증 실패" }, { status: 401 });
-    }
-
+    const pin = request.headers.get("x-admin-pin");
     const body = await request.json();
     const { action } = body;
 
-    // Action 1: Verify PIN and return API key for client-side AI call
+    // API 키 반환 (PIN 검증)
     if (action === "get_api_key") {
-      const apiKey = process.env.ANTHROPIC_API_KEY;
-      if (!apiKey) {
-        return Response.json({ error: "ANTHROPIC_API_KEY가 설정되지 않았습니다" }, { status: 500 });
+      if (pin !== process.env.ADMIN_PIN) {
+        return NextResponse.json({ error: "관리자 인증 실패" }, { status: 401 });
       }
-      return Response.json({ success: true, apiKey });
+      return NextResponse.json({ apiKey: process.env.ANTHROPIC_API_KEY });
     }
 
-    // Action 2: Save AI analysis result to Supabase
+    // 분석 결과 저장 (날짜별)
     if (action === "save_result") {
+      if (pin !== process.env.ADMIN_PIN) {
+        return NextResponse.json({ error: "관리자 인증 실패" }, { status: 401 });
+      }
+
       const { analysisData } = body;
-      if (!analysisData) {
-        return Response.json({ error: "분석 데이터가 없습니다" }, { status: 400 });
+      const now = new Date();
+      // 한국시간 기준 날짜
+      const kstDate = new Date(now.getTime() + 9 * 60 * 60 * 1000)
+        .toISOString()
+        .split("T")[0];
+
+      // 같은 날짜의 기존 데이터가 있는지 확인
+      const checkRes = await supaFetch(
+        `inflation_monitor?snapshot_date=eq.${kstDate}&select=id`
+      );
+      const existing = await checkRes.json();
+
+      let saveRes;
+      if (existing && existing.length > 0) {
+        // 같은 날짜면 업데이트 (덮어쓰기)
+        saveRes = await supaFetch(
+          `inflation_monitor?snapshot_date=eq.${kstDate}`,
+          {
+            method: "PATCH",
+            headers: { Prefer: "return=representation" },
+            body: JSON.stringify({
+              data: analysisData,
+              framework: FRAMEWORK,
+              updated_at: now.toISOString(),
+            }),
+          }
+        );
+      } else {
+        // 새 날짜면 INSERT
+        saveRes = await supaFetch("inflation_monitor", {
+          method: "POST",
+          headers: { Prefer: "return=representation" },
+          body: JSON.stringify({
+            data: analysisData,
+            framework: FRAMEWORK,
+            snapshot_date: kstDate,
+            updated_at: now.toISOString(),
+          }),
+        });
       }
 
-      const supabase = getSupabase();
-      const record = {
-        data: analysisData,
-        framework_version: "1.0",
-        updated_at: new Date().toISOString(),
-        updated_by: "ai_auto",
-      };
-
-      const { data: saved, error: saveError } = await supabase
-        .from("inflation_monitor")
-        .insert(record)
-        .select()
-        .single();
-
-      if (saveError) {
-        return Response.json({ error: saveError.message }, { status: 500 });
+      if (!saveRes.ok) {
+        const errText = await saveRes.text();
+        return NextResponse.json(
+          { error: "DB 저장 실패: " + errText },
+          { status: 500 }
+        );
       }
 
-      return Response.json({ success: true, data: saved });
+      const saved = await saveRes.json();
+      const result = Array.isArray(saved) ? saved[0] : saved;
+      return NextResponse.json({ data: result });
     }
 
-    return Response.json({ error: "Unknown action" }, { status: 400 });
+    return NextResponse.json({ error: "알 수 없는 액션" }, { status: 400 });
   } catch (err) {
-    return Response.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
