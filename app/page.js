@@ -77,6 +77,16 @@ const MODULES = [
     status: "live",
   },
   {
+    id: "us-market",
+    name: "US Market Weekly",
+    subtitle: "주간 미국 주식시장 리포트",
+    icon: "🇺🇸",
+    description: "FRED 무료 데이터 + AI 52주 신고가 · 내러티브 분석 · 시계열 추적",
+    path: "/modules/us-market",
+    layer: "market",
+    status: "live",
+  },
+  {
     id: "consumer-sector",
     name: "소비주 모니터링",
     subtitle: "Consumer Sector Tracker",
