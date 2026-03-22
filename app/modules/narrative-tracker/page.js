@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase';
 
 // ═══════════════════════════════════════════════════════════════════════
-// 🐺 NARRATIVE ALPHA TRACKER v2 — AI-Powered + Admin PIN Protection
+// 🐺 NARRATIVE ALPHA TRACKER v3 — AI-Powered + 시계열 추적
 // ═══════════════════════════════════════════════════════════════════════
 
 const STAGES = [
@@ -14,6 +14,7 @@ const STAGES = [
   { key: 'weaken', label: '약화', emoji: '📉', color: '#a78bfa', desc: '반론 등장' },
   { key: 'extinct', label: '소멸', emoji: '💀', color: '#6b7280', desc: '영향력 없음' },
 ];
+const STAGE_IDX = { birth: 0, strengthen: 1, peak: 2, weaken: 3, extinct: 4 };
 const STAGE_MULT = { birth: 0.4, strengthen: 0.8, peak: 1.0, weaken: 0.5, extinct: 0.1 };
 const MOMENTUM = { birth: 1.3, strengthen: 1.15, peak: 1.0, weaken: -0.5, extinct: -0.8 };
 const IMPACT_MAP = {
@@ -37,6 +38,31 @@ const calcScore = (n) => {
 };
 const kellyF = (p, b) => b <= 0 ? 0 : Math.max(0, Math.min(1, (p * b - (1 - p)) / b));
 
+// ─── 히스토리 스냅샷 저장 헬퍼 ────────────────────────────────────
+const saveSnapshot = async (record) => {
+  try {
+    const sb = createClient();
+    const snapshot = {
+      id: `nh_${record.id}_${Date.now()}`,
+      narrative_id: record.id,
+      name: record.name,
+      stage: record.stage,
+      score: record.score || 0,
+      scoring: typeof record.scoring === 'string' ? record.scoring : JSON.stringify(record.scoring || {}),
+      kelly: typeof record.kelly === 'string' ? record.kelly : JSON.stringify(record.kelly || {}),
+      assets: typeof record.assets === 'string' ? record.assets : JSON.stringify(record.assets || []),
+      indicators: typeof record.indicators === 'string' ? record.indicators : JSON.stringify(record.indicators || []),
+      description: record.description || '',
+      category: record.category || '',
+      snapshot_at: new Date().toISOString(),
+    };
+    const { error } = await sb.from('narrative_history').insert(snapshot);
+    if (error) console.error('히스토리 저장 오류:', error.message);
+  } catch (e) {
+    console.error('히스토리 저장 실패:', e.message);
+  }
+};
+
 // ═══════════════════════════════════════════════════════════════════════
 // MAIN
 // ═══════════════════════════════════════════════════════════════════════
@@ -49,6 +75,11 @@ export default function NarrativeTrackerPage() {
   const [aiResult, setAiResult] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [reanalyzing, setReanalyzing] = useState(null);
+
+  // ─── 히스토리 ──────────────────────────────────────────────────────
+  const [history, setHistory] = useState([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   // ─── Admin PIN ─────────────────────────────────────────────────────
   const [adminPin, setAdminPin] = useState('');
@@ -107,7 +138,7 @@ export default function NarrativeTrackerPage() {
     try {
       const sb = createClient();
       const { data, error } = await sb.from('narratives').select('*').order('score', { ascending: false });
-      if (error) { console.error('DB 로드 오류:', error.message); }
+      if (error) console.error('DB 로드 오류:', error.message);
       if (data) {
         setNarratives(data.map(d => ({
           ...d,
@@ -121,15 +152,45 @@ export default function NarrativeTrackerPage() {
     setLoading(false);
   };
 
+  // ─── 히스토리 로드 ─────────────────────────────────────────────────
+  const loadHistory = useCallback(async () => {
+    if (historyLoaded) return;
+    setHistoryLoading(true);
+    try {
+      const sb = createClient();
+      const { data, error } = await sb
+        .from('narrative_history')
+        .select('*')
+        .order('snapshot_at', { ascending: true });
+      if (error) {
+        console.error('히스토리 로드 오류:', error.message);
+      } else if (data) {
+        setHistory(data.map(d => ({
+          ...d,
+          scoring: typeof d.scoring === 'string' ? JSON.parse(d.scoring) : (d.scoring || {}),
+          kelly: typeof d.kelly === 'string' ? JSON.parse(d.kelly) : (d.kelly || {}),
+          assets: typeof d.assets === 'string' ? JSON.parse(d.assets) : (d.assets || []),
+          indicators: typeof d.indicators === 'string' ? JSON.parse(d.indicators) : (d.indicators || []),
+        })));
+        setHistoryLoaded(true);
+      }
+    } catch (e) {
+      console.error('히스토리 로드 실패:', e.message);
+    }
+    setHistoryLoading(false);
+  }, [historyLoaded]);
+
+  // 타임라인 탭 진입 시 히스토리 로드
+  useEffect(() => {
+    if (tab === 'timeline') loadHistory();
+  }, [tab, loadHistory]);
+
   // ─── AI (PIN 필요) ─────────────────────────────────────────────────
   const callAI = async (name) => {
     try {
       const res = await fetch('/api/narrative-ai', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-pin': adminPin,
-        },
+        headers: { 'Content-Type': 'application/json', 'x-admin-pin': adminPin },
         body: JSON.stringify({ narrativeName: name, existingNarratives: narratives }),
       });
       const data = await res.json();
@@ -173,6 +234,17 @@ export default function NarrativeTrackerPage() {
       else result = await sb.from('narratives').insert(record);
       if (result.error) { alert('DB 저장 오류: ' + result.error.message); return; }
     } catch (e) { alert('DB 저장 오류: ' + e.message); return; }
+
+    // ─── 히스토리 스냅샷 저장 ───
+    await saveSnapshot({
+      ...record,
+      scoring: aiResult.scoring || {},
+      kelly: aiResult.kelly || {},
+      assets: aiResult.assets || [],
+      indicators: aiResult.indicators || [],
+    });
+    setHistoryLoaded(false); // 다음 타임라인 탭 진입 시 리로드
+
     const parsed = { ...record, indicators: aiResult.indicators, assets: aiResult.assets, scoring: aiResult.scoring, kelly: aiResult.kelly };
     if (editingId) setNarratives(p => p.map(n => n.id === editingId ? parsed : n));
     else setNarratives(p => [...p, parsed]);
@@ -199,11 +271,23 @@ export default function NarrativeTrackerPage() {
         updated_at: new Date().toISOString(),
       };
       updated.score = calcScore(updated);
+      const dbPayload = {
+        ...updated,
+        indicators: JSON.stringify(updated.indicators),
+        assets: JSON.stringify(updated.assets),
+        scoring: JSON.stringify(updated.scoring),
+        kelly: JSON.stringify(updated.kelly),
+      };
       try {
         const sb = createClient();
-        const result = await sb.from('narratives').update({ ...updated, indicators: JSON.stringify(updated.indicators), assets: JSON.stringify(updated.assets), scoring: JSON.stringify(updated.scoring), kelly: JSON.stringify(updated.kelly) }).eq('id', n.id);
+        const result = await sb.from('narratives').update(dbPayload).eq('id', n.id);
         if (result.error) alert('DB 업데이트 오류: ' + result.error.message);
       } catch (e) { alert('DB 업데이트 오류: ' + e.message); }
+
+      // ─── 히스토리 스냅샷 저장 ───
+      await saveSnapshot(updated);
+      setHistoryLoaded(false);
+
       setNarratives(p => p.map(x => x.id === n.id ? updated : x));
     }
     setReanalyzing(null);
@@ -214,8 +298,11 @@ export default function NarrativeTrackerPage() {
       const sb = createClient();
       const result = await sb.from('narratives').delete().eq('id', id);
       if (result.error) { alert('DB 삭제 오류: ' + result.error.message); return; }
+      // 히스토리도 삭제
+      await sb.from('narrative_history').delete().eq('narrative_id', id);
     } catch (e) { alert('DB 오류: ' + e.message); return; }
     setNarratives(p => p.filter(n => n.id !== id));
+    setHistory(p => p.filter(h => h.narrative_id !== id));
   };
 
   // ─── Computed ──────────────────────────────────────────────────────
@@ -238,6 +325,18 @@ export default function NarrativeTrackerPage() {
     }); return m;
   }, [narratives, weights]);
   const sortedAssets = useMemo(() => Object.values(assetMap).sort((a, b) => Math.abs(b.total) - Math.abs(a.total)), [assetMap]);
+
+  // ─── 히스토리 그룹핑 ──────────────────────────────────────────────
+  const historyByNarrative = useMemo(() => {
+    const m = {};
+    history.forEach(h => {
+      if (!m[h.narrative_id]) m[h.narrative_id] = [];
+      m[h.narrative_id].push(h);
+    });
+    // 각 내러티브별 시간순 정렬 (이미 ascending이지만 안전하게)
+    Object.values(m).forEach(arr => arr.sort((a, b) => new Date(a.snapshot_at) - new Date(b.snapshot_at)));
+    return m;
+  }, [history]);
 
   // ═══════════════════════════════════════════════════════════════════
   return (
@@ -288,7 +387,8 @@ export default function NarrativeTrackerPage() {
         <div style={{ display: 'flex', gap: 4, background: C.input, borderRadius: 10, padding: 4 }}>
           {[
             { key: 'dashboard', label: '📊 대시보드' },
-            { key: 'input', label: '📝 내러티브 입력' },
+            { key: 'input', label: '📝 입력' },
+            { key: 'timeline', label: '📅 타임라인' },
             { key: 'assets', label: '🎯 자산 영향도' },
             { key: 'ideas', label: '💡 투자 아이디어' },
           ].map(t => (
@@ -306,6 +406,7 @@ export default function NarrativeTrackerPage() {
           <>
             {tab === 'dashboard' && <Dashboard narratives={narratives} weights={weights} assetMap={assetMap} onReanalyze={(n) => requireAdmin(() => reanalyze(n))} onDelete={(id) => requireAdmin(() => deleteN(id))} reanalyzing={reanalyzing} onGoInput={() => setTab('input')} isAdmin={isAdmin} />}
             {tab === 'input' && <InputTab inputName={inputName} setInputName={setInputName} analyzing={analyzing} aiResult={aiResult} onAnalyze={() => requireAdmin(runAnalysis)} onSave={saveNarrative} onReset={() => { setAiResult(null); setInputName(''); setEditingId(null); }} isAdmin={isAdmin} />}
+            {tab === 'timeline' && <TimelineTab narratives={narratives} history={history} historyByNarrative={historyByNarrative} historyLoading={historyLoading} />}
             {tab === 'assets' && <AssetsTab sortedAssets={sortedAssets} />}
             {tab === 'ideas' && <IdeasTab narratives={narratives} weights={weights} sortedAssets={sortedAssets} />}
           </>
@@ -313,7 +414,7 @@ export default function NarrativeTrackerPage() {
       </div>
 
       <div style={{ padding: '16px 28px', borderTop: `1px solid ${C.border}`, textAlign: 'center', marginTop: 40 }}>
-        <span style={{ fontSize: 11, color: C.muted }}>🐺 늑대무리원정단 · Narrative Alpha Tracker v2 · 투자 결정은 본인의 판단과 책임 하에</span>
+        <span style={{ fontSize: 11, color: C.muted }}>🐺 늑대무리원정단 · Narrative Alpha Tracker v3 · 투자 결정은 본인의 판단과 책임 하에</span>
       </div>
     </div>
   );
@@ -336,6 +437,482 @@ function Card({ children, title, subtitle, style }) {
 }
 function Btn({ children, onClick, primary, small, disabled, danger, style }) {
   return <button onClick={onClick} disabled={disabled} style={{ padding: small ? '6px 14px' : '10px 20px', borderRadius: 8, border: primary ? 'none' : `1px solid ${danger ? C.red + '44' : C.inputB}`, background: primary ? C.accent : 'transparent', color: primary ? '#000' : danger ? C.red : C.text, fontWeight: 600, fontSize: small ? 12 : 13, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.4 : 1, ...style }}>{children}</button>;
+}
+
+function formatDate(d) {
+  if (!d) return '';
+  const dt = new Date(d);
+  return `${dt.getMonth() + 1}/${dt.getDate()}`;
+}
+function formatDateTime(d) {
+  if (!d) return '';
+  const dt = new Date(d);
+  return `${dt.getFullYear()}.${String(dt.getMonth() + 1).padStart(2, '0')}.${String(dt.getDate()).padStart(2, '0')} ${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB: TIMELINE (신규)
+// ═══════════════════════════════════════════════════════════════════════
+function TimelineTab({ narratives, history, historyByNarrative, historyLoading }) {
+  const [selectedId, setSelectedId] = useState(null);
+
+  if (historyLoading) {
+    return <Card style={{ textAlign: 'center', padding: 60 }}><div style={{ fontSize: 13, color: C.dim }}>히스토리 로딩 중...</div></Card>;
+  }
+
+  if (history.length === 0) {
+    return (
+      <Card style={{ textAlign: 'center', padding: 60 }}>
+        <div style={{ fontSize: 48, marginBottom: 12 }}>📅</div>
+        <div style={{ fontSize: 16, fontWeight: 600, color: C.text, marginBottom: 8 }}>아직 히스토리가 없습니다</div>
+        <div style={{ fontSize: 13, color: C.dim }}>내러티브를 저장하거나 재분석하면 자동으로 시계열 데이터가 쌓입니다</div>
+      </Card>
+    );
+  }
+
+  const selected = selectedId ? narratives.find(n => n.id === selectedId) : null;
+  const selectedHistory = selectedId ? (historyByNarrative[selectedId] || []) : [];
+
+  return (
+    <div style={{ display: 'grid', gap: 20 }}>
+      {/* 전체 내러티브 스코어 추이 차트 */}
+      <ScoreEvolutionChart history={history} historyByNarrative={historyByNarrative} narratives={narratives} onSelect={setSelectedId} selectedId={selectedId} />
+
+      {/* 전체 내러티브 라이프사이클 변화 */}
+      <StageTimelineChart history={history} historyByNarrative={historyByNarrative} narratives={narratives} onSelect={setSelectedId} selectedId={selectedId} />
+
+      {/* 개별 내러티브 상세 히스토리 */}
+      {selected && selectedHistory.length > 0 && (
+        <NarrativeDetailHistory narrative={selected} history={selectedHistory} onClose={() => setSelectedId(null)} />
+      )}
+
+      {/* 시장 내러티브 지형 변화 */}
+      <MarketLandscapeTimeline history={history} historyByNarrative={historyByNarrative} narratives={narratives} />
+    </div>
+  );
+}
+
+// ─── 스코어 추이 차트 ────────────────────────────────────────────────
+function ScoreEvolutionChart({ history, historyByNarrative, narratives, onSelect, selectedId }) {
+  const WIDTH = 1050;
+  const HEIGHT = 260;
+  const PAD = { top: 30, right: 20, bottom: 40, left: 50 };
+  const chartW = WIDTH - PAD.left - PAD.right;
+  const chartH = HEIGHT - PAD.top - PAD.bottom;
+
+  // 전체 시간 범위
+  const allTimes = history.map(h => new Date(h.snapshot_at).getTime());
+  const minT = Math.min(...allTimes);
+  const maxT = Math.max(...allTimes);
+  const timeRange = maxT - minT || 1;
+
+  // 최대 스코어
+  const maxScore = Math.max(...history.map(h => h.score || 0), 10);
+
+  // 색상 팔레트
+  const COLORS = ['#f59e0b', '#818cf8', '#22c55e', '#f97316', '#ec4899', '#06b6d4', '#a78bfa', '#84cc16', '#e879f9', '#fbbf24'];
+  const narIds = Object.keys(historyByNarrative);
+
+  const getX = (t) => PAD.left + ((t - minT) / timeRange) * chartW;
+  const getY = (s) => PAD.top + chartH - (s / maxScore) * chartH;
+
+  // 시간 축 레이블
+  const timeLabels = [];
+  const labelCount = Math.min(8, Math.max(2, Math.floor(chartW / 100)));
+  for (let i = 0; i <= labelCount; i++) {
+    const t = minT + (timeRange * i) / labelCount;
+    timeLabels.push({ x: getX(t), label: formatDate(new Date(t)) });
+  }
+
+  return (
+    <Card title="📈 내러티브 스코어 추이" subtitle="각 내러티브의 점수 변화를 시계열로 추적합니다. 내러티브를 클릭하면 상세 히스토리를 볼 수 있습니다.">
+      <div style={{ overflowX: 'auto' }}>
+        <svg width={WIDTH} height={HEIGHT} style={{ display: 'block' }}>
+          {/* 배경 그리드 */}
+          {[0, 0.25, 0.5, 0.75, 1].map(r => {
+            const y = PAD.top + chartH * (1 - r);
+            return (
+              <g key={r}>
+                <line x1={PAD.left} y1={y} x2={PAD.left + chartW} y2={y} stroke={C.border} strokeWidth={1} />
+                <text x={PAD.left - 8} y={y + 4} textAnchor="end" fill={C.muted} fontSize={10}>{Math.round(maxScore * r)}</text>
+              </g>
+            );
+          })}
+          {/* 시간 축 */}
+          {timeLabels.map((tl, i) => (
+            <text key={i} x={tl.x} y={HEIGHT - 8} textAnchor="middle" fill={C.muted} fontSize={10}>{tl.label}</text>
+          ))}
+          {/* 각 내러티브 라인 */}
+          {narIds.map((nid, idx) => {
+            const pts = historyByNarrative[nid] || [];
+            if (pts.length < 1) return null;
+            const col = COLORS[idx % COLORS.length];
+            const isSelected = selectedId === nid;
+            const opacity = selectedId ? (isSelected ? 1 : 0.2) : 0.8;
+
+            // 라인 패스
+            const pathD = pts.map((p, i) => {
+              const x = getX(new Date(p.snapshot_at).getTime());
+              const y = getY(p.score || 0);
+              return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
+            }).join(' ');
+
+            return (
+              <g key={nid} style={{ cursor: 'pointer' }} onClick={() => onSelect(isSelected ? null : nid)} opacity={opacity}>
+                <path d={pathD} fill="none" stroke={col} strokeWidth={isSelected ? 3 : 2} strokeLinejoin="round" />
+                {pts.map((p, i) => {
+                  const x = getX(new Date(p.snapshot_at).getTime());
+                  const y = getY(p.score || 0);
+                  return <circle key={i} cx={x} cy={y} r={isSelected ? 5 : 3} fill={col} stroke={C.card} strokeWidth={1.5} />;
+                })}
+                {/* 마지막 포인트에 이름 표시 */}
+                {pts.length > 0 && (() => {
+                  const last = pts[pts.length - 1];
+                  const x = getX(new Date(last.snapshot_at).getTime());
+                  const y = getY(last.score || 0);
+                  return <text x={Math.min(x + 6, WIDTH - 60)} y={y - 8} fill={col} fontSize={10} fontWeight={600}>{last.name?.slice(0, 10)}</text>;
+                })()}
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+      {/* 범례 */}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 10 }}>
+        {narIds.map((nid, idx) => {
+          const nar = narratives.find(n => n.id === nid);
+          const pts = historyByNarrative[nid] || [];
+          const col = COLORS[idx % COLORS.length];
+          const isSelected = selectedId === nid;
+          return (
+            <div key={nid} onClick={() => onSelect(isSelected ? null : nid)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 6, cursor: 'pointer', background: isSelected ? col + '22' : 'transparent', border: `1px solid ${isSelected ? col + '44' : 'transparent'}` }}>
+              <div style={{ width: 10, height: 10, borderRadius: 2, background: col }} />
+              <span style={{ fontSize: 11, color: isSelected ? col : C.dim, fontWeight: isSelected ? 700 : 400 }}>
+                {nar?.name || pts[0]?.name || nid.slice(0, 8)} ({pts.length}회)
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+// ─── 스테이지 타임라인 차트 ──────────────────────────────────────────
+function StageTimelineChart({ history, historyByNarrative, narratives, onSelect, selectedId }) {
+  const narIds = Object.keys(historyByNarrative);
+  if (narIds.length === 0) return null;
+
+  const allTimes = history.map(h => new Date(h.snapshot_at).getTime());
+  const minT = Math.min(...allTimes);
+  const maxT = Math.max(...allTimes);
+  const timeRange = maxT - minT || 1;
+
+  return (
+    <Card title="🔄 라이프사이클 변화 추적" subtitle="각 내러티브의 생애주기 단계 변화를 시간순으로 표시합니다">
+      <div style={{ display: 'grid', gap: 8 }}>
+        {narIds.map(nid => {
+          const pts = historyByNarrative[nid] || [];
+          const nar = narratives.find(n => n.id === nid);
+          const isSelected = selectedId === nid;
+          if (pts.length === 0) return null;
+
+          return (
+            <div key={nid} onClick={() => onSelect(isSelected ? null : nid)}
+              style={{ padding: '12px 16px', background: isSelected ? C.accent + '11' : C.bg, borderRadius: 10, cursor: 'pointer', border: `1px solid ${isSelected ? C.accent + '44' : C.border}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: C.text, flex: 1 }}>{nar?.name || pts[0]?.name}</span>
+                <Pill color={STAGES.find(s => s.key === pts[pts.length - 1]?.stage)?.color}>
+                  {STAGES.find(s => s.key === pts[pts.length - 1]?.stage)?.emoji} {STAGES.find(s => s.key === pts[pts.length - 1]?.stage)?.label}
+                </Pill>
+              </div>
+              {/* 스테이지 도트 타임라인 */}
+              <div style={{ position: 'relative', height: 36, background: C.input, borderRadius: 6, overflow: 'hidden' }}>
+                {/* 스테이지 배경 바 */}
+                {pts.map((p, i) => {
+                  const stage = STAGES.find(s => s.key === p.stage);
+                  const x1pct = ((new Date(p.snapshot_at).getTime() - minT) / timeRange) * 100;
+                  const x2pct = i < pts.length - 1
+                    ? ((new Date(pts[i + 1].snapshot_at).getTime() - minT) / timeRange) * 100
+                    : 100;
+                  return (
+                    <div key={i} style={{
+                      position: 'absolute', top: 0, bottom: 0,
+                      left: `${x1pct}%`, width: `${Math.max(1, x2pct - x1pct)}%`,
+                      background: (stage?.color || '#6b7280') + '33',
+                    }} />
+                  );
+                })}
+                {/* 도트 */}
+                {pts.map((p, i) => {
+                  const stage = STAGES.find(s => s.key === p.stage);
+                  const xpct = ((new Date(p.snapshot_at).getTime() - minT) / timeRange) * 100;
+                  const stageChanged = i > 0 && pts[i - 1].stage !== p.stage;
+                  return (
+                    <div key={i} title={`${formatDateTime(p.snapshot_at)} · ${stage?.label} · ${p.score}점`}
+                      style={{
+                        position: 'absolute', top: '50%', transform: 'translate(-50%, -50%)',
+                        left: `${Math.max(2, Math.min(98, xpct))}%`,
+                        width: stageChanged ? 16 : 10, height: stageChanged ? 16 : 10,
+                        borderRadius: '50%', background: stage?.color || '#6b7280',
+                        border: stageChanged ? `2px solid ${C.text}` : `2px solid ${C.card}`,
+                        zIndex: stageChanged ? 2 : 1,
+                      }} />
+                  );
+                })}
+              </div>
+              {/* 날짜 범위 표시 */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                <span style={{ fontSize: 10, color: C.muted }}>{formatDate(pts[0]?.snapshot_at)}</span>
+                <span style={{ fontSize: 10, color: C.muted }}>{pts.length}회 기록</span>
+                <span style={{ fontSize: 10, color: C.muted }}>{formatDate(pts[pts.length - 1]?.snapshot_at)}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {/* 스테이지 범례 */}
+      <div style={{ display: 'flex', gap: 12, marginTop: 14, justifyContent: 'center' }}>
+        {STAGES.map(s => (
+          <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ width: 10, height: 10, borderRadius: '50%', background: s.color }} />
+            <span style={{ fontSize: 10, color: C.dim }}>{s.emoji} {s.label}</span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+// ─── 개별 내러티브 상세 히스토리 ─────────────────────────────────────
+function NarrativeDetailHistory({ narrative, history, onClose }) {
+  if (history.length === 0) return null;
+
+  return (
+    <Card title={`📋 ${narrative.name} 상세 변화 기록`} subtitle={`총 ${history.length}회 분석 기록`}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <Btn small onClick={onClose}>닫기 ✕</Btn>
+      </div>
+
+      {/* 스코어링 세부 추이 */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 12, color: C.dim, marginBottom: 8, fontWeight: 600 }}>📊 스코어링 변화</div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                <th style={{ padding: '8px 6px', textAlign: 'left', color: C.dim, fontWeight: 600 }}>일시</th>
+                <th style={{ padding: '8px 6px', textAlign: 'center', color: C.dim, fontWeight: 600 }}>단계</th>
+                <th style={{ padding: '8px 6px', textAlign: 'center', color: C.dim, fontWeight: 600 }}>종합</th>
+                <th style={{ padding: '8px 6px', textAlign: 'center', color: C.dim, fontWeight: 600 }}>시장충격</th>
+                <th style={{ padding: '8px 6px', textAlign: 'center', color: C.dim, fontWeight: 600 }}>미디어</th>
+                <th style={{ padding: '8px 6px', textAlign: 'center', color: C.dim, fontWeight: 600 }}>데이터</th>
+                <th style={{ padding: '8px 6px', textAlign: 'center', color: C.dim, fontWeight: 600 }}>지속성</th>
+                <th style={{ padding: '8px 6px', textAlign: 'center', color: C.dim, fontWeight: 600 }}>승률</th>
+                <th style={{ padding: '8px 6px', textAlign: 'center', color: C.dim, fontWeight: 600 }}>보상비</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...history].reverse().map((h, i) => {
+                const prev = i < history.length - 1 ? [...history].reverse()[i + 1] : null;
+                const stage = STAGES.find(s => s.key === h.stage);
+                const stageChanged = prev && prev.stage !== h.stage;
+                const scoreChanged = prev && prev.score !== h.score;
+                const scoreDiff = prev ? h.score - prev.score : 0;
+
+                return (
+                  <tr key={h.id} style={{ borderBottom: `1px solid ${C.border}`, background: stageChanged ? stage?.color + '11' : 'transparent' }}>
+                    <td style={{ padding: '8px 6px', color: C.text, whiteSpace: 'nowrap' }}>{formatDateTime(h.snapshot_at)}</td>
+                    <td style={{ padding: '8px 6px', textAlign: 'center' }}>
+                      <span style={{ color: stage?.color, fontWeight: 700 }}>
+                        {stage?.emoji} {stage?.label}
+                        {stageChanged && <span style={{ fontSize: 10, marginLeft: 4 }}>⚡</span>}
+                      </span>
+                    </td>
+                    <td style={{ padding: '8px 6px', textAlign: 'center' }}>
+                      <span style={{ fontWeight: 800, color: C.accent }}>{h.score}</span>
+                      {scoreChanged && scoreDiff !== 0 && (
+                        <span style={{ fontSize: 10, color: scoreDiff > 0 ? C.green : C.red, marginLeft: 4 }}>
+                          {scoreDiff > 0 ? '▲' : '▼'}{Math.abs(scoreDiff)}
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ padding: '8px 6px', textAlign: 'center', color: C.text }}>{h.scoring?.marketImpact || '-'}</td>
+                    <td style={{ padding: '8px 6px', textAlign: 'center', color: C.text }}>{h.scoring?.mediaIntensity || '-'}</td>
+                    <td style={{ padding: '8px 6px', textAlign: 'center', color: C.text }}>{h.scoring?.dataSupport || '-'}</td>
+                    <td style={{ padding: '8px 6px', textAlign: 'center', color: C.text }}>{h.scoring?.duration || '-'}</td>
+                    <td style={{ padding: '8px 6px', textAlign: 'center', color: C.text }}>{h.kelly?.prob || '-'}%</td>
+                    <td style={{ padding: '8px 6px', textAlign: 'center', color: C.text }}>{h.kelly?.odds || '-'}x</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* 자산 영향 변화 */}
+      <div>
+        <div style={{ fontSize: 12, color: C.dim, marginBottom: 8, fontWeight: 600 }}>🎯 자산 영향 변화</div>
+        <AssetImpactDiff history={history} />
+      </div>
+    </Card>
+  );
+}
+
+// ─── 자산 영향 변화 비교 ─────────────────────────────────────────────
+function AssetImpactDiff({ history }) {
+  if (history.length < 2) {
+    return <div style={{ fontSize: 12, color: C.muted, padding: 10 }}>2회 이상 기록이 쌓이면 자산 영향 변화를 추적합니다</div>;
+  }
+
+  const first = history[0];
+  const last = history[history.length - 1];
+  const firstAssets = (first.assets || []).reduce((m, a) => { m[a.asset] = a.impact; return m; }, {});
+  const lastAssets = (last.assets || []).reduce((m, a) => { m[a.asset] = a.impact; return m; }, {});
+
+  const allAssetNames = [...new Set([...Object.keys(firstAssets), ...Object.keys(lastAssets)])];
+
+  return (
+    <div style={{ display: 'grid', gap: 4 }}>
+      {allAssetNames.map(name => {
+        const before = firstAssets[name];
+        const after = lastAssets[name];
+        const impBefore = before !== undefined ? IMPACT_MAP[before] || IMPACT_MAP[0] : null;
+        const impAfter = after !== undefined ? IMPACT_MAP[after] || IMPACT_MAP[0] : null;
+        const changed = before !== after;
+
+        return (
+          <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: changed ? C.accent + '11' : C.bg, borderRadius: 6, border: `1px solid ${changed ? C.accent + '33' : C.border}` }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: C.text, flex: 1 }}>{name}</span>
+            {impBefore ? (
+              <span style={{ fontSize: 11, color: impBefore.color, fontWeight: 600 }}>{impBefore.symbol}</span>
+            ) : (
+              <span style={{ fontSize: 11, color: C.muted }}>—</span>
+            )}
+            <span style={{ fontSize: 11, color: C.muted }}>→</span>
+            {impAfter ? (
+              <span style={{ fontSize: 11, color: impAfter.color, fontWeight: 600 }}>{impAfter.symbol}</span>
+            ) : (
+              <span style={{ fontSize: 11, color: C.muted }}>제거됨</span>
+            )}
+            {changed && <span style={{ fontSize: 10, color: C.accent }}>⚡</span>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── 시장 내러티브 지형 변화 ─────────────────────────────────────────
+function MarketLandscapeTimeline({ history, historyByNarrative, narratives }) {
+  // 날짜별로 그룹핑 — 같은 날의 스냅샷을 하나의 "시점"으로 묶음
+  const dateMap = {};
+  history.forEach(h => {
+    const dateKey = new Date(h.snapshot_at).toISOString().split('T')[0];
+    if (!dateMap[dateKey]) dateMap[dateKey] = {};
+    // 같은 날 같은 내러티브의 가장 최신 스냅샷 사용
+    const existing = dateMap[dateKey][h.narrative_id];
+    if (!existing || new Date(h.snapshot_at) > new Date(existing.snapshot_at)) {
+      dateMap[dateKey][h.narrative_id] = h;
+    }
+  });
+
+  const dates = Object.keys(dateMap).sort();
+  if (dates.length === 0) return null;
+
+  // 각 날짜에서의 "주도 내러티브" = 점수 기준 Top 3
+  const snapshots = dates.map(date => {
+    const items = Object.values(dateMap[date]);
+    const sorted = items.sort((a, b) => (b.score || 0) - (a.score || 0));
+    return { date, items: sorted, top: sorted.slice(0, 3) };
+  });
+
+  return (
+    <Card title="🗺️ 시장 내러티브 지형 변화" subtitle="날짜별 주도 내러티브와 전체 구성 변화를 추적합니다">
+      <div style={{ display: 'grid', gap: 12 }}>
+        {snapshots.map((snap, si) => {
+          const prevSnap = si > 0 ? snapshots[si - 1] : null;
+          // 새로 등장한 내러티브
+          const prevIds = prevSnap ? prevSnap.items.map(i => i.narrative_id) : [];
+          const newIds = snap.items.filter(i => !prevIds.includes(i.narrative_id)).map(i => i.narrative_id);
+          // 스테이지 변화
+          const stageChanges = snap.items.filter(item => {
+            if (!prevSnap) return false;
+            const prevItem = prevSnap.items.find(p => p.narrative_id === item.narrative_id);
+            return prevItem && prevItem.stage !== item.stage;
+          });
+          const totalScore = snap.items.reduce((s, i) => s + (i.score || 0), 0);
+
+          return (
+            <div key={snap.date} style={{ padding: '14px 18px', background: C.bg, borderRadius: 10, border: `1px solid ${C.border}` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: C.accent }}>{snap.date}</span>
+                  <Pill color={C.dim}>{snap.items.length}개 내러티브</Pill>
+                  {newIds.length > 0 && <Pill color={C.green}>+{newIds.length} 신규</Pill>}
+                  {stageChanges.length > 0 && <Pill color="#818cf8">{stageChanges.length}개 단계변화</Pill>}
+                </div>
+                <span style={{ fontSize: 11, color: C.muted }}>합산 {totalScore}점</span>
+              </div>
+              {/* Top 3 주도 내러티브 */}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {snap.top.map((item, i) => {
+                  const stage = STAGES.find(s => s.key === item.stage);
+                  const pct = totalScore > 0 ? ((item.score || 0) / totalScore * 100).toFixed(0) : 0;
+                  const isNew = newIds.includes(item.narrative_id);
+                  const stageChange = stageChanges.find(sc => sc.narrative_id === item.narrative_id);
+                  const prevStage = stageChange && prevSnap ? STAGES.find(s => s.key === prevSnap.items.find(p => p.narrative_id === item.narrative_id)?.stage) : null;
+
+                  return (
+                    <div key={item.narrative_id} style={{
+                      flex: '1 1 30%', padding: '10px 14px', borderRadius: 8,
+                      background: C.card, border: `1px solid ${i === 0 ? C.accent + '44' : C.border}`,
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                        <span style={{ fontSize: 12, fontWeight: 800, color: i === 0 ? C.accent : C.muted }}>#{i + 1}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{item.name}</span>
+                        {isNew && <span style={{ fontSize: 10, color: C.green, fontWeight: 600 }}>NEW</span>}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 16, fontWeight: 900, color: C.accent }}>{item.score}</span>
+                        <span style={{ fontSize: 10, color: C.muted }}>({pct}%)</span>
+                        {stageChange && prevStage ? (
+                          <span style={{ fontSize: 10 }}>
+                            <span style={{ color: prevStage.color }}>{prevStage.emoji}</span>
+                            <span style={{ color: C.muted }}> → </span>
+                            <span style={{ color: stage?.color }}>{stage?.emoji}</span>
+                          </span>
+                        ) : (
+                          <Pill color={stage?.color} style={{ fontSize: 9 }}>{stage?.emoji} {stage?.label}</Pill>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {/* 스테이지 변화 알림 */}
+              {stageChanges.length > 0 && (
+                <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {stageChanges.map(sc => {
+                    const prevItem = prevSnap?.items.find(p => p.narrative_id === sc.narrative_id);
+                    const from = STAGES.find(s => s.key === prevItem?.stage);
+                    const to = STAGES.find(s => s.key === sc.stage);
+                    return (
+                      <div key={sc.narrative_id} style={{ fontSize: 11, color: C.dim, padding: '3px 8px', background: C.card, borderRadius: 4 }}>
+                        ⚡ {sc.name}: <span style={{ color: from?.color }}>{from?.label}</span> → <span style={{ color: to?.color }}>{to?.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════
