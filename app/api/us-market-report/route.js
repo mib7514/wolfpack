@@ -134,16 +134,17 @@ export async function POST(request) {
     const ctx = userContext ? ` 맥락:${userContext}` : '';
 
     // ─── 2단계: AI — 52주 신고가 + 내러티브만 (최소 토큰) ───
+    // web_search 1회당 ~50K 토큰 추가됨 → 3회로 제한 (총 ~150K 이내)
     const response = await client.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
-      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }],
+      max_tokens: 3000,
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
       messages: [{
         role: 'user',
-        content: `${ws}~${we} 주간 미국 주식시장. FRED데이터: ${fredLines}.${ctx}
-웹검색으로 52주 신고가 종목+주간 이벤트 수집. 간결하게 JSON만 응답(백틱없이):
-{"narrative":{"summary":"3문장 시장요약","keyNarrative":"핵심1줄","events":[{"event":"명","impact":"1문장"}],"sectorSummary":"1문장"},"themes":[{"name":"테마","description":"1문장","stocks":[{"ticker":"XX","name":"이름","marketCap":"1T","yoyReturn":10,"weekReturn":2,"catalyst":"1문장"}]}],"deepDives":[{"ticker":"XX","name":"이름","theme":"테마","whyNow":"2문장","earnings":"1문장","structuralTheme":"1문장","risk":"1문장"}],"implications":{"bondMacro":"채권2문장","equity":"주식2문장","nextWeekEvents":["ev1","ev2"]},"breadth":{"sp500NewHighs":0,"sp500NewLows":0,"nasdaqNewHighs":0,"nasdaqNewLows":0}}
-themes 2~4개(각 stocks 2~5), deepDives 3~5개. 확인불가시 breadth 0.`
+        content: `${ws}~${we} 미국 주간시장. FRED: ${fredLines}.${ctx}
+웹검색: "52 week high stocks ${we}" 검색 1회로 신고가 종목 수집. 간결 JSON만(백틱없이):
+{"narrative":{"summary":"시장요약2문장","keyNarrative":"핵심1줄","events":[{"event":"명","impact":"1문장"}],"sectorSummary":"섹터강약1문장"},"themes":[{"name":"테마","description":"1문장","stocks":[{"ticker":"XX","name":"이름","marketCap":"1T","yoyReturn":10,"weekReturn":2,"catalyst":"1문장"}]}],"deepDives":[{"ticker":"XX","name":"이름","theme":"테마","whyNow":"1문장","earnings":"1문장","structuralTheme":"1문장","risk":"1문장"}],"implications":{"bondMacro":"채권1문장","equity":"주식1문장","nextWeekEvents":["ev1","ev2"]},"breadth":{"sp500NewHighs":0,"sp500NewLows":0,"nasdaqNewHighs":0,"nasdaqNewLows":0}}
+themes 2~3개(각2~4종목),deepDives 3개,breadth 확인불가시0.모든텍스트1문장이내.`
       }],
     });
 
