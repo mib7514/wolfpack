@@ -457,6 +457,7 @@ export default function HartnettMonitorPage() {
   const [showPin, setShowPin] = useState(false);
   const [manualDxy, setManualDxy] = useState('');
   const [manualBrent, setManualBrent] = useState('');
+  const [manualUst30y, setManualUst30y] = useState('');
 
   // 시계열
   const [tab, setTab] = useState('current');
@@ -474,6 +475,7 @@ export default function HartnettMonitorPage() {
       setFredLive(json.fredLive);
       if (json.latest?.input_levels?.dxy) setManualDxy(String(json.latest.input_levels.dxy));
       if (json.latest?.input_levels?.brent) setManualBrent(String(json.latest.input_levels.brent));
+      if (json.latest?.input_levels?.ust30y) setManualUst30y(String(json.latest.input_levels.ust30y));
     } catch (err) { console.error(err); } finally { setLoading(false); }
   }, []);
 
@@ -500,7 +502,7 @@ export default function HartnettMonitorPage() {
       const res = await fetch('/api/hartnett-monitor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-admin-pin': getPin() },
-        body: JSON.stringify({ manualOverrides: { dxy: manualDxy ? parseFloat(manualDxy) : undefined, brent: manualBrent ? parseFloat(manualBrent) : undefined } }),
+        body: JSON.stringify({ manualOverrides: { dxy: manualDxy ? parseFloat(manualDxy) : undefined, brent: manualBrent ? parseFloat(manualBrent) : undefined, ust30y: manualUst30y ? parseFloat(manualUst30y) : undefined } }),
       });
       const result = await res.json();
       if (!res.ok) { setError(result.error || '분석 실패'); return; }
@@ -514,9 +516,6 @@ export default function HartnettMonitorPage() {
   const assessment = displayData?.assessment || {};
   const triggers = assessment.triggers || {};
   const savedLevels = displayData?.input_levels || {};
-  const metCount = assessment.triggers_met_count ?? 0;
-  const overall = assessment.overall || 'neutral';
-  const overallC = SC[overall] || SC.neutral;
   const dailyChecks = assessment.daily_checks || {};
   const weeklyChecks = assessment.weekly_checks || {};
   const dailyRedCount = DAILY_ITEMS.filter(i => dailyChecks[i.id]?.met === true).length;
@@ -528,6 +527,17 @@ export default function HartnettMonitorPage() {
     if (fredLive?.[key]?.value != null) return fredLive[key].value;
     return savedLevels[key] || null;
   };
+
+  // 트리거 충족을 실제 레벨에서 직접 계산 (AI 판단에 의존하지 않음)
+  const computedMetCount = TRIGGER_CONFIG.reduce((count, cfg) => {
+    const level = currentLevel(cfg.key);
+    if (level == null) return count;
+    const met = cfg.direction === 'below' ? level < cfg.threshold : level > cfg.threshold;
+    return count + (met ? 1 : 0);
+  }, 0);
+  const metCount = computedMetCount;
+  const overall = computedMetCount >= 3 ? 'red' : computedMetCount >= 2 ? 'yellow' : (assessment.overall || 'neutral');
+  const overallC = SC[overall] || SC.neutral;
 
   if (loading) {
     return (
@@ -653,14 +663,13 @@ export default function HartnettMonitorPage() {
             <h2 style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em' }}>정책 풋 트리거</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px', marginBottom: '20px' }}>
               {TRIGGER_CONFIG.map(cfg => {
-                const t = triggers[cfg.key] || {};
-                const level = t.level ?? currentLevel(cfg.key);
-                const met = t.met;
-                const status = met ? 'red' : level == null ? 'neutral' :
+                const level = currentLevel(cfg.key) ?? (triggers[cfg.key]?.level || null);
+                const status = level == null ? 'neutral' :
                   cfg.direction === 'below' ? (level < cfg.threshold ? 'red' : level < cfg.threshold * 1.03 ? 'yellow' : 'green') :
                   (level > cfg.threshold ? 'red' : level > cfg.threshold * 0.95 ? 'yellow' : 'green');
                 const c = SC[status];
                 const fredDate = !selectedSnapshot && fredLive?.[cfg.key]?.date;
+                const aiComment = triggers[cfg.key]?.comment;
                 return (
                   <div key={cfg.key} style={{ background: c.bg, border: `1px solid ${c.border}`, borderRadius: '8px', padding: '16px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
@@ -676,7 +685,7 @@ export default function HartnettMonitorPage() {
                       {fredDate && <span style={{ marginLeft: '8px' }}>({fredDate})</span>}
                     </div>
                     <div style={{ fontSize: '11px', color: '#475569', marginTop: '2px' }}>{cfg.desc}</div>
-                    {t.comment && <div style={{ fontSize: '12px', color: c.text, marginTop: '6px', opacity: 0.8 }}>{t.comment}</div>}
+                    {aiComment && <div style={{ fontSize: '12px', color: c.text, marginTop: '6px', opacity: 0.8 }}>{aiComment}</div>}
                   </div>
                 );
               })}
@@ -782,12 +791,17 @@ export default function HartnettMonitorPage() {
               <div style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '12px', padding: '20px 24px', marginBottom: '20px' }}>
                 <h2 style={{ fontSize: '14px', color: '#e2e8f0', marginBottom: '12px', fontWeight: 600 }}>🤖 AI 업데이트</h2>
                 <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '12px' }}>
-                  FRED 10개 시리즈 자동수집 → AI 트리거+체크리스트+전략 일괄 평가. <b style={{ color: '#f59e0b' }}>DXY만 수동입력</b> (FRED 미제공).
+                  FRED 10개 시리즈 자동수집 → AI 체크리스트+전략 평가. <b style={{ color: '#f59e0b' }}>DXY 필수 수동입력</b>. 30Y 등은 FRED 지연 시 수동 오버라이드 가능. <b style={{ color: '#ef4444' }}>트리거 충족은 실제 데이터에서 코드로 자동 판단</b>.
                 </p>
                 <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
                   <div>
                     <label style={{ fontSize: '11px', color: '#f59e0b', display: 'block', marginBottom: '4px' }}>DXY (수동 · 필수)</label>
                     <input type="number" step="any" value={manualDxy} onChange={e => setManualDxy(e.target.value)} placeholder="99.5"
+                      style={{ width: '140px', background: '#1e293b', border: '1px solid #f59e0b', color: '#e2e8f0', padding: '8px 10px', borderRadius: '6px', fontSize: '14px', fontFamily: 'monospace' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '11px', color: '#f59e0b', display: 'block', marginBottom: '4px' }}>30Y 금리 (FRED 지연 시 수동)</label>
+                    <input type="number" step="any" value={manualUst30y} onChange={e => setManualUst30y(e.target.value)} placeholder="4.947"
                       style={{ width: '140px', background: '#1e293b', border: '1px solid #f59e0b', color: '#e2e8f0', padding: '8px 10px', borderRadius: '6px', fontSize: '14px', fontFamily: 'monospace' }} />
                   </div>
                   <div>
