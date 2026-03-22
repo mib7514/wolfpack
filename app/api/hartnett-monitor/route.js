@@ -186,6 +186,33 @@ JSON만 반환. 마크다운/백틱 없이 순수 JSON만. 모든 comment는 반
       return NextResponse.json({ error: 'AI 응답 파싱 실패', raw: text.substring(0, 300) }, { status: 500 });
     }
 
+    // ─── 트리거 충족 여부를 코드에서 직접 계산 (AI 판단 불신뢰) ───
+    const triggerRules = [
+      { key: 'sp500', threshold: 6600, direction: 'below' },
+      { key: 'wti', threshold: 100, direction: 'above' },
+      { key: 'dxy', threshold: 100, direction: 'above' },
+      { key: 'ust30y', threshold: 5.0, direction: 'above' },
+    ];
+
+    if (!assessment.triggers) assessment.triggers = {};
+    let metCount = 0;
+    for (const rule of triggerRules) {
+      const level = inputLevels[rule.key];
+      if (level == null) continue;
+      const met = rule.direction === 'below' ? level < rule.threshold : level > rule.threshold;
+      // AI가 뭐라 했든 실제 데이터 기반으로 덮어쓰기
+      if (!assessment.triggers[rule.key]) assessment.triggers[rule.key] = {};
+      assessment.triggers[rule.key].level = level;
+      assessment.triggers[rule.key].threshold = rule.threshold;
+      assessment.triggers[rule.key].met = met;
+      if (met) metCount++;
+    }
+    assessment.triggers_met_count = metCount;
+
+    // overall도 트리거 수 기반으로 보정
+    if (metCount >= 3) assessment.overall = 'red';
+    else if (metCount >= 2 || assessment.overall === 'red') assessment.overall = assessment.overall === 'red' && metCount < 2 ? 'yellow' : assessment.overall;
+
     // ─── 날짜별 저장 (upsert) ───
     const now = new Date();
     const kstDate = new Date(now.getTime() + 9 * 60 * 60 * 1000).toISOString().split('T')[0];
