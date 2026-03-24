@@ -348,20 +348,82 @@ function RangeSlider({ min, max, value, onChange, labels, height = 44 }) {
 // MAIN PAGE
 // ══════════════════════════════════════
 export default function CPIChartPage() {
-  // Compute derived series from index
-  const allData = useMemo(() => {
-    const us = computeRates(CPI_MONTHS, US_CPI_INDEX);
-    const kr = computeRates(CPI_MONTHS, KR_CPI_INDEX);
-    return {
-      US_YoY: us.yoy,
-      KR_YoY: kr.yoy,
-      US_MoM: us.mom,
-      KR_MoM: kr.mom,
-    };
+  // Load API data on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/ra-cpi");
+        const json = await res.json();
+        if (json.data?.data) {
+          setApiData(json.data);
+        }
+      } catch (e) {
+        console.error("CPI API load error:", e);
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
-  // Start from 2000-01 (index 12, first YoY available)
-  const displayMonths = CPI_MONTHS.slice(12);
+  // Handle admin update
+  const handleUpdate = async () => {
+    if (!pin) return;
+    setUpdating(true);
+    setError("");
+    setUpdateMsg("📡 FRED + ECOS에서 CPI 데이터 수집 중...");
+
+    try {
+      const res = await fetch("/api/ra-cpi", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-pin": pin },
+        body: JSON.stringify({ action: "update" }),
+      });
+      const json = await res.json();
+      if (json.error) {
+        setError(json.error);
+        setUpdateMsg("");
+      } else {
+        setApiData(json.data);
+        setShowPin(false);
+        setPin("");
+        const d = json.data?.data;
+        setUpdateMsg("✅ 업데이트 완료! US: " + (d?.us_count || 0) + "개월, KR: " + (d?.kr_count || 0) + "개월");
+        if (d?.errors) setError("일부 오류: " + d.errors.join("; "));
+        setTimeout(() => setUpdateMsg(""), 5000);
+      }
+    } catch (e) {
+      setError("업데이트 실패: " + e.message);
+      setUpdateMsg("");
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  // Use API data if available, else fallback to hardcoded
+  const { sourceMonths, usIndex, krIndex } = useMemo(() => {
+    if (apiData?.data?.months) {
+      return {
+        sourceMonths: apiData.data.months,
+        usIndex: apiData.data.us_index,
+        krIndex: apiData.data.kr_index,
+      };
+    }
+    return {
+      sourceMonths: CPI_MONTHS,
+      usIndex: US_CPI_INDEX,
+      krIndex: KR_CPI_INDEX,
+    };
+  }, [apiData]);
+
+  // Compute derived series from index
+  const allData = useMemo(() => {
+    const us = computeRates(sourceMonths, usIndex);
+    const kr = computeRates(sourceMonths, krIndex);
+    return { US_YoY: us.yoy, KR_YoY: kr.yoy, US_MoM: us.mom, KR_MoM: kr.mom };
+  }, [sourceMonths, usIndex, krIndex]);
+
+  // Start from month 12 (first YoY available)
+  const displayMonths = sourceMonths.slice(12);
   const displaySeries = useMemo(() => ({
     US_YoY: allData.US_YoY.slice(12),
     KR_YoY: allData.KR_YoY.slice(12),
@@ -374,6 +436,22 @@ export default function CPIChartPage() {
   const [fontSize, setFontSize] = useState(13);
   const [yDecimals, setYDecimals] = useState(1);
 
+  // API data
+  const [apiData, setApiData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState(false);
+  const [showPin, setShowPin] = useState(false);
+  const [pin, setPin] = useState("");
+  const [updateMsg, setUpdateMsg] = useState("");
+  const [error, setError] = useState("");
+
+  // Reset dateRange when displayMonths changes
+  useEffect(() => {
+    if (displayMonths.length > 0) {
+      setDateRange([Math.max(0, displayMonths.length - 120), displayMonths.length - 1]);
+    }
+  }, [displayMonths.length]);
+
   // Quick range
   const setQuickRange = (months) => {
     const end = displayMonths.length - 1;
@@ -385,6 +463,17 @@ export default function CPIChartPage() {
   };
 
   const dateLabels = [displayMonths[dateRange[0]], displayMonths[dateRange[1]]];
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#fff", fontFamily: "'Pretendard', sans-serif" }}>
+        <div style={{ textAlign: "center", color: "#64748b" }}>
+          <div style={{ fontSize: 28, marginBottom: 8 }}>🌡️</div>
+          <div style={{ fontSize: 13 }}>CPI 데이터 로딩 중...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "flex", height: "100vh", background: "#fff", fontFamily: "'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif", color: "#0f172a", overflow: "hidden" }}>
@@ -452,13 +541,38 @@ export default function CPIChartPage() {
         <div style={{ display: "flex", alignItems: "center", padding: "6px 16px", borderBottom: "1px solid #f1f5f9", gap: 8 }}>
           <a href="/modules/ra" style={{ fontSize: 11, color: "#94a3b8", textDecoration: "none" }}>← 금리차트</a>
           <a href="/" style={{ fontSize: 11, color: "#94a3b8", textDecoration: "none", marginLeft: 4 }}>← 컨트롤타워</a>
+          <button onClick={() => setShowPin(!showPin)} style={{
+            marginLeft: 8, padding: "3px 10px", borderRadius: 6, border: "1px solid #e2e8f0",
+            background: showPin ? "#0046ff10" : "#fff", color: "#0046ff", fontSize: 10, fontWeight: 600, cursor: "pointer",
+          }}>🔐 업데이트</button>
           <span style={{ fontSize: 14, fontWeight: 700, color: "#000", marginLeft: 8 }}>
             {dateLabels[0]} ~ {dateLabels[1]}
           </span>
           <span style={{ fontSize: 12, color: "#000", marginLeft: "auto" }}>
-            {displayMonths.length}개월 · 2000~{displayMonths[displayMonths.length - 1]?.slice(0, 4)}
+            {displayMonths.length}개월 {apiData ? "(API)" : "(내장)"}
+            {apiData?.updated_at && (" · " + new Date(apiData.updated_at).toLocaleDateString("ko-KR"))}
           </span>
         </div>
+
+        {/* Admin Panel */}
+        {showPin && (
+          <div style={{ padding: "8px 16px", borderBottom: "1px solid #e2e8f0", background: "#fafbfc" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input type="password" placeholder="관리자 PIN" value={pin} onChange={e => setPin(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleUpdate()}
+                style={{ width: 120, padding: "5px 10px", border: "1px solid #d0d5dd", borderRadius: 6, fontSize: 12, outline: "none" }} />
+              <button onClick={handleUpdate} disabled={updating || !pin} style={{
+                padding: "5px 16px", borderRadius: 6, border: "none",
+                background: updating ? "#e2e8f0" : "#0046ff", color: "#fff",
+                fontSize: 12, fontWeight: 600, cursor: updating ? "wait" : "pointer",
+                opacity: !pin ? 0.4 : 1,
+              }}>{updating ? "수집 중..." : "FRED + ECOS 업데이트"}</button>
+              <span style={{ fontSize: 10, color: "#94a3b8" }}>FRED(미국CPI) + ECOS(한국CPI) 최신 데이터 수집</span>
+            </div>
+            {updateMsg && <div style={{ marginTop: 4, fontSize: 11, color: "#0046ff" }}>{updateMsg}</div>}
+            {error && <div style={{ marginTop: 4, fontSize: 11, color: "#dc2626" }}>{error}</div>}
+          </div>
+        )}
 
         {/* Chart */}
         <div style={{ flex: 1, padding: "8px 16px 0", position: "relative", minHeight: 0 }}>
