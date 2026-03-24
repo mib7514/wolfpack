@@ -805,7 +805,10 @@ function DetailPanel({ stock, onClose, onUpdate, onDelete, onTogglePortfolio, ad
         onUpdate(updated);
         dbUpdate(stock.id, { indicators: data.indicators || indicators, momentum: data.momentum || momentum, kelly_win_prob: newKellyWP, kelly_wl_ratio: newKellyWL });
         const kellyNote = data.kelly_reasoning ? ` | Kelly: ${data.kelly_reasoning}` : "";
-        setEvalResult((data.summary || "평가 완료") + kellyNote);
+        const histNote = data._history
+          ? ` | 히스토리: ${data._history.saved ? "✅저장" : "❌실패"} ${data._history.error || ""}`
+          : " | 히스토리: 응답없음";
+        setEvalResult((data.summary || "평가 완료") + kellyNote + histNote);
         // 히스토리 차트 리프레시
         setHistoryKey(prev => prev + 1);
       } else {
