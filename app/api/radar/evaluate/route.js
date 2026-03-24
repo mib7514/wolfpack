@@ -131,35 +131,50 @@ JSON만 응답:
     if (!parsed) return NextResponse.json({ error: "Parse failed" }, { status: 500 });
 
     // ─── 히스토리 스냅샷 저장 ───
+    let historySaved = false;
+    let historyError = null;
+
     if (stock_id && parsed.indicators) {
       try {
         const sb = getSupabase();
         const totalScore = calcTotalScore(parsed.indicators);
         const today = new Date().toISOString().slice(0, 10);
 
-        await sb.from("radar_score_history").upsert({
-          stock_id: stock_id,
-          ticker: ticker,
-          snapshot_date: today,
-          total_score: totalScore,
-          indicators: parsed.indicators,
-          momentum: parsed.momentum || null,
-          kelly_win_prob: parsed.kelly_win_prob ?? kelly_win_prob ?? 0.5,
-          kelly_wl_ratio: parsed.kelly_wl_ratio ?? kelly_wl_ratio ?? 2.0,
-          kelly_reasoning: parsed.kelly_reasoning || "",
-          summary: parsed.summary || "",
-        }, {
-          onConflict: "stock_id,snapshot_date",
-          ignoreDuplicates: false,
-        });
-      } catch (histErr) {
-        // 히스토리 저장 실패해도 평가 결과는 반환
-        console.error("History save error:", histErr);
+        const { data: histData, error: histErr } = await sb
+          .from("radar_score_history")
+          .upsert({
+            stock_id: stock_id,
+            ticker: ticker,
+            snapshot_date: today,
+            total_score: totalScore,
+            indicators: parsed.indicators,
+            momentum: parsed.momentum || null,
+            kelly_win_prob: parsed.kelly_win_prob ?? kelly_win_prob ?? 0.5,
+            kelly_wl_ratio: parsed.kelly_wl_ratio ?? kelly_wl_ratio ?? 2.0,
+            kelly_reasoning: parsed.kelly_reasoning || "",
+            summary: parsed.summary || "",
+          }, {
+            onConflict: "stock_id,snapshot_date",
+            ignoreDuplicates: false,
+          })
+          .select();
+
+        if (histErr) {
+          historyError = histErr.message;
+          console.error("History upsert error:", histErr);
+        } else {
+          historySaved = true;
+        }
+      } catch (e) {
+        historyError = e.message;
+        console.error("History save exception:", e);
       }
+    } else {
+      historyError = `stock_id=${stock_id ? "있음" : "없음"}, indicators=${parsed.indicators ? "있음" : "없음"}`;
     }
     // ──────────────────────────
 
-    return NextResponse.json(parsed);
+    return NextResponse.json({ ...parsed, _history: { saved: historySaved, error: historyError, stock_id: stock_id || null } });
   } catch (e) {
     console.error("Radar evaluate error:", e);
     return NextResponse.json({ error: e.message }, { status: 500 });
