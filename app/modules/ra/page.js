@@ -206,8 +206,8 @@ function mergeData(existing, newParsed, sourceType) {
 function loadFromStorage() {
   try {
     if (typeof window === "undefined") return null;
-    const d = localStorage.getItem("ra_yield_dates");
-    const s = localStorage.getItem("ra_yield_series");
+    const d = localStorage.getItem("ra_v4_dates");
+    const s = localStorage.getItem("ra_v4_series");
     if (!d || !s) return null;
     return { dates: JSON.parse(d), series: JSON.parse(s) };
   } catch { return null; }
@@ -216,8 +216,8 @@ function loadFromStorage() {
 function saveToStorage(data) {
   try {
     if (typeof window === "undefined") return;
-    localStorage.setItem("ra_yield_dates", JSON.stringify(data.dates));
-    localStorage.setItem("ra_yield_series", JSON.stringify(data.series));
+    localStorage.setItem("ra_v4_dates", JSON.stringify(data.dates));
+    localStorage.setItem("ra_v4_series", JSON.stringify(data.series));
   } catch (e) { console.error("Storage save error:", e); }
 }
 
@@ -548,7 +548,8 @@ export default function YieldDashboard() {
   // Initialize data
   useEffect(() => {
     let stored = loadFromStorage();
-    if (!stored || !stored.dates || stored.dates.length === 0) {
+    // Reset if stored data is smaller than built-in data (version upgrade)
+    if (!stored || !stored.dates || stored.dates.length < INIT_DATES.length) {
       stored = { dates: INIT_DATES, series: INIT_SERIES };
       saveToStorage(stored);
     }
