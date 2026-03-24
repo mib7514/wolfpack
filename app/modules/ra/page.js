@@ -224,7 +224,7 @@ function saveToStorage(data) {
 // ══════════════════════════════════════
 // CHART COMPONENT
 // ══════════════════════════════════════
-function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRange }) {
+function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRange, forecasts }) {
   const canvasRef = useRef(null);
   const chartRef = useRef(null);
 
@@ -257,25 +257,77 @@ function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRang
     const leftUnit = (() => { const id = selected.find(id => axisMap[id] !== "right"); return id ? (SERIES_MAP[id]?.unit || "%") : "%"; })();
     const rightUnit = (() => { const id = selected.find(id => axisMap[id] === "right"); return id ? (SERIES_MAP[id]?.unit || "bp") : "bp"; })();
 
-    const datasets = selected.map(id => {
+    const datasets = [];
+    const allDates = data.dates;
+    selected.forEach(id => {
       const cfg = SERIES_MAP[id];
-      if (!cfg) return null;
-      const rawData = (data.series[id] || []).slice(startIdx, endIdx + 1);
-      return {
-        label: cfg.label,
-        data: rawData,
-        borderColor: cfg.color,
-        backgroundColor: cfg.color + "18",
-        borderWidth: cfg.width || 1.8,
-        borderDash: cfg.dash || [],
-        pointRadius: 0,
-        pointHoverRadius: 5,
-        tension: 0.1,
-        yAxisID: axisMap[id] === "right" ? "yRight" : "yLeft",
-        stepped: cfg.stepped ? "before" : false,
-        spanGaps: true,
-      };
-    }).filter(Boolean);
+      if (!cfg) return;
+      const fullData = data.series[id] || [];
+      const rawData = fullData.slice(startIdx, endIdx + 1);
+      const yAxisID = axisMap[id] === "right" ? "yRight" : "yLeft";
+
+      // Check if there are forecast points for this series
+      const fc = forecasts?.[id];
+      const fcData = fc ? buildForecastData(allDates, id, fullData, fc) : null;
+
+      if (fcData) {
+        // Find last actual data index within slice
+        let lastActualLocal = -1;
+        for (let i = rawData.length - 1; i >= 0; i--) {
+          if (rawData[i] != null) { lastActualLocal = i; break; }
+        }
+        // Actual dataset: data up to lastActualLocal, rest null
+        const actualData = rawData.map((v, i) => i <= lastActualLocal ? v : null);
+        // Forecast dataset: null before lastActualLocal, then forecast values
+        const fcSlice = fcData.slice(startIdx, endIdx + 1);
+        const forecastData = fcSlice.map((v, i) => i >= lastActualLocal ? v : null);
+
+        // Actual line (solid)
+        datasets.push({
+          label: cfg.label,
+          data: actualData,
+          borderColor: cfg.color,
+          backgroundColor: "transparent",
+          borderWidth: cfg.width || 1.8,
+          borderDash: cfg.dash || [],
+          pointRadius: 0, pointHoverRadius: 5,
+          tension: 0.1,
+          yAxisID,
+          stepped: cfg.stepped ? "before" : false,
+          spanGaps: true,
+        });
+        // Forecast line (dashed + shaded)
+        datasets.push({
+          label: cfg.label + " (전망)",
+          data: forecastData,
+          borderColor: cfg.color,
+          backgroundColor: cfg.color + "15",
+          borderWidth: (cfg.width || 1.8) * 0.9,
+          borderDash: [6, 4],
+          pointRadius: 0, pointHoverRadius: 5,
+          tension: 0.3,
+          yAxisID,
+          stepped: false,
+          spanGaps: true,
+          fill: true,
+        });
+      } else {
+        // No forecast - single solid line
+        datasets.push({
+          label: cfg.label,
+          data: rawData,
+          borderColor: cfg.color,
+          backgroundColor: cfg.color + "18",
+          borderWidth: cfg.width || 1.8,
+          borderDash: cfg.dash || [],
+          pointRadius: 0, pointHoverRadius: 5,
+          tension: 0.1,
+          yAxisID,
+          stepped: cfg.stepped ? "before" : false,
+          spanGaps: true,
+        });
+      }
+    });
 
     // Compute nice tick interval for 6-10 ticks
     function niceScale(min, max, isBp) {
@@ -400,10 +452,15 @@ function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRang
             boxPadding: 5,
             callbacks: {
               label: function(ctx) {
-                const cfg = SERIES_MAP[selected[ctx.datasetIndex]];
+                const dsLabel = ctx.dataset.label || "";
+                const isForecast = dsLabel.includes("(전망)");
+                const baseLabel = dsLabel.replace(" (전망)", "");
+                // Find series config by label
+                const cfg = ALL_SERIES.find(s => s.label === baseLabel);
                 const unit = cfg?.unit || "%";
                 const val = ctx.parsed.y;
-                return " " + cfg?.label + ": " + (unit === "bp" ? val?.toFixed(1) + " bp" : val?.toFixed(3) + "%");
+                const prefix = isForecast ? " [전망] " : " ";
+                return prefix + baseLabel + ": " + (unit === "bp" ? val?.toFixed(1) + " bp" : val?.toFixed(3) + "%");
               }
             }
           },
@@ -572,7 +629,107 @@ function CustomLegend({ selected, axisMap }) {
 // ══════════════════════════════════════
 // DATE RANGE INPUT (날짜 직접 입력)
 // ══════════════════════════════════════
-function DateRangeInputs({ dates, dateRange, setDateRange }) {
+
+// ══════════════════════════════════════
+// FUTURE DATE EXTENSION + FORECAST INTERPOLATION
+// ══════════════════════════════════════
+function generateBusinessDays(startDate, endDate) {
+  // Generate weekday dates from startDate (exclusive) to endDate (inclusive)
+  const result = [];
+  const d = new Date(startDate + "T00:00:00");
+  const end = new Date(endDate + "T00:00:00");
+  d.setDate(d.getDate() + 1);
+  while (d <= end) {
+    if (d.getDay() !== 0 && d.getDay() !== 6) {
+      result.push(d.toISOString().slice(0, 10));
+    }
+    d.setDate(d.getDate() + 1);
+  }
+  return result;
+}
+
+function extendDataToDate(data, targetEndDate) {
+  // If targetEndDate is beyond last date, extend with nulls
+  if (!data || !data.dates || data.dates.length === 0) return data;
+  const lastDate = data.dates[data.dates.length - 1];
+  if (targetEndDate <= lastDate) return data;
+  const extraDays = generateBusinessDays(lastDate, targetEndDate);
+  if (extraDays.length === 0) return data;
+  const newDates = [...data.dates, ...extraDays];
+  const newSeries = {};
+  for (const [k, v] of Object.entries(data.series)) {
+    newSeries[k] = [...v, ...Array(extraDays.length).fill(null)];
+  }
+  return { dates: newDates, series: newSeries };
+}
+
+function getQuarterEnd(yyyy, q) {
+  // Return last business day of quarter (approx)
+  const monthEnds = { 1: "03-31", 2: "06-30", 3: "09-30", 4: "12-31" };
+  return yyyy + "-" + monthEnds[q];
+}
+
+function buildForecastData(dates, seriesId, seriesData, forecastPoints) {
+  // forecastPoints: { "2026-06-30": 2.75, "2026-09-30": 2.50, ... }
+  // Returns an array same length as dates with interpolated forecast values
+  // null for dates before forecast starts, interpolated values for forecast period
+  if (!forecastPoints || Object.keys(forecastPoints).length === 0) return null;
+
+  const result = new Array(dates.length).fill(null);
+
+  // Find the last actual data point
+  let lastActualIdx = -1;
+  let lastActualVal = null;
+  for (let i = dates.length - 1; i >= 0; i--) {
+    if (seriesData[i] != null) { lastActualIdx = i; lastActualVal = seriesData[i]; break; }
+  }
+  if (lastActualIdx === -1) return null;
+
+  // Build sorted anchor points: [lastActual, then each forecast point]
+  const anchors = [{ idx: lastActualIdx, val: lastActualVal }];
+  const sortedFcDates = Object.keys(forecastPoints).sort();
+  for (const fcDate of sortedFcDates) {
+    const idx = dates.indexOf(fcDate);
+    // If exact date not found, find nearest
+    let bestIdx = -1;
+    if (idx !== -1) bestIdx = idx;
+    else {
+      for (let i = 0; i < dates.length; i++) {
+        if (dates[i] >= fcDate) { bestIdx = i; break; }
+      }
+    }
+    if (bestIdx > lastActualIdx) {
+      anchors.push({ idx: bestIdx, val: parseFloat(forecastPoints[fcDate]) });
+    }
+  }
+
+  if (anchors.length < 2) return null;
+
+  // Set the overlap point (last actual) for smooth connection
+  result[lastActualIdx] = lastActualVal;
+
+  // Linear interpolation between consecutive anchors
+  for (let a = 0; a < anchors.length - 1; a++) {
+    const from = anchors[a];
+    const to = anchors[a + 1];
+    for (let i = from.idx; i <= to.idx; i++) {
+      const t = (i - from.idx) / (to.idx - from.idx);
+      // Smooth cubic ease
+      const st = t * t * (3 - 2 * t);
+      result[i] = from.val + (to.val - from.val) * st;
+    }
+  }
+
+  // Extend flat after last anchor to end of dates
+  const lastAnchor = anchors[anchors.length - 1];
+  for (let i = lastAnchor.idx + 1; i < dates.length; i++) {
+    result[i] = lastAnchor.val;
+  }
+
+  return result;
+}
+
+function DateRangeInputs({ dates, dateRange, setDateRange, onExtendDates }) {
   const [startInput, setStartInput] = useState("");
   const [endInput, setEndInput] = useState("");
 
@@ -617,11 +774,29 @@ function DateRangeInputs({ dates, dateRange, setDateRange }) {
   }, [startInput, dateRange, findDateIndex, setDateRange]);
 
   const applyEnd = useCallback(() => {
+    // Normalize the input
+    let normalized = endInput.trim();
+    if (/^\d{4}$/.test(normalized)) normalized += "-12-31";
+    else if (/^\d{4}-\d{1,2}$/.test(normalized)) {
+      const [y, m] = normalized.split("-");
+      const mm = parseInt(m);
+      const lastDay = new Date(parseInt(y), mm, 0).getDate();
+      normalized = y + "-" + m.padStart(2, "0") + "-" + lastDay;
+    } else if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(normalized)) {
+      const [y, m, d] = normalized.split("-");
+      normalized = y + "-" + m.padStart(2, "0") + "-" + d.padStart(2, "0");
+    }
+    // If beyond last date, extend
+    if (dates && normalized > dates[dates.length - 1]) {
+      if (onExtendDates) onExtendDates(normalized);
+      // After extending, the index will be at the end
+      return;
+    }
     const idx = findDateIndex(endInput, "end");
     if (idx >= 0 && idx > dateRange[0]) {
       setDateRange([dateRange[0], idx]);
     }
-  }, [endInput, dateRange, findDateIndex, setDateRange]);
+  }, [endInput, dates, dateRange, findDateIndex, setDateRange, onExtendDates]);
 
   const inputStyle = {
     width: 110, padding: "5px 8px", fontSize: 13, fontWeight: 600,
@@ -657,6 +832,89 @@ function DateRangeInputs({ dates, dateRange, setDateRange }) {
   );
 }
 
+
+// ══════════════════════════════════════
+// FORECAST INPUT PANEL
+// ══════════════════════════════════════
+function ForecastPanel({ selected, forecasts, setForecasts }) {
+  // Only show yield series (not spreads for simplicity)
+  const forecastable = selected.filter(id => SERIES_MAP[id] && SERIES_MAP[id].unit === "%");
+
+  const getQuarters = () => {
+    // Generate next 4 quarters from now
+    const now = new Date();
+    const quarters = [];
+    let y = now.getFullYear();
+    let q = Math.ceil((now.getMonth() + 1) / 3) + 1;
+    for (let i = 0; i < 4; i++) {
+      if (q > 4) { q = 1; y++; }
+      const me = { 1: "03-31", 2: "06-30", 3: "09-30", 4: "12-31" }[q];
+      quarters.push({ label: y + " Q" + q, date: y + "-" + me });
+      q++;
+    }
+    return quarters;
+  };
+
+  const quarters = getQuarters();
+
+  const updateForecast = (seriesId, date, value) => {
+    setForecasts(prev => {
+      const fc = { ...prev };
+      if (!fc[seriesId]) fc[seriesId] = {};
+      if (value === "" || value == null) {
+        delete fc[seriesId][date];
+        if (Object.keys(fc[seriesId]).length === 0) delete fc[seriesId];
+      } else {
+        fc[seriesId] = { ...fc[seriesId], [date]: parseFloat(value) };
+      }
+      return fc;
+    });
+  };
+
+  if (forecastable.length === 0) {
+    return <div style={{ fontSize: 12, color: "#94a3b8", padding: "8px 0" }}>금리(%) 시리즈를 선택하면 전망치를 입력할 수 있습니다.</div>;
+  }
+
+  return (
+    <div style={{ fontSize: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "140px repeat(" + quarters.length + ", 1fr)", gap: 4, alignItems: "center" }}>
+        <div style={{ fontWeight: 700, color: "#000", fontSize: 11 }}>시리즈 / 분기말</div>
+        {quarters.map(q => (
+          <div key={q.date} style={{ textAlign: "center", fontWeight: 700, color: "#000", fontSize: 11 }}>{q.label}</div>
+        ))}
+        {forecastable.map(id => {
+          const cfg = SERIES_MAP[id];
+          return [
+            <div key={id + "-label"} style={{ display: "flex", alignItems: "center", gap: 4, overflow: "hidden" }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: cfg.color, flexShrink: 0 }} />
+              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: 11, color: "#000" }}>{cfg.label}</span>
+            </div>,
+            ...quarters.map(q => (
+              <input
+                key={id + "-" + q.date}
+                type="number"
+                step="0.01"
+                value={forecasts[id]?.[q.date] ?? ""}
+                onChange={e => updateForecast(id, q.date, e.target.value)}
+                placeholder="-"
+                style={{
+                  width: "100%", padding: "3px 4px", fontSize: 11, textAlign: "center",
+                  border: "1px solid #e2e8f0", borderRadius: 4, color: "#000", background: "#fff",
+                  outline: "none",
+                }}
+              />
+            ))
+          ];
+        })}
+      </div>
+      <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 6 }}>
+        * 분기말 전망치(%)를 입력하면 마지막 실제 데이터에서 부드럽게 연결되어 점선으로 표시됩니다.
+        기간 종료일을 전망 기간까지 설정하세요 (예: 2026-12-31).
+      </div>
+    </div>
+  );
+}
+
 export default function YieldDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -672,6 +930,8 @@ export default function YieldDashboard() {
   const [showControls, setShowControls] = useState(true);
   const [yLeftAuto, setYLeftAuto] = useState(true);
   const [yRightAuto, setYRightAuto] = useState(true);
+  const [forecasts, setForecasts] = useState({});  // { seriesId: { "2026-06-30": value, ... } }
+  const [showForecast, setShowForecast] = useState(false);
 
   // Initialize data
   useEffect(() => {
@@ -758,6 +1018,15 @@ export default function YieldDashboard() {
     setDateRange([Math.max(0, fresh.dates.length - 260), fresh.dates.length - 1]);
   };
 
+  // Extend dates to future
+  const handleExtendDates = useCallback((targetDate) => {
+    if (!data) return;
+    const extended = extendDataToDate(data, targetDate);
+    setData(extended);
+    // Don't save to storage - extension is ephemeral
+    setDateRange([dateRange[0], extended.dates.length - 1]);
+  }, [data, dateRange]);
+
   const groups = [
     { key: "base", title: "기준금리", items: ALL_SERIES.filter(s => s.group === "base") },
     { key: "ktb", title: "국고채", items: ALL_SERIES.filter(s => s.group === "ktb") },
@@ -787,7 +1056,7 @@ export default function YieldDashboard() {
         overflow: "hidden", transition: "all 0.2s", display: "flex", flexDirection: "column",
       }}>
         <div style={{ padding: "14px 16px 8px", borderBottom: "1px solid #e2e8f0" }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "#0046ff", letterSpacing: -0.3 }}>📊 금리 차트</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#0046ff", letterSpacing: -0.3 }}>📊 금리차트</div>
           <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>시리즈 선택 · 축 배정</div>
         </div>
 
@@ -868,10 +1137,14 @@ export default function YieldDashboard() {
 
         {/* Bottom buttons */}
         <div style={{ padding: "8px 12px", borderTop: "1px solid #e2e8f0", display: "flex", gap: 6 }}>
+          <button onClick={() => setShowForecast(!showForecast)} style={{
+            flex: 1, padding: "6px", borderRadius: 6, border: "1px solid #0046ff30", background: showForecast ? "#0046ff10" : "#fff",
+            color: "#0046ff", fontSize: 10, fontWeight: 600, cursor: "pointer",
+          }}>🔮 전망치</button>
           <button onClick={() => setShowImport(!showImport)} style={{
             flex: 1, padding: "6px", borderRadius: 6, border: "1px solid #0046ff30", background: showImport ? "#0046ff10" : "#fff",
             color: "#0046ff", fontSize: 10, fontWeight: 600, cursor: "pointer",
-          }}>📥 데이터 입력</button>
+          }}>📥 데이터</button>
           <button onClick={handleReset} style={{
             padding: "6px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff",
             color: "#94a3b8", fontSize: 10, cursor: "pointer",
@@ -903,13 +1176,14 @@ export default function YieldDashboard() {
             <YieldChart
               data={data} selected={selected} axisMap={axisMap}
               dateRange={dateRange} yLeftRange={yLeftRange} yRightRange={yRightRange}
+              forecasts={forecasts}
             />
           </div>
         </div>
 
         {/* Date Range Slider */}
         <div style={{ padding: "4px 20px 12px" }}>
-          <DateRangeInputs dates={data?.dates} dateRange={dateRange} setDateRange={setDateRange} />
+          <DateRangeInputs dates={data?.dates} dateRange={dateRange} setDateRange={setDateRange} onExtendDates={handleExtendDates} />
           <RangeSlider
             min={0} max={(data?.dates?.length || 1) - 1}
             value={dateRange} onChange={setDateRange}
@@ -935,7 +1209,19 @@ export default function YieldDashboard() {
         </div>
 
         {/* Import Panel */}
-        {showImport && (
+        {showForecast && (
+          <div style={{ borderTop: "1px solid #e2e8f0", padding: "12px 16px", maxHeight: 250, overflow: "auto" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#000" }}>🔮 분기별 전망치 입력</span>
+              <button onClick={() => setForecasts({})} style={{
+                padding: "2px 8px", borderRadius: 4, border: "1px solid #e2e8f0",
+                background: "#fff", color: "#94a3b8", fontSize: 10, cursor: "pointer",
+              }}>초기화</button>
+            </div>
+            <ForecastPanel selected={selected} forecasts={forecasts} setForecasts={setForecasts} />
+          </div>
+        )}
+                {showImport && (
           <div style={{ borderTop: "1px solid #e2e8f0", padding: "12px 16px", maxHeight: 220, overflow: "auto" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
               <span style={{ fontSize: 11, fontWeight: 600, color: "#0f172a" }}>데이터 입력</span>
