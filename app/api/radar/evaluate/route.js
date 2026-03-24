@@ -1,4 +1,12 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  );
+}
 
 function extractJSON(text) {
   if (!text) return null;
@@ -20,6 +28,21 @@ function extractJSON(text) {
   return null;
 }
 
+// 총점 계산 (page.js의 calcTotalScore와 동일 로직)
+function calcTotalScore(indicators) {
+  if (!indicators || indicators.length === 0) return 0;
+  let weightedSum = 0, totalWeight = 0;
+  for (const ind of indicators) {
+    const subs = ind.sub_indicators || [];
+    const indScore = subs.length > 0
+      ? subs.reduce((s, sub) => s + (sub.score ?? 50), 0) / subs.length
+      : (ind.score ?? 50);
+    weightedSum += indScore * (ind.weight || 1);
+    totalWeight += (ind.weight || 1);
+  }
+  return totalWeight > 0 ? Math.round(weightedSum / totalWeight) : 0;
+}
+
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
@@ -33,7 +56,7 @@ export async function POST(req) {
     }
     // ─────────────────────────
 
-    const { ticker, exchange, name, indicators, kelly_win_prob, kelly_wl_ratio } = await req.json();
+    const { stock_id, ticker, exchange, name, indicators, kelly_win_prob, kelly_wl_ratio } = await req.json();
     if (!ticker) return NextResponse.json({ error: "ticker required" }, { status: 400 });
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -65,7 +88,7 @@ ${prevKelly}
 켈리 재계산: kelly_win_prob(0-1), kelly_wl_ratio(1-5). 주가 상승→상승여력↓→wl_ratio↓.
 
 JSON만 응답:
-{"indicators":[{"name":"","weight":20,"sub_indicators":[{"name":"","target":"","current":"","score":75}]}],"momentum":{"current_price":0,"high_52w":0,"ma5":0,"ma20":0,"ma60":0,"ma120":0,"ma_aligned":true,"ma120_trend":"up"},"kelly_win_prob":0.45,"kelly_wl_ratio":2.5,"kelly_reasoning":"한줄근거","summary":"한줄요약","evaluated_at":"2026-03-18"}`
+{"indicators":[{"name":"","weight":20,"sub_indicators":[{"name":"","target":"","current":"","score":75}]}],"momentum":{"current_price":0,"high_52w":0,"ma5":0,"ma20":0,"ma60":0,"ma120":0,"ma_aligned":true,"ma120_trend":"up"},"kelly_win_prob":0.45,"kelly_wl_ratio":2.5,"kelly_reasoning":"한줄근거","summary":"한줄요약","evaluated_at":"${new Date().toISOString().slice(0, 10)}"}`
       }]
     });
 
@@ -106,6 +129,35 @@ JSON만 응답:
     const parsed = extractJSON(allText);
 
     if (!parsed) return NextResponse.json({ error: "Parse failed" }, { status: 500 });
+
+    // ─── 히스토리 스냅샷 저장 ───
+    if (stock_id && parsed.indicators) {
+      try {
+        const sb = getSupabase();
+        const totalScore = calcTotalScore(parsed.indicators);
+        const today = new Date().toISOString().slice(0, 10);
+
+        await sb.from("radar_score_history").upsert({
+          stock_id: stock_id,
+          ticker: ticker,
+          snapshot_date: today,
+          total_score: totalScore,
+          indicators: parsed.indicators,
+          momentum: parsed.momentum || null,
+          kelly_win_prob: parsed.kelly_win_prob ?? kelly_win_prob ?? 0.5,
+          kelly_wl_ratio: parsed.kelly_wl_ratio ?? kelly_wl_ratio ?? 2.0,
+          kelly_reasoning: parsed.kelly_reasoning || "",
+          summary: parsed.summary || "",
+        }, {
+          onConflict: "stock_id,snapshot_date",
+          ignoreDuplicates: false,
+        });
+      } catch (histErr) {
+        // 히스토리 저장 실패해도 평가 결과는 반환
+        console.error("History save error:", histErr);
+      }
+    }
+    // ──────────────────────────
 
     return NextResponse.json(parsed);
   } catch (e) {
