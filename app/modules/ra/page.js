@@ -421,10 +421,15 @@ function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRang
         },
         grid: {
           color: function(ctx) {
+            // Hide the very bottom line (index 0 = axis line)
+            if (ctx.tick && ctx.tick.value === 0 && !tickMap[0]) return "transparent";
             return tickMap[ctx.tick?.value] ? "#d0d5dd" : "transparent";
           },
           drawBorder: false,
+          drawTicks: false,
         },
+        border: { display: false },
+        afterFit: function(axis) { axis.paddingBottom = 4; },
       },
     };
 
@@ -439,8 +444,9 @@ function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRang
           color: LABEL_COLOR,
           callback: v => isBpLeft ? v.toFixed(0) : v.toFixed(yDecimals),
         },
-        grid: { color: "#e8ecf0", drawBorder: false },
-        afterFit: function(axis) { axis.paddingTop = FS + 10; },
+        grid: { color: "#e8ecf0", drawBorder: false, drawTicks: false },
+        border: { display: false },
+        afterFit: function(axis) { axis.paddingTop = FS + 16; },
       };
     }
     if (hasRight) {
@@ -454,8 +460,9 @@ function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRang
           color: LABEL_COLOR,
           callback: v => isBpRight ? v.toFixed(0) : v.toFixed(yDecimals),
         },
-        grid: { drawOnChartArea: false, drawBorder: false },
-        afterFit: function(axis) { axis.paddingTop = FS + 10; },
+        grid: { drawOnChartArea: false, drawBorder: false, drawTicks: false },
+        border: { display: false },
+        afterFit: function(axis) { axis.paddingTop = FS + 16; },
       };
     }
 
@@ -469,12 +476,12 @@ function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRang
         if (chart.scales.yLeft) {
           const yL = chart.scales.yLeft;
           c.textAlign = "center";
-          c.fillText("(" + leftUnit + ")", yL.left + yL.width / 2, yL.top - Math.max(4, FS * 0.4));
+          c.fillText("(" + leftUnit + ")", yL.left + yL.width / 2, yL.top - Math.max(6, FS * 0.5));
         }
         if (chart.scales.yRight) {
           const yR = chart.scales.yRight;
           c.textAlign = "center";
-          c.fillText("(" + rightUnit + ")", yR.left + yR.width / 2, yR.top - Math.max(4, FS * 0.4));
+          c.fillText("(" + rightUnit + ")", yR.left + yR.width / 2, yR.top - Math.max(6, FS * 0.5));
         }
         c.restore();
       }
@@ -489,7 +496,7 @@ function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRang
         maintainAspectRatio: false,
         animation: { duration: 300 },
         interaction: { mode: "index", intersect: false },
-        layout: { padding: { top: FS + 2, right: 4, bottom: 4 } },
+        layout: { padding: { top: FS + 12, right: 8, bottom: FS + 8, left: 4 } },
         plugins: {
           legend: { display: false },
           tooltip: {
