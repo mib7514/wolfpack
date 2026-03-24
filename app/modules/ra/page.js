@@ -440,7 +440,7 @@ function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRang
           callback: v => isBpLeft ? v.toFixed(0) : v.toFixed(yDecimals),
         },
         grid: { color: "#e8ecf0", drawBorder: false },
-        afterFit: function(axis) { axis.paddingTop = 22; },
+        afterFit: function(axis) { axis.paddingTop = FS + 10; },
       };
     }
     if (hasRight) {
@@ -455,7 +455,7 @@ function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRang
           callback: v => isBpRight ? v.toFixed(0) : v.toFixed(yDecimals),
         },
         grid: { drawOnChartArea: false, drawBorder: false },
-        afterFit: function(axis) { axis.paddingTop = 22; },
+        afterFit: function(axis) { axis.paddingTop = FS + 10; },
       };
     }
 
@@ -469,12 +469,12 @@ function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRang
         if (chart.scales.yLeft) {
           const yL = chart.scales.yLeft;
           c.textAlign = "center";
-          c.fillText("(" + leftUnit + ")", yL.left + yL.width / 2, yL.top - 8);
+          c.fillText("(" + leftUnit + ")", yL.left + yL.width / 2, yL.top - Math.max(4, FS * 0.4));
         }
         if (chart.scales.yRight) {
           const yR = chart.scales.yRight;
           c.textAlign = "center";
-          c.fillText("(" + rightUnit + ")", yR.left + yR.width / 2, yR.top - 8);
+          c.fillText("(" + rightUnit + ")", yR.left + yR.width / 2, yR.top - Math.max(4, FS * 0.4));
         }
         c.restore();
       }
@@ -489,7 +489,7 @@ function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRang
         maintainAspectRatio: false,
         animation: { duration: 300 },
         interaction: { mode: "index", intersect: false },
-        layout: { padding: { top: 4, right: 4 } },
+        layout: { padding: { top: FS + 2, right: 4, bottom: 4 } },
         plugins: {
           legend: { display: false },
           tooltip: {
@@ -650,10 +650,10 @@ function RangeSlider({ min, max, value, onChange, dates, height = 44 }) {
 function CustomLegend({ selected, axisMap, fontSize = 13 }) {
   return (
     <div style={{
-      display: "flex", flexWrap: "wrap", gap: "6px 16px", padding: "10px 16px",
+      display: "flex", flexWrap: "wrap", gap: "6px 16px", padding: "8px 16px",
       justifyContent: "center", alignItems: "center", flexWrap: "wrap",
       background: "#f8f9fb", borderRadius: 8, border: "1px solid #e2e8f0",
-      marginBottom: 8,
+      marginBottom: 6,
     }}>
       {selected.map(id => {
         const cfg = SERIES_MAP[id];
@@ -1158,7 +1158,7 @@ export default function YieldDashboard() {
           <div style={{ marginTop: 8, padding: "8px 0", borderTop: "1px solid #f1f5f9" }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: "#0046ff", marginBottom: 6 }}>텍스트 크기</div>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <input type="range" min={9} max={28} value={fontSize} onChange={e => setFontSize(parseInt(e.target.value))}
+              <input type="range" min={9} max={40} value={fontSize} onChange={e => setFontSize(parseInt(e.target.value))}
                 style={{ flex: 1, accentColor: "#0046ff" }} />
               <span style={{ fontSize: 11, color: "#000", fontWeight: 700, minWidth: 28, textAlign: "center" }}>{fontSize}px</span>
             </div>
@@ -1259,7 +1259,7 @@ export default function YieldDashboard() {
         </div>
 
         {/* Date Range Slider */}
-        <div style={{ padding: "16px 20px 12px", borderTop: "1px solid #f1f5f9", marginTop: 8 }}>
+        <div style={{ padding: "16px 20px 14px", borderTop: "1px solid #e2e8f0", marginTop: 10, flexShrink: 0 }}>
           <DateRangeInputs dates={data?.dates} dateRange={dateRange} setDateRange={setDateRange} onExtendDates={handleExtendDates} />
           <RangeSlider
             min={0} max={(data?.dates?.length || 1) - 1}
@@ -1267,7 +1267,7 @@ export default function YieldDashboard() {
             dates={data?.dates}
           />
           {/* Quick range buttons */}
-          <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+          <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
             {[
               { label: "3M", days: 65 }, { label: "6M", days: 130 },
               { label: "1Y", days: 260 }, { label: "3Y", days: 780 },
@@ -1279,7 +1279,7 @@ export default function YieldDashboard() {
                 setDateRange([Math.max(0, end - r.days), end]);
               }} style={{
                 padding: "4px 10px", borderRadius: 4, border: "1px solid #d0d5dd",
-                background: "#fff", color: "#000", fontSize: 12, fontWeight: 600, cursor: "pointer",
+                background: "#fff", color: "#000", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
               }}>{r.label}</button>
             ))}
           </div>
