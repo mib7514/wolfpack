@@ -348,15 +348,44 @@ function RangeSlider({ min, max, value, onChange, labels, height = 44 }) {
 // MAIN PAGE
 // ══════════════════════════════════════
 export default function CPIChartPage() {
-  // Load API data on mount
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
+  if (!mounted) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#fff", fontFamily: "'Pretendard', sans-serif" }}>
+        <div style={{ textAlign: "center", color: "#64748b" }}>
+          <div style={{ fontSize: 28, marginBottom: 8 }}>🌡️</div>
+          <div style={{ fontSize: 13 }}>CPI 데이터 로딩 중...</div>
+        </div>
+      </div>
+    );
+  }
+
+  return <CPIChartInner />;
+}
+
+function CPIChartInner() {
+  // All state
+  const [selected, setSelected] = useState(["US_YoY", "KR_YoY"]);
+  const [dateRange, setDateRange] = useState(null); // null = not initialized
+  const [fontSize, setFontSize] = useState(13);
+  const [yDecimals, setYDecimals] = useState(1);
+  const [apiData, setApiData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState(false);
+  const [showPin, setShowPin] = useState(false);
+  const [pin, setPin] = useState("");
+  const [updateMsg, setUpdateMsg] = useState("");
+  const [error, setError] = useState("");
+
+  // Load API data
   useEffect(() => {
     (async () => {
       try {
         const res = await fetch("/api/ra-cpi");
         const json = await res.json();
-        if (json.data?.data) {
-          setApiData(json.data);
-        }
+        if (json.data?.data) setApiData(json.data);
       } catch (e) {
         console.error("CPI API load error:", e);
       } finally {
@@ -366,12 +395,11 @@ export default function CPIChartPage() {
   }, []);
 
   // Handle admin update
-  const handleUpdate = async () => {
+  const handleUpdate = useCallback(async () => {
     if (!pin) return;
     setUpdating(true);
     setError("");
     setUpdateMsg("📡 FRED + ECOS에서 CPI 데이터 수집 중...");
-
     try {
       const res = await fetch("/api/ra-cpi", {
         method: "POST",
@@ -387,7 +415,7 @@ export default function CPIChartPage() {
         setShowPin(false);
         setPin("");
         const d = json.data?.data;
-        setUpdateMsg("✅ 업데이트 완료! US: " + (d?.us_count || 0) + "개월, KR: " + (d?.kr_count || 0) + "개월");
+        setUpdateMsg("✅ US: " + (d?.us_count || 0) + "개월, KR: " + (d?.kr_count || 0) + "개월");
         if (d?.errors) setError("일부 오류: " + d.errors.join("; "));
         setTimeout(() => setUpdateMsg(""), 5000);
       }
@@ -397,73 +425,49 @@ export default function CPIChartPage() {
     } finally {
       setUpdating(false);
     }
-  };
+  }, [pin]);
 
-  // Use API data if available, else fallback to hardcoded
-  const { sourceMonths, usIndex, krIndex } = useMemo(() => {
-    if (apiData?.data?.months) {
-      return {
-        sourceMonths: apiData.data.months,
-        usIndex: apiData.data.us_index,
-        krIndex: apiData.data.kr_index,
-      };
-    }
-    return {
-      sourceMonths: CPI_MONTHS,
-      usIndex: US_CPI_INDEX,
-      krIndex: KR_CPI_INDEX,
+  // Compute everything in one memo block to avoid TDZ
+  const computed = useMemo(() => {
+    const srcMonths = apiData?.data?.months || CPI_MONTHS;
+    const usIdx = apiData?.data?.us_index || US_CPI_INDEX;
+    const krIdx = apiData?.data?.kr_index || KR_CPI_INDEX;
+
+    const us = computeRates(srcMonths, usIdx);
+    const kr = computeRates(srcMonths, krIdx);
+
+    const dispMonths = srcMonths.slice(12);
+    const dispSeries = {
+      US_YoY: us.yoy.slice(12),
+      KR_YoY: kr.yoy.slice(12),
+      US_MoM: us.mom.slice(12),
+      KR_MoM: kr.mom.slice(12),
     };
+
+    return { dispMonths, dispSeries };
   }, [apiData]);
 
-  // Compute derived series from index
-  const allData = useMemo(() => {
-    const us = computeRates(sourceMonths, usIndex);
-    const kr = computeRates(sourceMonths, krIndex);
-    return { US_YoY: us.yoy, KR_YoY: kr.yoy, US_MoM: us.mom, KR_MoM: kr.mom };
-  }, [sourceMonths, usIndex, krIndex]);
-
-  // Start from month 12 (first YoY available)
-  const displayMonths = sourceMonths.slice(12);
-  const displaySeries = useMemo(() => ({
-    US_YoY: allData.US_YoY.slice(12),
-    KR_YoY: allData.KR_YoY.slice(12),
-    US_MoM: allData.US_MoM.slice(12),
-    KR_MoM: allData.KR_MoM.slice(12),
-  }), [allData]);
-
-  // Initialize dateRange after displayMonths is available
+  // Initialize dateRange when data is ready
   useEffect(() => {
-    if (displayMonths.length > 0 && dateRange[0] === 0 && dateRange[1] === 0) {
-      setDateRange([Math.max(0, displayMonths.length - 120), displayMonths.length - 1]);
+    if (computed.dispMonths.length > 0 && dateRange === null) {
+      const len = computed.dispMonths.length;
+      setDateRange([Math.max(0, len - 120), len - 1]);
     }
-  }, [displayMonths.length]);
+  }, [computed.dispMonths.length, dateRange]);
 
-
-  const [selected, setSelected] = useState(["US_YoY", "KR_YoY"]);
-  const [dateRange, setDateRange] = useState([0, 0]);
-  const [fontSize, setFontSize] = useState(13);
-  const [yDecimals, setYDecimals] = useState(1);
-
-  // API data
-  const [apiData, setApiData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [updating, setUpdating] = useState(false);
-  const [showPin, setShowPin] = useState(false);
-  const [pin, setPin] = useState("");
-  const [updateMsg, setUpdateMsg] = useState("");
-  const [error, setError] = useState("");
-
-  // Quick range
-  const setQuickRange = (months) => {
-    const end = displayMonths.length - 1;
-    setDateRange([Math.max(0, end - months), end]);
-  };
+  const { dispMonths, dispSeries } = computed;
+  const safeDateRange = dateRange || [0, Math.max(0, dispMonths.length - 1)];
 
   const toggleSeries = (id) => {
     setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
-  const dateLabels = [displayMonths[dateRange[0]], displayMonths[dateRange[1]]];
+  const setQuickRange = (months) => {
+    const end = dispMonths.length - 1;
+    setDateRange([Math.max(0, end - months), end]);
+  };
+
+  const dateLabels = [dispMonths[safeDateRange[0]] || "", dispMonths[safeDateRange[1]] || ""];
 
   if (loading) {
     return (
@@ -486,7 +490,6 @@ export default function CPIChartPage() {
         </div>
 
         <div style={{ flex: 1, overflow: "auto", padding: "8px 12px" }}>
-          {/* Series checkboxes */}
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: "#0046ff", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6, padding: "4px 0", borderBottom: "1px solid #f1f5f9" }}>시리즈 선택</div>
 
@@ -505,13 +508,12 @@ export default function CPIChartPage() {
               <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 0", fontSize: 11 }}>
                 <input type="checkbox" checked={selected.includes(s.id)} onChange={() => toggleSeries(s.id)}
                   style={{ accentColor: s.color, width: 13, height: 13, cursor: "pointer" }} />
-                <span style={{ width: 10, height: 8, background: s.color + "55", border: `1px solid ${s.color}`, borderRadius: 2, flexShrink: 0 }} />
+                <span style={{ width: 10, height: 8, background: s.color + "55", border: "1px solid " + s.color, borderRadius: 2, flexShrink: 0 }} />
                 <span style={{ color: selected.includes(s.id) ? "#0f172a" : "#94a3b8", cursor: "pointer" }} onClick={() => toggleSeries(s.id)}>{s.label}</span>
               </div>
             ))}
           </div>
 
-          {/* Font size */}
           <div style={{ marginTop: 8, padding: "8px 0", borderTop: "1px solid #f1f5f9" }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: "#0046ff", marginBottom: 6 }}>텍스트 크기</div>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -521,7 +523,6 @@ export default function CPIChartPage() {
             </div>
           </div>
 
-          {/* Decimal */}
           <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ fontSize: 10, color: "#64748b", fontWeight: 600 }}>소수점</span>
             {[1, 2].map(d => (
@@ -538,7 +539,6 @@ export default function CPIChartPage() {
 
       {/* MAIN AREA */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {/* Header */}
         <div style={{ display: "flex", alignItems: "center", padding: "6px 16px", borderBottom: "1px solid #f1f5f9", gap: 8 }}>
           <a href="/modules/ra" style={{ fontSize: 11, color: "#94a3b8", textDecoration: "none" }}>← 금리차트</a>
           <a href="/" style={{ fontSize: 11, color: "#94a3b8", textDecoration: "none", marginLeft: 4 }}>← 컨트롤타워</a>
@@ -550,12 +550,11 @@ export default function CPIChartPage() {
             {dateLabels[0]} ~ {dateLabels[1]}
           </span>
           <span style={{ fontSize: 12, color: "#000", marginLeft: "auto" }}>
-            {displayMonths.length}개월 {apiData ? "(API)" : "(내장)"}
+            {dispMonths.length}개월 {apiData ? "(API)" : "(내장)"}
             {apiData?.updated_at && (" · " + new Date(apiData.updated_at).toLocaleDateString("ko-KR"))}
           </span>
         </div>
 
-        {/* Admin Panel */}
         {showPin && (
           <div style={{ padding: "8px 16px", borderBottom: "1px solid #e2e8f0", background: "#fafbfc" }}>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -568,30 +567,28 @@ export default function CPIChartPage() {
                 fontSize: 12, fontWeight: 600, cursor: updating ? "wait" : "pointer",
                 opacity: !pin ? 0.4 : 1,
               }}>{updating ? "수집 중..." : "FRED + ECOS 업데이트"}</button>
-              <span style={{ fontSize: 10, color: "#94a3b8" }}>FRED(미국CPI) + ECOS(한국CPI) 최신 데이터 수집</span>
+              <span style={{ fontSize: 10, color: "#94a3b8" }}>FRED(미국) + ECOS(한국) 최신 데이터</span>
             </div>
             {updateMsg && <div style={{ marginTop: 4, fontSize: 11, color: "#0046ff" }}>{updateMsg}</div>}
             {error && <div style={{ marginTop: 4, fontSize: 11, color: "#dc2626" }}>{error}</div>}
           </div>
         )}
 
-        {/* Chart */}
         <div style={{ flex: 1, padding: "8px 16px 0", position: "relative", minHeight: 0 }}>
           <CustomLegend selected={selected} fontSize={fontSize} />
           <div style={{ height: "calc(100% - 40px)", position: "relative" }}>
             <CPIChart
-              months={displayMonths} series={displaySeries} selected={selected}
-              dateRange={dateRange} fontSize={fontSize} yDecimals={yDecimals}
+              months={dispMonths} series={dispSeries} selected={selected}
+              dateRange={safeDateRange} fontSize={fontSize} yDecimals={yDecimals}
             />
           </div>
         </div>
 
-        {/* Controls */}
         <div style={{ padding: "16px 20px 14px", borderTop: "1px solid #e2e8f0", marginTop: 10, flexShrink: 0 }}>
           <RangeSlider
-            min={0} max={displayMonths.length - 1}
-            value={dateRange} onChange={setDateRange}
-            labels={[displayMonths[0], displayMonths[displayMonths.length - 1]]}
+            min={0} max={dispMonths.length - 1}
+            value={safeDateRange} onChange={setDateRange}
+            labels={[dispMonths[0], dispMonths[dispMonths.length - 1]]}
           />
           <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
             {[
