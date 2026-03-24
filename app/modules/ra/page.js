@@ -211,15 +211,26 @@ function saveToStorage(data) {
 function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRange }) {
   const canvasRef = useRef(null);
   const chartRef = useRef(null);
-  const ChartRef = useRef(null);
 
   useEffect(() => {
     if (!canvasRef.current || !data) return;
 
     (async () => {
-    const Chart = await import("chart.js/auto");
-    ChartRef.current = Chart.default || Chart;
-    const ChartJS = ChartRef.current;
+    // Load Chart.js from CDN if not already loaded
+    if (!window.Chart) {
+      await new Promise((resolve, reject) => {
+        if (document.querySelector('script[src*="chart.js"]')) {
+          const check = setInterval(() => { if (window.Chart) { clearInterval(check); resolve(); } }, 50);
+          return;
+        }
+        const s = document.createElement("script");
+        s.src = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js";
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+    const ChartJS = window.Chart;
     const ctx = canvasRef.current.getContext("2d");
 
     if (chartRef.current) chartRef.current.destroy();
