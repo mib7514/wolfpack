@@ -431,6 +431,14 @@ export default function CPIChartPage() {
     KR_MoM: allData.KR_MoM.slice(12),
   }), [allData]);
 
+  // Initialize dateRange after displayMonths is available
+  useEffect(() => {
+    if (displayMonths.length > 0 && dateRange[0] === 0 && dateRange[1] === 0) {
+      setDateRange([Math.max(0, displayMonths.length - 120), displayMonths.length - 1]);
+    }
+  }, [displayMonths.length]);
+
+
   const [selected, setSelected] = useState(["US_YoY", "KR_YoY"]);
   const [dateRange, setDateRange] = useState([0, 0]);
   const [fontSize, setFontSize] = useState(13);
@@ -444,13 +452,6 @@ export default function CPIChartPage() {
   const [pin, setPin] = useState("");
   const [updateMsg, setUpdateMsg] = useState("");
   const [error, setError] = useState("");
-
-  // Reset dateRange when displayMonths changes
-  useEffect(() => {
-    if (displayMonths.length > 0) {
-      setDateRange([Math.max(0, displayMonths.length - 120), displayMonths.length - 1]);
-    }
-  }, [displayMonths.length]);
 
   // Quick range
   const setQuickRange = (months) => {
