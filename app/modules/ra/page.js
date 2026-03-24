@@ -422,7 +422,118 @@ function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRang
 // ══════════════════════════════════════
 // RANGE SLIDER COMPONENT
 // ══════════════════════════════════════
-function RangeSlider({ min, max, value, onChange, labels, height = 40 }) {
+function RangeSlider({ min, max, value, onChange, dates, height = 44 }) {
+  const trackRef = useRef(null);
+  const [dragging, setDragging] = useState(null);
+
+  // Build month-start index list for snapping
+  const monthStarts = useMemo(() => {
+    if (!dates) return [];
+    const starts = [];
+    let prevYM = "";
+    dates.forEach((d, i) => {
+      const ym = d.slice(0, 7);
+      if (ym !== prevYM) { starts.push(i); prevYM = ym; }
+    });
+    return starts;
+  }, [dates]);
+
+  // Snap to nearest month-start if within 8 index distance
+  const snapToMonth = useCallback((idx) => {
+    const SNAP_DIST = 8;
+    let best = idx;
+    let bestDist = SNAP_DIST + 1;
+    for (const ms of monthStarts) {
+      const dist = Math.abs(ms - idx);
+      if (dist < bestDist) { bestDist = dist; best = ms; }
+    }
+    return bestDist <= SNAP_DIST ? best : idx;
+  }, [monthStarts]);
+
+  const getPos = useCallback((e) => {
+    const rect = trackRef.current.getBoundingClientRect();
+    const x = (e.clientX || e.touches?.[0]?.clientX || 0) - rect.left;
+    const raw = Math.round(min + (x / rect.width) * (max - min));
+    return snapToMonth(Math.max(min, Math.min(max, raw)));
+  }, [min, max, snapToMonth]);
+
+  const handleDown = useCallback((e, handle) => {
+    e.preventDefault();
+    setDragging(handle);
+  }, []);
+
+  useEffect(() => {
+    if (dragging === null) return;
+    const handleMove = (e) => {
+      const pos = getPos(e);
+      if (dragging === "left") onChange([Math.min(pos, value[1] - 1), value[1]]);
+      else onChange([value[0], Math.max(pos, value[0] + 1)]);
+    };
+    const handleUp = () => setDragging(null);
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    window.addEventListener("touchmove", handleMove);
+    window.addEventListener("touchend", handleUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+      window.removeEventListener("touchmove", handleMove);
+      window.removeEventListener("touchend", handleUp);
+    };
+  }, [dragging, value, min, max, getPos, onChange]);
+
+  const leftPct = ((value[0] - min) / (max - min)) * 100;
+  const rightPct = ((value[1] - min) / (max - min)) * 100;
+
+  // Month-start tick marks on slider
+  const ticks = useMemo(() => {
+    if (!dates || max <= min) return [];
+    return monthStarts
+      .filter((_, i) => i % Math.max(1, Math.floor(monthStarts.length / 30)) === 0)
+      .map(idx => ({ pct: ((idx - min) / (max - min)) * 100, label: dates[idx]?.slice(2, 7).replace("-", "/") }));
+  }, [dates, monthStarts, min, max]);
+
+  return (
+    <div style={{ position: "relative", height, userSelect: "none", padding: "8px 0" }}>
+      <div ref={trackRef} style={{
+        position: "relative", height: 6, background: "#e2e8f0", borderRadius: 3, cursor: "pointer"
+      }}>
+        {/* Month tick marks */}
+        {ticks.map((t, i) => (
+          <div key={i} style={{
+            position: "absolute", left: t.pct + "%", top: -2,
+            width: 1, height: 10, background: "#cbd5e1",
+          }} />
+        ))}
+        <div style={{
+          position: "absolute", left: leftPct + "%", width: (rightPct - leftPct) + "%",
+          height: "100%", background: "#0046ff", borderRadius: 3, opacity: 0.25,
+        }} />
+        {["left", "right"].map((h, i) => {
+          const pct = i === 0 ? leftPct : rightPct;
+          return (
+            <div key={h}
+              onMouseDown={e => handleDown(e, h)}
+              onTouchStart={e => handleDown(e, h)}
+              style={{
+                position: "absolute", left: `calc(${pct}% - 9px)`, top: -6,
+                width: 18, height: 18, borderRadius: 9,
+                background: "#fff", border: "2.5px solid #0046ff",
+                cursor: "ew-resize", zIndex: 2,
+                boxShadow: "0 1px 4px rgba(0,0,0,0.2)",
+              }}
+            />
+          );
+        })}
+      </div>
+      {dates && (
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 11, color: "#000", fontWeight: 500 }}>
+          <span>{dates[0]}</span><span>{dates[dates.length - 1]}</span>
+        </div>
+      )}
+    </div>
+  );
+}) {
   const trackRef = useRef(null);
   const [dragging, setDragging] = useState(null);
 
@@ -529,6 +640,95 @@ function CustomLegend({ selected, axisMap }) {
 // ══════════════════════════════════════
 // MAIN APP
 // ══════════════════════════════════════
+
+// ══════════════════════════════════════
+// DATE RANGE INPUT (날짜 직접 입력)
+// ══════════════════════════════════════
+function DateRangeInputs({ dates, dateRange, setDateRange }) {
+  const [startInput, setStartInput] = useState("");
+  const [endInput, setEndInput] = useState("");
+
+  // Sync display values when dateRange changes
+  useEffect(() => {
+    if (!dates) return;
+    setStartInput(dates[dateRange[0]] || "");
+    setEndInput(dates[dateRange[1]] || "");
+  }, [dates, dateRange]);
+
+  // Find the closest date index (on or after the input)
+  const findDateIndex = useCallback((dateStr, direction) => {
+    if (!dates || !dateStr) return -1;
+    // Normalize input: allow "2015-1" → "2015-01-01", "2015" → "2015-01-01"
+    let normalized = dateStr.trim();
+    if (/^\d{4}$/.test(normalized)) normalized += "-01-01";
+    else if (/^\d{4}-\d{1,2}$/.test(normalized)) {
+      const [y, m] = normalized.split("-");
+      normalized = y + "-" + m.padStart(2, "0") + "-01";
+    } else if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(normalized)) {
+      const [y, m, d] = normalized.split("-");
+      normalized = y + "-" + m.padStart(2, "0") + "-" + d.padStart(2, "0");
+    }
+    // Exact match first
+    const exact = dates.indexOf(normalized);
+    if (exact !== -1) return exact;
+    // Find nearest
+    if (direction === "start") {
+      for (let i = 0; i < dates.length; i++) { if (dates[i] >= normalized) return i; }
+      return dates.length - 1;
+    } else {
+      for (let i = dates.length - 1; i >= 0; i--) { if (dates[i] <= normalized) return i; }
+      return 0;
+    }
+  }, [dates]);
+
+  const applyStart = useCallback(() => {
+    const idx = findDateIndex(startInput, "start");
+    if (idx >= 0 && idx < dateRange[1]) {
+      setDateRange([idx, dateRange[1]]);
+    }
+  }, [startInput, dateRange, findDateIndex, setDateRange]);
+
+  const applyEnd = useCallback(() => {
+    const idx = findDateIndex(endInput, "end");
+    if (idx >= 0 && idx > dateRange[0]) {
+      setDateRange([dateRange[0], idx]);
+    }
+  }, [endInput, dateRange, findDateIndex, setDateRange]);
+
+  const inputStyle = {
+    width: 110, padding: "5px 8px", fontSize: 13, fontWeight: 600,
+    border: "1px solid #d0d5dd", borderRadius: 6, color: "#000",
+    background: "#fff", textAlign: "center", outline: "none",
+    fontFamily: "'Pretendard', sans-serif",
+  };
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+      <span style={{ fontSize: 12, fontWeight: 700, color: "#000" }}>기간</span>
+      <input
+        value={startInput}
+        onChange={e => setStartInput(e.target.value)}
+        onBlur={applyStart}
+        onKeyDown={e => e.key === "Enter" && applyStart()}
+        placeholder="2015-01-01"
+        style={inputStyle}
+      />
+      <span style={{ fontSize: 13, color: "#000", fontWeight: 600 }}>~</span>
+      <input
+        value={endInput}
+        onChange={e => setEndInput(e.target.value)}
+        onBlur={applyEnd}
+        onKeyDown={e => e.key === "Enter" && applyEnd()}
+        placeholder="2026-03-31"
+        style={inputStyle}
+      />
+      <span style={{ fontSize: 11, color: "#94a3b8" }}>
+        (yyyy-mm-dd, yyyy-mm, yyyy)
+      </span>
+    </div>
+  );
+}
+
 export default function YieldDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -781,11 +981,11 @@ export default function YieldDashboard() {
 
         {/* Date Range Slider */}
         <div style={{ padding: "4px 20px 12px" }}>
-          <div style={{ fontSize: 12, color: "#000", marginBottom: 2, fontWeight: 600 }}>기간 조절 (드래그)</div>
+          <DateRangeInputs dates={data?.dates} dateRange={dateRange} setDateRange={setDateRange} />
           <RangeSlider
             min={0} max={(data?.dates?.length || 1) - 1}
             value={dateRange} onChange={setDateRange}
-            labels={data ? [data.dates[0], data.dates[data.dates.length - 1]] : undefined}
+            dates={data?.dates}
           />
           {/* Quick range buttons */}
           <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
