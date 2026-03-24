@@ -199,6 +199,17 @@ const MODULES = [
     layer: "bcp",
     status: "live",
   },
+    // ─── Layer 6: RA ───
+  {
+    id: "ra",
+    name: "RA",
+    subtitle: "Research Assistant",
+    icon: "📊",
+    description: "PT용 금리·크레딧 스프레드 차트 생성 도구",
+    path: "/modules/ra",
+    layer: "ra",
+    status: "live",
+  },
 ];
 
 const LAYERS = [
@@ -207,6 +218,7 @@ const LAYERS = [
   { id: "portfolio", label: "Layer 3 · PORTFOLIO", color: "#10b981" },
   { id: "fund-idea", label: "Layer 4 · FUND IDEA", color: "#a855f7" },
   { id: "bcp", label: "Layer 5 · BEST CREDIT PLUS", color: "#ec4899", locked: true },
+  { id: "ra", label: "Layer 6 · RA", color: "#0046ff" },
 ];
 
 export default function ControlTower() {
@@ -349,7 +361,7 @@ export default function ControlTower() {
         <p className="text-xs text-gray-600 font-mono">
           늑대무리원정단 v2.2.1
           <span className="text-gray-700 mx-1">·</span>
-          Macro · Market · Portfolio · Fund Idea · BCP
+          Macro · Market · Portfolio · Fund Idea · BCP · RA
         </p>
       </footer>
     </div>
