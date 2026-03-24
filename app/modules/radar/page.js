@@ -1,8 +1,28 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+
+// ══════════════════════════════════════════════════════════════
+// ── Chart.js CDN 동적 로드 (RA 명세서 §1 준수) ──
+// ══════════════════════════════════════════════════════════════
+async function loadChartJS() {
+  if (typeof window === "undefined") return null;
+  if (window.Chart) return window.Chart;
+  await new Promise((resolve, reject) => {
+    if (document.querySelector('script[src*="chart.js"]')) {
+      const check = setInterval(() => { if (window.Chart) { clearInterval(check); resolve(); } }, 50);
+      return;
+    }
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js";
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+  return window.Chart;
+}
 
 // ── Admin PIN Hook ──
 function useAdminPin(moduleKey) {
@@ -64,6 +84,12 @@ const CC = {
   FINTECH:"#3b82f6",CRYPTO:"#eab308",SEMI:"#6366f1",OTHER:"#6b7280",
 };
 
+// 시계열 차트 지표별 컬러 팔레트 (다크 모드용)
+const INDICATOR_COLORS = [
+  "#d4a843", "#4ade80", "#38bdf8", "#f472b6", "#a78bfa",
+  "#fb923c", "#2dd4bf", "#e879f9", "#facc15", "#94a3b8",
+];
+
 // ── DB ──
 async function dbFetch() {
   const { data } = await supabase.from("radar_stocks").select("*").order("added_at", { ascending: false });
@@ -119,6 +145,481 @@ function calcTotalScore(indicators) {
   return totalWeight > 0 ? Math.round(weightedSum / totalWeight) : 0;
 }
 
+// ══════════════════════════════════════════════════════════════
+// ── SCORE HISTORY CHART (RA 명세서 원칙 + 다크 모드 적응) ──
+// ══════════════════════════════════════════════════════════════
+function ScoreHistoryChart({ stockId, ticker }) {
+  const canvasRef = useRef(null);
+  const chartRef = useRef(null);
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [chartReady, setChartReady] = useState(false);
+  const [showIndicators, setShowIndicators] = useState(false);
+  const [chartMode, setChartMode] = useState("score"); // "score" | "kelly" | "price"
+
+  // 히스토리 데이터 로드
+  useEffect(() => {
+    if (!stockId) return;
+    setLoading(true);
+    fetch(`/api/radar/history?stock_id=${stockId}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(d => { setHistory(d || []); setLoading(false); })
+      .catch(() => { setHistory([]); setLoading(false); });
+  }, [stockId]);
+
+  // Chart.js 로드
+  useEffect(() => {
+    loadChartJS().then(() => setChartReady(true)).catch(() => {});
+  }, []);
+
+  // 차트 그리기
+  useEffect(() => {
+    if (!chartReady || !canvasRef.current || history.length < 2) return;
+    const ChartJS = window.Chart;
+    if (!ChartJS) return;
+
+    // 기존 차트 파괴
+    if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
+
+    const sorted = [...history].sort((a, b) => new Date(a.snapshot_date) - new Date(b.snapshot_date));
+    const labels = sorted.map(h => h.snapshot_date);
+    const FS = 11;
+
+    // ── 데이터셋 구성 ──
+    const datasets = [];
+
+    if (chartMode === "score") {
+      // 총점 라인
+      datasets.push({
+        label: "총점",
+        data: sorted.map(h => h.total_score),
+        borderColor: "#d4a843",
+        backgroundColor: "rgba(212,168,67,0.1)",
+        borderWidth: 2.5,
+        pointRadius: sorted.length <= 20 ? 4 : 2,
+        pointBackgroundColor: "#d4a843",
+        pointBorderColor: "#0d1220",
+        pointBorderWidth: 1.5,
+        fill: true,
+        tension: 0.3,
+        yAxisID: "yLeft",
+        order: 0,
+      });
+
+      // 개별 지표 라인 (토글)
+      if (showIndicators && sorted.length > 0) {
+        const lastIndicators = sorted[sorted.length - 1].indicators || [];
+        lastIndicators.forEach((ind, idx) => {
+          const color = INDICATOR_COLORS[idx % INDICATOR_COLORS.length];
+          datasets.push({
+            label: ind.name,
+            data: sorted.map(h => {
+              const match = (h.indicators || []).find(i => i.name === ind.name);
+              if (!match) return null;
+              const subs = match.sub_indicators || [];
+              return subs.length > 0
+                ? Math.round(subs.reduce((s, sub) => s + (sub.score ?? 50), 0) / subs.length)
+                : (match.score ?? null);
+            }),
+            borderColor: color,
+            borderWidth: 1.5,
+            borderDash: [4, 2],
+            pointRadius: sorted.length <= 20 ? 3 : 1,
+            pointBackgroundColor: color,
+            fill: false,
+            tension: 0.3,
+            yAxisID: "yLeft",
+            order: 1,
+            spanGaps: true,
+          });
+        });
+      }
+
+      // 주가 (우축)
+      const hasPriceData = sorted.some(h => h.momentum?.current_price);
+      if (hasPriceData) {
+        datasets.push({
+          label: "주가",
+          data: sorted.map(h => h.momentum?.current_price ?? null),
+          borderColor: "rgba(56,189,248,0.6)",
+          borderWidth: 1.5,
+          borderDash: [6, 3],
+          pointRadius: sorted.length <= 20 ? 3 : 1,
+          pointBackgroundColor: "rgba(56,189,248,0.6)",
+          fill: false,
+          tension: 0.3,
+          yAxisID: "yRight",
+          order: 2,
+          spanGaps: true,
+        });
+      }
+    } else if (chartMode === "kelly") {
+      datasets.push({
+        label: "승률",
+        data: sorted.map(h => (h.kelly_win_prob ?? 0) * 100),
+        borderColor: "#4ade80",
+        backgroundColor: "rgba(74,222,128,0.08)",
+        borderWidth: 2,
+        pointRadius: sorted.length <= 20 ? 4 : 2,
+        pointBackgroundColor: "#4ade80",
+        pointBorderColor: "#0d1220",
+        pointBorderWidth: 1.5,
+        fill: true,
+        tension: 0.3,
+        yAxisID: "yLeft",
+      });
+      datasets.push({
+        label: "승패비",
+        data: sorted.map(h => h.kelly_wl_ratio ?? 0),
+        borderColor: "#f472b6",
+        borderWidth: 2,
+        borderDash: [4, 2],
+        pointRadius: sorted.length <= 20 ? 3 : 1,
+        pointBackgroundColor: "#f472b6",
+        fill: false,
+        tension: 0.3,
+        yAxisID: "yRight",
+      });
+    } else if (chartMode === "price") {
+      const hasPriceData = sorted.some(h => h.momentum?.current_price);
+      if (hasPriceData) {
+        datasets.push({
+          label: "주가",
+          data: sorted.map(h => h.momentum?.current_price ?? null),
+          borderColor: "#38bdf8",
+          backgroundColor: "rgba(56,189,248,0.08)",
+          borderWidth: 2.5,
+          pointRadius: sorted.length <= 20 ? 4 : 2,
+          pointBackgroundColor: "#38bdf8",
+          pointBorderColor: "#0d1220",
+          pointBorderWidth: 1.5,
+          fill: true,
+          tension: 0.3,
+          yAxisID: "yLeft",
+          spanGaps: true,
+        });
+      }
+      datasets.push({
+        label: "총점",
+        data: sorted.map(h => h.total_score),
+        borderColor: "rgba(212,168,67,0.5)",
+        borderWidth: 1.5,
+        borderDash: [4, 2],
+        pointRadius: sorted.length <= 20 ? 3 : 1,
+        pointBackgroundColor: "rgba(212,168,67,0.5)",
+        fill: false,
+        tension: 0.3,
+        yAxisID: "yRight",
+      });
+    }
+
+    // ── X축 라벨 전략 (RA 명세서 §3 적용) ──
+    const tickMap = {};
+    const n = labels.length;
+    if (n <= 10) {
+      labels.forEach((l, i) => { tickMap[i] = l.slice(5); }); // MM-DD
+    } else if (n <= 30) {
+      // 격주 간격
+      labels.forEach((l, i) => {
+        if (i === 0 || i === n - 1 || i % Math.max(1, Math.floor(n / 10)) === 0) {
+          tickMap[i] = l.slice(5); // MM-DD
+        }
+      });
+    } else {
+      // 월 단위
+      let prevMonth = "";
+      labels.forEach((l, i) => {
+        const month = l.slice(0, 7); // YYYY-MM
+        if (month !== prevMonth) { tickMap[i] = l.slice(2, 7).replace("-", "/"); prevMonth = month; }
+      });
+    }
+
+    // ── niceScale (RA 명세서 §3 적용) ──
+    function niceScale(min, max, isPrice) {
+      const range = max - min || 1;
+      const niceSteps = isPrice
+        ? [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000]
+        : [5, 10, 20, 25, 50];
+      for (const step of niceSteps) {
+        const nTicks = Math.floor(range / step) + 1;
+        if (nTicks >= 4 && nTicks <= 10) {
+          return { min: Math.floor(min / step) * step, max: Math.ceil(max / step) * step, stepSize: step };
+        }
+      }
+      const step = niceSteps[Math.floor(niceSteps.length / 2)];
+      return { min: Math.floor(min / step) * step, max: Math.ceil(max / step) * step, stepSize: step };
+    }
+
+    // 축 설정
+    const scales = {
+      x: {
+        grid: {
+          color: (ctx) => tickMap[ctx.tick?.value] ? "rgba(255,255,255,0.06)" : "transparent",
+          drawBorder: false, drawTicks: false,
+        },
+        border: { display: false },
+        ticks: {
+          color: "#64748b", font: { size: FS, family: "'Pretendard', sans-serif" },
+          callback: (val, idx) => tickMap[idx] || "",
+          maxRotation: 0, autoSkip: false,
+        },
+      },
+      yLeft: {
+        position: "left",
+        grid: { color: "rgba(255,255,255,0.04)", drawBorder: false, drawTicks: false },
+        border: { display: false },
+        ticks: {
+          color: "#64748b", font: { size: FS, family: "'Pretendard', sans-serif" },
+          callback: (v) => chartMode === "kelly" ? v.toFixed(0) + "%" : chartMode === "price" ? v.toLocaleString() : v.toFixed(0),
+        },
+        title: { display: false },
+      },
+    };
+
+    // Score 모드: 좌축 0-100 고정
+    if (chartMode === "score") {
+      scales.yLeft.min = 0;
+      scales.yLeft.max = 100;
+      scales.yLeft.ticks.stepSize = 20;
+    } else if (chartMode === "kelly") {
+      scales.yLeft.min = 0;
+      scales.yLeft.max = 100;
+      scales.yLeft.ticks.stepSize = 20;
+    }
+
+    // 우축 (주가 or 총점)
+    const rightData = datasets.find(d => d.yAxisID === "yRight");
+    if (rightData) {
+      const vals = rightData.data.filter(v => v != null);
+      if (vals.length > 0) {
+        const rMin = Math.min(...vals);
+        const rMax = Math.max(...vals);
+        const isPrice = chartMode === "score" || chartMode === "kelly";
+        const ns = niceScale(rMin * 0.95, rMax * 1.05, isPrice);
+        scales.yRight = {
+          position: "right",
+          grid: { display: false },
+          border: { display: false },
+          ticks: {
+            color: "#475569", font: { size: FS, family: "'Pretendard', sans-serif" },
+            callback: (v) => {
+              if (chartMode === "score") return v.toLocaleString();
+              if (chartMode === "kelly") return v.toFixed(1) + "x";
+              return v.toFixed(0); // price mode → 총점
+            },
+          },
+          title: { display: false },
+          min: ns.min, max: ns.max, ...(ns.stepSize ? { ticks: { ...scales.yRight?.ticks, stepSize: ns.stepSize } } : {}),
+        };
+      }
+    }
+
+    // ── 축 단위 라벨 플러그인 (RA 명세서 §3 — 다크 모드 적응) ──
+    const axisLabelPlugin = {
+      id: "axisLabelDark",
+      afterDraw: (chart) => {
+        const c = chart.ctx;
+        c.save();
+        c.font = `bold ${FS}px 'Pretendard', sans-serif`;
+
+        if (chart.scales.yLeft) {
+          const yL = chart.scales.yLeft;
+          c.fillStyle = "#94a3b8";
+          c.textAlign = "center";
+          const leftLabel = chartMode === "score" ? "(점)" : chartMode === "kelly" ? "(%)" : "(가격)";
+          c.fillText(leftLabel, yL.left + yL.width / 2, yL.top - 6);
+        }
+        if (chart.scales.yRight) {
+          const yR = chart.scales.yRight;
+          c.fillStyle = "#475569";
+          c.textAlign = "center";
+          const rightLabel = chartMode === "score" ? "(가격)" : chartMode === "kelly" ? "(배)" : "(점)";
+          c.fillText(rightLabel, yR.left + yR.width / 2, yR.top - 6);
+        }
+        c.restore();
+      },
+    };
+
+    // ── 차트 생성 ──
+    const ctx = canvasRef.current.getContext("2d");
+    chartRef.current = new ChartJS(ctx, {
+      type: "line",
+      data: { labels, datasets },
+      plugins: [axisLabelPlugin],
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 600, easing: "easeOutQuart" },
+        interaction: { mode: "index", intersect: false },
+        layout: {
+          padding: { top: FS + 12, right: 8, bottom: 4, left: 4 },
+        },
+        scales,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: "rgba(13,18,32,0.95)",
+            titleColor: "#e2e8f0",
+            bodyColor: "#94a3b8",
+            borderColor: "rgba(212,168,67,0.3)",
+            borderWidth: 1,
+            padding: 12,
+            boxPadding: 4,
+            titleFont: { size: FS, weight: 700, family: "'Pretendard', sans-serif" },
+            bodyFont: { size: FS - 1, family: "'Pretendard', sans-serif" },
+            callbacks: {
+              title: (items) => items[0]?.label || "",
+              label: (item) => {
+                const ds = item.dataset;
+                const v = item.parsed.y;
+                if (v == null) return null;
+                if (ds.label === "주가") return ` ${ds.label}: ${v.toLocaleString()}`;
+                if (ds.label === "승률") return ` ${ds.label}: ${v.toFixed(1)}%`;
+                if (ds.label === "승패비") return ` ${ds.label}: ${v.toFixed(2)}x`;
+                return ` ${ds.label}: ${v.toFixed(0)}점`;
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return () => { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; } };
+  }, [chartReady, history, chartMode, showIndicators]);
+
+  // ── 렌더 ──
+  if (loading) {
+    return (
+      <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-4">
+        <div className="text-center py-6 text-slate-600 text-xs animate-pulse">📊 히스토리 로딩 중...</div>
+      </div>
+    );
+  }
+
+  if (history.length < 2) {
+    return (
+      <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-4">
+        <div className="text-[11px] font-bold text-slate-400 tracking-wider font-mono mb-2">📈 SCORE HISTORY</div>
+        <div className="text-center py-6">
+          <div className="text-2xl mb-2 opacity-40">📊</div>
+          <div className="text-[11px] text-slate-600">
+            AI 평가를 2회 이상 실행하면 시계열 차트가 표시됩니다
+          </div>
+          <div className="text-[9px] text-slate-700 mt-1">
+            현재 {history.length}건 · {history.length === 0 ? "평가 기록 없음" : `최근 평가: ${history[0]?.snapshot_date}`}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const latest = history[history.length - 1];
+  const prev = history[history.length - 2];
+  const scoreDelta = latest.total_score - prev.total_score;
+
+  return (
+    <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl overflow-hidden">
+      {/* Header */}
+      <div className="px-4 pt-4 pb-2">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <div className="text-[11px] font-bold text-slate-400 tracking-wider font-mono">📈 SCORE HISTORY</div>
+            <div className="text-[9px] text-slate-600 mt-0.5">{history.length}회 평가 · {history[0]?.snapshot_date} ~ {latest.snapshot_date}</div>
+          </div>
+          <div className="text-right">
+            <div className="flex items-center gap-1">
+              <span className="text-lg font-black font-mono" style={{ color: sc(latest.total_score) }}>
+                {latest.total_score}
+              </span>
+              <span className={`text-xs font-mono font-bold ${scoreDelta >= 0 ? "text-green-400" : "text-red-400"}`}>
+                {scoreDelta >= 0 ? "▲" : "▼"}{Math.abs(scoreDelta)}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* 모드 탭 + 지표 토글 */}
+        <div className="flex items-center gap-1.5 mb-2">
+          {[
+            { key: "score", label: "스코어", icon: "🎯" },
+            { key: "kelly", label: "Kelly", icon: "🎲" },
+            { key: "price", label: "주가", icon: "💹" },
+          ].map(tab => (
+            <button key={tab.key} onClick={() => setChartMode(tab.key)}
+              className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold font-mono transition-all"
+              style={{
+                background: chartMode === tab.key ? "rgba(212,168,67,0.12)" : "rgba(255,255,255,0.02)",
+                border: `1px solid ${chartMode === tab.key ? "rgba(212,168,67,0.3)" : "rgba(255,255,255,0.04)"}`,
+                color: chartMode === tab.key ? "#d4a843" : "#475569",
+              }}>
+              {tab.icon} {tab.label}
+            </button>
+          ))}
+          {chartMode === "score" && (
+            <button onClick={() => setShowIndicators(!showIndicators)}
+              className="ml-auto px-2 py-1.5 rounded-lg text-[9px] font-mono transition-all"
+              style={{
+                background: showIndicators ? "rgba(255,255,255,0.06)" : "transparent",
+                border: `1px solid ${showIndicators ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.04)"}`,
+                color: showIndicators ? "#94a3b8" : "#334155",
+              }}>
+              {showIndicators ? "지표 ON" : "지표 OFF"}
+            </button>
+          )}
+        </div>
+
+        {/* 커스텀 범례 (RA 명세서 §6 — 다크 모드 적응) */}
+        {chartMode === "score" && showIndicators && (
+          <div style={{
+            display: "flex", flexWrap: "wrap", gap: "4px 10px", padding: "6px 10px",
+            background: "rgba(255,255,255,0.02)", borderRadius: 6, border: "1px solid rgba(255,255,255,0.04)",
+            marginBottom: 8,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <div style={{ width: 14, height: 3, background: "#d4a843", borderRadius: 1 }} />
+              <span style={{ fontSize: 9, color: "#94a3b8", fontFamily: "monospace" }}>총점</span>
+            </div>
+            {(() => {
+              const lastInd = history[history.length - 1]?.indicators || [];
+              return lastInd.map((ind, idx) => (
+                <div key={idx} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <div style={{ width: 14, height: 2, background: INDICATOR_COLORS[idx % INDICATOR_COLORS.length], borderRadius: 1, borderTop: "1px dashed transparent" }} />
+                  <span style={{ fontSize: 9, color: "#64748b", fontFamily: "monospace" }}>{ind.name}</span>
+                </div>
+              ));
+            })()}
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <div style={{ width: 14, height: 2, background: "rgba(56,189,248,0.6)", borderRadius: 1 }} />
+              <span style={{ fontSize: 9, color: "#475569", fontFamily: "monospace" }}>주가(R)</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Chart Canvas */}
+      <div style={{ height: 220, padding: "0 8px 12px" }}>
+        <canvas ref={canvasRef} />
+      </div>
+
+      {/* 히스토리 요약 테이블 */}
+      <div className="px-4 pb-3 pt-1 border-t border-white/[0.04]">
+        <div className="flex gap-1 overflow-x-auto pb-1" style={{ scrollbarWidth: "thin" }}>
+          {[...history].reverse().slice(0, 8).map((h, i) => (
+            <div key={i} className="shrink-0 text-center px-2 py-1.5 rounded-lg"
+              style={{ background: i === 0 ? "rgba(212,168,67,0.08)" : "rgba(255,255,255,0.02)", minWidth: 56 }}>
+              <div className="text-[8px] text-slate-600 font-mono">{h.snapshot_date.slice(5)}</div>
+              <div className="text-[12px] font-black font-mono" style={{ color: sc(h.total_score) }}>{h.total_score}</div>
+              {h.momentum?.current_price && (
+                <div className="text-[8px] text-slate-700 font-mono">{h.momentum.current_price.toLocaleString()}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Momentum Bar ──
 function MomentumSection({ momentum }) {
   if (!momentum) return null;
@@ -162,24 +663,18 @@ function PortfolioKellyPanel({ stocks, kellyFraction, setKellyFraction }) {
 
   const allocations = useMemo(() => {
     if (selected.length === 0) return [];
-
     const fraction = KELLY_FRACTIONS.find(f => f.key === kellyFraction) || KELLY_FRACTIONS[1];
-
-    // 1) 개별 raw Kelly % 계산
     const raw = selected.map(s => {
       const k = calcKelly(s.kelly_win_prob, s.kelly_wl_ratio);
       return {
         id: s.id, ticker: s.ticker, category: s.category || "OTHER",
         score: calcTotalScore(s.indicators || []),
         winProb: s.kelly_win_prob, wlRatio: s.kelly_wl_ratio,
-        rawKelly: k.full, // raw full Kelly %
+        rawKelly: k.full,
       };
     });
-
-    // 2) raw Kelly 합계 기준으로 정규화 → 비중 합이 fraction의 총 배분 한도가 되도록
     const totalRaw = raw.reduce((sum, r) => sum + r.rawKelly, 0);
     if (totalRaw === 0) return raw.map(r => ({ ...r, allocation: 0 }));
-
     return raw.map(r => ({
       ...r,
       allocation: +((r.rawKelly / totalRaw) * totalRaw * fraction.mult).toFixed(1),
@@ -195,7 +690,6 @@ function PortfolioKellyPanel({ stocks, kellyFraction, setKellyFraction }) {
 
   return (
     <div className="bg-gradient-to-b from-[#111730] to-[#0d1220] border border-amber-500/15 rounded-2xl overflow-hidden">
-      {/* Header */}
       <div className="px-4 pt-4 pb-3 border-b border-white/[0.04]">
         <div className="flex items-center justify-between mb-3">
           <div>
@@ -209,8 +703,6 @@ function PortfolioKellyPanel({ stocks, kellyFraction, setKellyFraction }) {
             <div className="text-[9px] text-slate-600">투자비중</div>
           </div>
         </div>
-
-        {/* Kelly Fraction Selector */}
         <div className="flex gap-1.5">
           {KELLY_FRACTIONS.map(f => (
             <button key={f.key} onClick={() => setKellyFraction(f.key)}
@@ -226,8 +718,6 @@ function PortfolioKellyPanel({ stocks, kellyFraction, setKellyFraction }) {
         </div>
         <div className="text-[9px] text-slate-600 mt-1.5 text-center italic">{currentFraction.desc}</div>
       </div>
-
-      {/* Allocation Table */}
       <div className="px-4 py-3 space-y-1.5">
         {allocations.sort((a, b) => b.allocation - a.allocation).map(a => (
           <div key={a.id} className="flex items-center gap-2">
@@ -251,8 +741,6 @@ function PortfolioKellyPanel({ stocks, kellyFraction, setKellyFraction }) {
             </div>
           </div>
         ))}
-
-        {/* Cash row */}
         <div className="flex items-center gap-2 pt-1.5 border-t border-white/[0.04]">
           <div className="flex-1 flex items-center gap-2">
             <span className="text-[11px] font-mono font-bold text-slate-500 w-16 shrink-0">CASH</span>
@@ -269,8 +757,6 @@ function PortfolioKellyPanel({ stocks, kellyFraction, setKellyFraction }) {
           </div>
         </div>
       </div>
-
-      {/* Summary footer */}
       <div className="px-4 py-2.5 bg-black/20 border-t border-white/[0.04] flex items-center justify-between">
         <span className="text-[9px] text-slate-600">
           개별 Kelly 합: {allocations.reduce((s, a) => s + a.rawKelly, 0).toFixed(1)}% →
@@ -293,6 +779,7 @@ function DetailPanel({ stock, onClose, onUpdate, onDelete, onTogglePortfolio, ad
   const momentum = stock.momentum || null;
   const [evaluating, setEvaluating] = useState(false);
   const [evalResult, setEvalResult] = useState(null);
+  const [historyKey, setHistoryKey] = useState(0); // 차트 리프레시 트리거
   const totalScore = calcTotalScore(indicators);
 
   const handleEvaluate = useCallback(async () => {
@@ -304,6 +791,7 @@ function DetailPanel({ stock, onClose, onUpdate, onDelete, onTogglePortfolio, ad
         method: "POST",
         headers: { "Content-Type": "application/json", "x-admin-pin": admin.pin },
         body: JSON.stringify({
+          stock_id: stock.id, // ← 히스토리 저장에 필요
           ticker: stock.ticker, exchange: stock.exchange, name: stock.name,
           indicators: indicators, kelly_win_prob: stock.kelly_win_prob, kelly_wl_ratio: stock.kelly_wl_ratio,
         }),
@@ -318,6 +806,8 @@ function DetailPanel({ stock, onClose, onUpdate, onDelete, onTogglePortfolio, ad
         dbUpdate(stock.id, { indicators: data.indicators || indicators, momentum: data.momentum || momentum, kelly_win_prob: newKellyWP, kelly_wl_ratio: newKellyWL });
         const kellyNote = data.kelly_reasoning ? ` | Kelly: ${data.kelly_reasoning}` : "";
         setEvalResult((data.summary || "평가 완료") + kellyNote);
+        // 히스토리 차트 리프레시
+        setHistoryKey(prev => prev + 1);
       } else {
         const err = await res.json().catch(() => ({}));
         setEvalResult(err.error || "평가 실패");
@@ -362,8 +852,6 @@ function DetailPanel({ stock, onClose, onUpdate, onDelete, onTogglePortfolio, ad
             <button onClick={onClose} className="text-slate-600 hover:text-slate-300 text-xl">✕</button>
           </div>
           <div className="text-[12px] text-amber-400/80 italic">{stock.thesis_oneliner || "—"}</div>
-
-          {/* Portfolio Toggle in Detail */}
           <button
             onClick={() => {
               if (!admin.isAdmin) { admin.openModal(); return; }
@@ -394,6 +882,9 @@ function DetailPanel({ stock, onClose, onUpdate, onDelete, onTogglePortfolio, ad
             </button>
             {evalResult && <div className="mt-2 text-[10px] text-slate-400 leading-relaxed">{evalResult}</div>}
           </div>
+
+          {/* ★ SCORE HISTORY CHART (시계열) ★ */}
+          <ScoreHistoryChart key={historyKey} stockId={stock.id} ticker={stock.ticker} />
 
           {/* Monitoring Indicators */}
           <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-4">
@@ -451,7 +942,7 @@ function DetailPanel({ stock, onClose, onUpdate, onDelete, onTogglePortfolio, ad
             ))}
           </div>
 
-          {/* Individual Kelly (참고용) */}
+          {/* Individual Kelly */}
           <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-4">
             <div className="text-[11px] font-bold text-slate-400 tracking-wider font-mono mb-3">KELLY CRITERION (개별)</div>
             <div className="flex gap-3 mb-3">
@@ -489,7 +980,7 @@ function DetailPanel({ stock, onClose, onUpdate, onDelete, onTogglePortfolio, ad
 }
 
 // ══════════════════════════════════════════════════════════════
-// ── STOCK CARD (with portfolio toggle) ──
+// ── STOCK CARD ──
 // ══════════════════════════════════════════════════════════════
 function StockCard({ stock, onClick, onTogglePortfolio, admin }) {
   const cat = stock.category || "OTHER";
@@ -510,7 +1001,6 @@ function StockCard({ stock, onClick, onTogglePortfolio, admin }) {
         background: inPf ? "rgba(212,168,67,0.04)" : "rgba(255,255,255,0.015)",
         borderColor: inPf ? "rgba(212,168,67,0.15)" : "rgba(255,255,255,0.04)",
       }}>
-      {/* Portfolio Toggle */}
       <button onClick={handleToggle}
         className="shrink-0 w-6 h-6 rounded-md flex items-center justify-center transition-all"
         style={{
@@ -557,21 +1047,18 @@ export default function RadarPage() {
   const [searchResult, setSearchResult] = useState(null);
   const [loading, setLoading] = useState(true);
   const [registerError, setRegisterError] = useState(null);
-  const [kellyFraction, setKellyFraction] = useState("half"); // default: Half Kelly
+  const [kellyFraction, setKellyFraction] = useState("half");
 
   const admin = useAdminPin('wolf-radar');
 
   useEffect(() => { dbFetch().then(d => { setStocks(d); setLoading(false); }); }, []);
 
-  // ── 포트폴리오 편입/제외 토글 ──
   const handleTogglePortfolio = useCallback(async (id, value) => {
     setStocks(prev => prev.map(s => s.id === id ? { ...s, in_portfolio: value } : s));
-    // selectedStock도 업데이트
     setSelectedStock(prev => prev && prev.id === id ? { ...prev, in_portfolio: value } : prev);
     await dbUpdate(id, { in_portfolio: value });
   }, []);
 
-  // 🔒 검색
   const handleSearch = useCallback(async () => {
     if (!searchQuery.trim()) return;
     if (!admin.isAdmin) { admin.openModal(); return; }
@@ -590,7 +1077,6 @@ export default function RadarPage() {
     setSearching(false);
   }, [searchQuery, admin]);
 
-  // 🔒 등록
   const handleRegister = useCallback(async (result) => {
     if (!admin.isAdmin) { admin.openModal(); return; }
     setRegisterError(null);
@@ -649,7 +1135,6 @@ export default function RadarPage() {
             </div>
           </div>
 
-          {/* Search */}
           <div className="flex gap-2 mb-3">
             <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
               onKeyDown={e => e.key === "Enter" && handleSearch()}
@@ -662,7 +1147,6 @@ export default function RadarPage() {
             </button>
           </div>
 
-          {/* Search Result */}
           {searching && (
             <div className="text-center py-6 text-amber-500 text-sm animate-pulse font-mono">AI가 종목을 분석하고 모니터링 지표를 생성하고 있습니다...</div>
           )}
@@ -727,7 +1211,6 @@ export default function RadarPage() {
       </header>
 
       <main className="max-w-2xl mx-auto px-4 py-4 pb-24 flex flex-col gap-2.5">
-        {/* Portfolio Kelly Panel — 편입된 종목이 있을 때만 표시 */}
         {portfolioCount > 0 && (
           <PortfolioKellyPanel stocks={stocks} kellyFraction={kellyFraction} setKellyFraction={setKellyFraction} />
         )}
