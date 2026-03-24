@@ -224,7 +224,7 @@ function saveToStorage(data) {
 // ══════════════════════════════════════
 // CHART COMPONENT
 // ══════════════════════════════════════
-function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRange, forecasts, fontSize = 13 }) {
+function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRange, forecasts, fontSize = 13, yDecimals = 1 }) {
   const canvasRef = useRef(null);
   const chartRef = useRef(null);
 
@@ -362,10 +362,50 @@ function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRang
     const TICK_FONT = { family: FONT_FAMILY, size: FS };
     const LABEL_COLOR = "#000000";
 
-    // Determine x-axis tick strategy based on date span
-    const spanYears = slicedDates.length > 0
-      ? (new Date(slicedDates[slicedDates.length - 1]) - new Date(slicedDates[0])) / (365.25 * 86400000)
+    // Precompute tick positions to avoid overlap
+    const spanDays = slicedDates.length;
+    const spanYears = spanDays > 0
+      ? (new Date(slicedDates[spanDays - 1]) - new Date(slicedDates[0])) / (365.25 * 86400000)
       : 1;
+
+    // Build explicit tick map: { index: label }
+    const tickMap = {};
+    let prevLabel = "";
+    for (let i = 0; i < spanDays; i++) {
+      const d = slicedDates[i];
+      if (!d) continue;
+      const mm = d.slice(5, 7);
+      const dd = parseInt(d.slice(8, 10));
+
+      if (spanYears > 5) {
+        // Yearly: first trading day of each January
+        if (mm === "01" && dd <= 5 && prevLabel !== d.slice(0, 4)) {
+          tickMap[i] = "'" + d.slice(2, 4);
+          prevLabel = d.slice(0, 4);
+        }
+      } else if (spanYears > 2) {
+        // Quarterly
+        const qMonths = ["01","04","07","10"];
+        const ym = d.slice(0, 7);
+        if (qMonths.includes(mm) && dd <= 5 && prevLabel !== ym) {
+          tickMap[i] = d.slice(2, 7).replace("-", "/");
+          prevLabel = ym;
+        }
+      } else if (spanYears > 0.5) {
+        // Monthly
+        const ym = d.slice(0, 7);
+        if (dd <= 3 && prevLabel !== ym) {
+          tickMap[i] = d.slice(2, 7).replace("-", "/");
+          prevLabel = ym;
+        }
+      } else {
+        // Short: ~biweekly
+        const step = Math.max(1, Math.floor(spanDays / 12));
+        if (i % step === 0) {
+          tickMap[i] = d.slice(5, 10).replace("-", "/");
+        }
+      }
+    }
 
     const scales = {
       x: {
@@ -373,35 +413,18 @@ function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRang
         ticks: {
           autoSkip: false,
           maxRotation: 0,
-          font: { ...TICK_FONT },
+          font: { family: FONT_FAMILY, size: FS },
           color: LABEL_COLOR,
           callback: function(val, idx) {
-            const d = slicedDates[idx];
-            if (!d) return null;
-            const yy = d.slice(0, 4);
-            const mm = d.slice(5, 7);
-            const dd = d.slice(8, 10);
-
-            if (spanYears > 5) {
-              // Long range: show "YY/01" at each January start
-              if (mm === "01" && parseInt(dd) <= 7) return "'" + d.slice(2, 4);
-              return null;
-            } else if (spanYears > 2) {
-              // Medium: show "YY/MM" at quarter starts
-              if ((mm === "01" || mm === "04" || mm === "07" || mm === "10") && parseInt(dd) <= 7) return d.slice(2, 7).replace("-", "/");
-              return null;
-            } else if (spanYears > 0.5) {
-              // Short-medium: monthly
-              if (parseInt(dd) <= 3) return d.slice(2, 7).replace("-", "/");
-              return null;
-            } else {
-              // Very short: show more dates
-              if (idx % Math.max(1, Math.floor(slicedDates.length / 12)) === 0) return d.slice(2, 10).replace(/-/g, "/");
-              return null;
-            }
+            return tickMap[idx] || null;
           }
         },
-        grid: { color: "#e8ecf0", drawBorder: false },
+        grid: {
+          color: function(ctx) {
+            return tickMap[ctx.tick?.value] ? "#d0d5dd" : "transparent";
+          },
+          drawBorder: false,
+        },
       },
     };
 
@@ -414,7 +437,7 @@ function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRang
           stepSize: niceLeft.stepSize,
           font: { family: FONT_FAMILY, size: FS },
           color: LABEL_COLOR,
-          callback: v => isBpLeft ? v.toFixed(0) : v.toFixed(niceLeft.stepSize < 0.2 ? 2 : 1),
+          callback: v => isBpLeft ? v.toFixed(0) : v.toFixed(yDecimals),
         },
         grid: { color: "#e8ecf0", drawBorder: false },
         afterFit: function(axis) { axis.paddingTop = 22; },
@@ -429,7 +452,7 @@ function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRang
           stepSize: niceRight.stepSize,
           font: { family: FONT_FAMILY, size: FS },
           color: LABEL_COLOR,
-          callback: v => isBpRight ? v.toFixed(0) : v.toFixed(niceRight.stepSize < 0.2 ? 2 : 1),
+          callback: v => isBpRight ? v.toFixed(0) : v.toFixed(yDecimals),
         },
         grid: { drawOnChartArea: false, drawBorder: false },
         afterFit: function(axis) { axis.paddingTop = 22; },
@@ -961,6 +984,7 @@ export default function YieldDashboard() {
   const [yRightAuto, setYRightAuto] = useState(true);
   const [forecasts, setForecasts] = useState({});  // { seriesId: { "2026-06-30": value, ... } }
   const [fontSize, setFontSize] = useState(13);  // global text size control
+  const [yDecimals, setYDecimals] = useState(1);  // 1 or 2 decimal places for y-axis
   const [showForecast, setShowForecast] = useState(false);
 
   // Initialize data
@@ -1134,10 +1158,23 @@ export default function YieldDashboard() {
           <div style={{ marginTop: 8, padding: "8px 0", borderTop: "1px solid #f1f5f9" }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: "#0046ff", marginBottom: 6 }}>텍스트 크기</div>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <input type="range" min={9} max={20} value={fontSize} onChange={e => setFontSize(parseInt(e.target.value))}
+              <input type="range" min={9} max={28} value={fontSize} onChange={e => setFontSize(parseInt(e.target.value))}
                 style={{ flex: 1, accentColor: "#0046ff" }} />
               <span style={{ fontSize: 11, color: "#000", fontWeight: 700, minWidth: 28, textAlign: "center" }}>{fontSize}px</span>
             </div>
+          </div>
+
+          {/* Y-axis decimal control */}
+          <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 10, color: "#64748b", fontWeight: 600 }}>소수점</span>
+            {[1, 2].map(d => (
+              <button key={d} onClick={() => setYDecimals(d)} style={{
+                padding: "2px 8px", borderRadius: 4, fontSize: 10, fontWeight: 600, cursor: "pointer",
+                border: yDecimals === d ? "1px solid #0046ff" : "1px solid #e2e8f0",
+                background: yDecimals === d ? "#0046ff10" : "#fff",
+                color: yDecimals === d ? "#0046ff" : "#64748b",
+              }}>{d}자리</button>
+            ))}
           </div>
 
           {/* Y-axis range controls */}
@@ -1216,7 +1253,7 @@ export default function YieldDashboard() {
             <YieldChart
               data={data} selected={selected} axisMap={axisMap}
               dateRange={dateRange} yLeftRange={yLeftRange} yRightRange={yRightRange}
-              forecasts={forecasts} fontSize={fontSize}
+              forecasts={forecasts} fontSize={fontSize} yDecimals={yDecimals}
             />
           </div>
         </div>
