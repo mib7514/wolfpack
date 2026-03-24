@@ -296,20 +296,22 @@ function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRang
           stepped: cfg.stepped ? "before" : false,
           spanGaps: true,
         });
-        // Forecast line (dashed + shaded)
+        // Forecast line (dashed - distinct from original dash pattern)
+        const origDash = cfg.dash || [];
+        const fcDash = origDash.length > 0 ? [2, 3] : [6, 4]; // already dashed → dense dots; solid → normal dash
         datasets.push({
           label: cfg.label + " (전망)",
           data: forecastData,
           borderColor: cfg.color,
-          backgroundColor: cfg.color + "15",
-          borderWidth: (cfg.width || 1.8) * 0.9,
-          borderDash: [6, 4],
+          backgroundColor: "transparent",
+          borderWidth: (cfg.width || 1.8),
+          borderDash: fcDash,
           pointRadius: 0, pointHoverRadius: 5,
           tension: 0.3,
           yAxisID,
           stepped: false,
           spanGaps: true,
-          fill: true,
+          fill: false,
         });
       } else {
         // No forecast - single solid line
