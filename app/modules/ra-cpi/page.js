@@ -432,7 +432,7 @@ export default function CPIChartPage() {
   }), [allData]);
 
   const [selected, setSelected] = useState(["US_YoY", "KR_YoY"]);
-  const [dateRange, setDateRange] = useState([0, displayMonths.length - 1]);
+  const [dateRange, setDateRange] = useState([0, 0]);
   const [fontSize, setFontSize] = useState(13);
   const [yDecimals, setYDecimals] = useState(1);
 
