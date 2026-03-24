@@ -224,7 +224,7 @@ function saveToStorage(data) {
 // ══════════════════════════════════════
 // CHART COMPONENT
 // ══════════════════════════════════════
-function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRange, forecasts }) {
+function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRange, forecasts, fontSize = 13 }) {
   const canvasRef = useRef(null);
   const chartRef = useRef(null);
 
@@ -356,22 +356,49 @@ function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRang
     const niceLeft = niceScale(yLeftRange[0], yLeftRange[1], isBpLeft);
     const niceRight = niceScale(yRightRange[0], yRightRange[1], isBpRight);
 
-    // Font config for PPT readability (~12pt equivalent)
-    const FONT = { family: "'Pretendard', 'Apple SD Gothic Neo', sans-serif", size: 13, weight: "600" };
-    const TICK_FONT = { family: "'Pretendard', 'Apple SD Gothic Neo', sans-serif", size: 12 };
+    // Font config - driven by fontSize prop
+    const FS = fontSize;
+    const FONT_FAMILY = "'Pretendard', 'Apple SD Gothic Neo', sans-serif";
+    const TICK_FONT = { family: FONT_FAMILY, size: FS };
     const LABEL_COLOR = "#000000";
+
+    // Determine x-axis tick strategy based on date span
+    const spanYears = slicedDates.length > 0
+      ? (new Date(slicedDates[slicedDates.length - 1]) - new Date(slicedDates[0])) / (365.25 * 86400000)
+      : 1;
 
     const scales = {
       x: {
         type: "category",
         ticks: {
-          maxTicksLimit: 14,
+          autoSkip: false,
+          maxRotation: 0,
           font: { ...TICK_FONT },
           color: LABEL_COLOR,
           callback: function(val, idx) {
             const d = slicedDates[idx];
-            if (!d) return "";
-            return d.slice(2, 7).replace("-", "/");
+            if (!d) return null;
+            const yy = d.slice(0, 4);
+            const mm = d.slice(5, 7);
+            const dd = d.slice(8, 10);
+
+            if (spanYears > 5) {
+              // Long range: show "YY/01" at each January start
+              if (mm === "01" && parseInt(dd) <= 7) return "'" + d.slice(2, 4);
+              return null;
+            } else if (spanYears > 2) {
+              // Medium: show "YY/MM" at quarter starts
+              if ((mm === "01" || mm === "04" || mm === "07" || mm === "10") && parseInt(dd) <= 7) return d.slice(2, 7).replace("-", "/");
+              return null;
+            } else if (spanYears > 0.5) {
+              // Short-medium: monthly
+              if (parseInt(dd) <= 3) return d.slice(2, 7).replace("-", "/");
+              return null;
+            } else {
+              // Very short: show more dates
+              if (idx % Math.max(1, Math.floor(slicedDates.length / 12)) === 0) return d.slice(2, 10).replace(/-/g, "/");
+              return null;
+            }
           }
         },
         grid: { color: "#e8ecf0", drawBorder: false },
@@ -385,7 +412,7 @@ function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRang
         title: { display: false },
         ticks: {
           stepSize: niceLeft.stepSize,
-          font: { ...TICK_FONT },
+          font: { family: FONT_FAMILY, size: FS },
           color: LABEL_COLOR,
           callback: v => isBpLeft ? v.toFixed(0) : v.toFixed(niceLeft.stepSize < 0.2 ? 2 : 1),
         },
@@ -400,7 +427,7 @@ function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRang
         title: { display: false },
         ticks: {
           stepSize: niceRight.stepSize,
-          font: { ...TICK_FONT },
+          font: { family: FONT_FAMILY, size: FS },
           color: LABEL_COLOR,
           callback: v => isBpRight ? v.toFixed(0) : v.toFixed(niceRight.stepSize < 0.2 ? 2 : 1),
         },
@@ -414,7 +441,7 @@ function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRang
       afterDraw: (chart) => {
         const c = chart.ctx;
         c.save();
-        c.font = "bold 13px 'Pretendard', sans-serif";
+        c.font = "bold " + FS + "px 'Pretendard', sans-serif";
         c.fillStyle = "#000000";
         if (chart.scales.yLeft) {
           const yL = chart.scales.yLeft;
@@ -448,8 +475,8 @@ function YieldChart({ data, selected, axisMap, dateRange, yLeftRange, yRightRang
             bodyColor: "#000",
             borderColor: "#d0d5dd",
             borderWidth: 1,
-            titleFont: { size: 13, family: "'Pretendard', sans-serif", weight: "700" },
-            bodyFont: { size: 12, family: "'Pretendard', sans-serif" },
+            titleFont: { size: FS, family: "'Pretendard', sans-serif", weight: "700" },
+            bodyFont: { size: FS - 1, family: "'Pretendard', sans-serif" },
             padding: 12,
             boxPadding: 5,
             callbacks: {
@@ -597,11 +624,11 @@ function RangeSlider({ min, max, value, onChange, dates, height = 44 }) {
 // ══════════════════════════════════════
 // CUSTOM LEGEND
 // ══════════════════════════════════════
-function CustomLegend({ selected, axisMap }) {
+function CustomLegend({ selected, axisMap, fontSize = 13 }) {
   return (
     <div style={{
       display: "flex", flexWrap: "wrap", gap: "6px 16px", padding: "10px 16px",
-      justifyContent: "center", alignItems: "center",
+      justifyContent: "center", alignItems: "center", flexWrap: "wrap",
       background: "#f8f9fb", borderRadius: 8, border: "1px solid #e2e8f0",
       marginBottom: 8,
     }}>
@@ -610,14 +637,14 @@ function CustomLegend({ selected, axisMap }) {
         if (!cfg) return null;
         const side = axisMap[id] === "right" ? "R" : "L";
         return (
-          <div key={id} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 13 }}>
+          <div key={id} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: fontSize }}>
             <span style={{
               display: "inline-block", width: 20, height: cfg.dash ? 0 : 3,
               borderTop: cfg.dash ? `2.5px dashed ${cfg.color}` : "none",
               background: cfg.dash ? "none" : cfg.color, borderRadius: 2,
             }} />
             <span style={{ color: "#000", fontWeight: 600 }}>{cfg.label}</span>
-            <span style={{ fontSize: 10, color: "#000", background: "#e2e8f0", padding: "1px 4px", borderRadius: 3, fontWeight: 700 }}>{side}</span>
+            <span style={{ fontSize: fontSize - 3, color: "#000", background: "#e2e8f0", padding: "1px 4px", borderRadius: 3, fontWeight: 700 }}>{side}</span>
           </div>
         );
       })}
@@ -933,6 +960,7 @@ export default function YieldDashboard() {
   const [yLeftAuto, setYLeftAuto] = useState(true);
   const [yRightAuto, setYRightAuto] = useState(true);
   const [forecasts, setForecasts] = useState({});  // { seriesId: { "2026-06-30": value, ... } }
+  const [fontSize, setFontSize] = useState(13);  // global text size control
   const [showForecast, setShowForecast] = useState(false);
 
   // Initialize data
@@ -1102,6 +1130,16 @@ export default function YieldDashboard() {
             </div>
           ))}
 
+          {/* Font size control */}
+          <div style={{ marginTop: 8, padding: "8px 0", borderTop: "1px solid #f1f5f9" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#0046ff", marginBottom: 6 }}>텍스트 크기</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <input type="range" min={9} max={20} value={fontSize} onChange={e => setFontSize(parseInt(e.target.value))}
+                style={{ flex: 1, accentColor: "#0046ff" }} />
+              <span style={{ fontSize: 11, color: "#000", fontWeight: 700, minWidth: 28, textAlign: "center" }}>{fontSize}px</span>
+            </div>
+          </div>
+
           {/* Y-axis range controls */}
           <div style={{ marginTop: 8, padding: "8px 0", borderTop: "1px solid #f1f5f9" }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: "#0046ff", marginBottom: 6 }}>Y축 범위</div>
@@ -1173,18 +1211,18 @@ export default function YieldDashboard() {
 
         {/* Chart */}
         <div style={{ flex: 1, padding: "8px 16px 0", position: "relative", minHeight: 0 }}>
-          <CustomLegend selected={selected} axisMap={axisMap} />
+          <CustomLegend selected={selected} axisMap={axisMap} fontSize={fontSize} />
           <div style={{ height: "calc(100% - 40px)", position: "relative" }}>
             <YieldChart
               data={data} selected={selected} axisMap={axisMap}
               dateRange={dateRange} yLeftRange={yLeftRange} yRightRange={yRightRange}
-              forecasts={forecasts}
+              forecasts={forecasts} fontSize={fontSize}
             />
           </div>
         </div>
 
         {/* Date Range Slider */}
-        <div style={{ padding: "4px 20px 12px" }}>
+        <div style={{ padding: "16px 20px 12px", borderTop: "1px solid #f1f5f9", marginTop: 8 }}>
           <DateRangeInputs dates={data?.dates} dateRange={dateRange} setDateRange={setDateRange} onExtendDates={handleExtendDates} />
           <RangeSlider
             min={0} max={(data?.dates?.length || 1) - 1}
