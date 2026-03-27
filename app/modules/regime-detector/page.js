@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import Link from "next/link";
 
 // ═══════════════════════════════════════════════════════
@@ -22,12 +22,9 @@ const CATEGORIES = [
   { key: "corpBBB+", label: "공모/무보증 BBB+", matchCol4: "공모/무보증 BBB+", matchCol5: "공모/무보증 BBB+" },
 ];
 
-// Spread = AA- corporate minus government
 const SPREAD_KEY = "corpAA-";
-
-// Regime thresholds (bps per week, 3-year basis)
-const RATE_THRESHOLD = 5;    // ±5bp 이내 = 보합
-const SPREAD_THRESHOLD = 3;  // ±3bp 이내 = 보합
+const RATE_THRESHOLD = 5;
+const SPREAD_THRESHOLD = 3;
 
 const RATE_LABELS = ["금리 하락", "금리 보합", "금리 상승"];
 const SPREAD_LABELS = ["스프레드 축소", "스프레드 보합", "스프레드 확대"];
@@ -44,7 +41,6 @@ const REGIME_COLORS = [
   ["#f97316", "#ef4444", "#dc2626"],
 ];
 
-// Which engines shine in each regime
 const REGIME_ENGINES = [
   [["①","②","④"], ["①","⑤"], ["①"]],
   [["②","③","④","⑥"], ["⑤","⑥"], ["④","⑤"]],
@@ -145,7 +141,6 @@ const REGIME_DESCRIPTIONS = {
 // ═══════════════════════════════════════════════════════
 
 function extractDateFromFilename(filename) {
-  // Pattern: 4788_YYMMDD_.txt
   const m = filename.match(/(\d{6})/);
   if (!m) return null;
   const yy = m[1].substring(0, 2);
@@ -156,7 +151,6 @@ function extractDateFromFilename(filename) {
 
 async function parseFile(file) {
   const buffer = await file.arrayBuffer();
-  // Try CP949 first, fall back to UTF-8
   let text;
   try {
     const decoder = new TextDecoder("euc-kr");
@@ -164,21 +158,16 @@ async function parseFile(file) {
   } catch {
     text = new TextDecoder("utf-8").decode(buffer);
   }
-  
+
   const lines = text.split(/\r?\n/).filter(l => l.trim());
   const date = extractDateFromFilename(file.name);
-  
-  // Header is line index 2 (0-indexed)
-  // Data starts from line index 3
   const result = { date, filename: file.name, rates: {} };
-  
+
   for (const cat of CATEGORIES) {
     if (cat.isRow4) {
-      // Government bond is always on line index 3 (4th line, 1-indexed)
       const cols = lines[3]?.split("\t") || [];
       result.rates[cat.key] = extractRates(cols);
     } else {
-      // Find aggregate row where col4 == col5 == category name
       for (const line of lines) {
         const cols = line.split("\t");
         if (cols[3]?.trim() === cat.matchCol4 && cols[4]?.trim() === cat.matchCol5) {
@@ -188,13 +177,11 @@ async function parseFile(file) {
       }
     }
   }
-  
+
   return result;
 }
 
 function extractRates(cols) {
-  // Columns: 0-5 are metadata, 6 onwards are tenor rates
-  // 6=3M, 7=6M, 8=9M, 9=1Y, 10=1.5Y, 11=2Y, 12=2.5Y, 13=3Y, 14=4Y, 15=5Y, 16=7Y, 17=10Y, 18=15Y, 19=20Y, 20=30Y
   const map = {};
   TENORS.forEach((t, i) => {
     const val = parseFloat(cols[6 + i]);
@@ -208,91 +195,138 @@ function extractRates(cols) {
 // ═══════════════════════════════════════════════════════
 
 function calcRegime(weeks) {
-  // Need at least 2 weeks to compute changes
   if (!weeks || weeks.length < 2) return null;
-  
   const latest = weeks[weeks.length - 1];
   const prev = weeks[weeks.length - 2];
-  
   if (!latest?.rates?.govt || !prev?.rates?.govt) return null;
   if (!latest?.rates?.[SPREAD_KEY] || !prev?.rates?.[SPREAD_KEY]) return null;
-  
-  // Rate change: 국고채 3Y (bps)
+
   const rateNow = latest.rates.govt["3Y"];
   const ratePrev = prev.rates.govt["3Y"];
   if (rateNow == null || ratePrev == null) return null;
-  const rateDelta = (rateNow - ratePrev) * 100; // bps
-  
-  // Spread change: (AA- corp 3Y - govt 3Y) delta (bps)
+  const rateDelta = (rateNow - ratePrev) * 100;
+
   const spreadNow = (latest.rates[SPREAD_KEY]["3Y"] || 0) - rateNow;
   const spreadPrev = (prev.rates[SPREAD_KEY]["3Y"] || 0) - ratePrev;
-  const spreadDelta = (spreadNow - spreadPrev) * 100; // bps
-  
-  // Classify
+  const spreadDelta = (spreadNow - spreadPrev) * 100;
+
   let rateDir;
-  if (rateDelta < -RATE_THRESHOLD) rateDir = 0;      // 하락
-  else if (rateDelta > RATE_THRESHOLD) rateDir = 2;   // 상승
-  else rateDir = 1;                                    // 보합
-  
+  if (rateDelta < -RATE_THRESHOLD) rateDir = 0;
+  else if (rateDelta > RATE_THRESHOLD) rateDir = 2;
+  else rateDir = 1;
+
   let spreadDir;
-  if (spreadDelta < -SPREAD_THRESHOLD) spreadDir = 0;  // 축소
-  else if (spreadDelta > SPREAD_THRESHOLD) spreadDir = 2; // 확대
-  else spreadDir = 1;                                    // 보합
-  
+  if (spreadDelta < -SPREAD_THRESHOLD) spreadDir = 0;
+  else if (spreadDelta > SPREAD_THRESHOLD) spreadDir = 2;
+  else spreadDir = 1;
+
   return {
-    rateDir,
-    spreadDir,
-    rateDelta,
-    spreadDelta,
-    rateNow,
-    ratePrev,
-    spreadNow: spreadNow * 100,  // bps
-    spreadPrev: spreadPrev * 100, // bps
+    rateDir, spreadDir, rateDelta, spreadDelta, rateNow, ratePrev,
+    spreadNow: spreadNow * 100, spreadPrev: spreadPrev * 100,
     regimeName: REGIME_NAMES[rateDir][spreadDir],
     regimeColor: REGIME_COLORS[rateDir][spreadDir],
     engines: REGIME_ENGINES[rateDir][spreadDir],
   };
 }
 
-// Also compute 4-week trend
 function calc4WeekTrend(weeks) {
   if (!weeks || weeks.length < 4) return null;
-  
   const latest = weeks[weeks.length - 1];
   const oldest = weeks[0];
-  
   if (!latest?.rates?.govt || !oldest?.rates?.govt) return null;
   if (!latest?.rates?.[SPREAD_KEY] || !oldest?.rates?.[SPREAD_KEY]) return null;
-  
+
   const rateNow = latest.rates.govt["3Y"];
   const rateOld = oldest.rates.govt["3Y"];
   const rateDelta = (rateNow - rateOld) * 100;
-  
   const spreadNow = ((latest.rates[SPREAD_KEY]["3Y"] || 0) - rateNow) * 100;
   const spreadOld = ((oldest.rates[SPREAD_KEY]["3Y"] || 0) - rateOld) * 100;
   const spreadDelta = spreadNow - spreadOld;
-  
+
   return { rateDelta, spreadDelta };
+}
+
+// ═══════════════════════════════════════════════════════
+// SUPABASE HELPERS
+// ═══════════════════════════════════════════════════════
+
+async function loadSavedWeeks() {
+  try {
+    const res = await fetch("/api/regime");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    return data.weeks || [];
+  } catch (err) {
+    console.error("Load failed:", err);
+    return [];
+  }
+}
+
+async function saveWeek(pin, weekData, regime, trend4w) {
+  try {
+    const res = await fetch("/api/regime", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-pin": pin },
+      body: JSON.stringify({
+        week: { week_date: weekData.date, filename: weekData.filename, rates: weekData.rates },
+        regime: regime || null,
+        trend_4w: trend4w || null,
+      }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    return { ok: true, msg: data.msg };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 }
 
 // ═══════════════════════════════════════════════════════
 // COMPONENTS
 // ═══════════════════════════════════════════════════════
 
-function FileUploadSlots({ files, onFileChange }) {
+function PinModal({ onSubmit, onClose, error }) {
+  const [pin, setPin] = useState("");
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-[#111827] border border-gray-700 rounded-xl p-6 w-80" onClick={e => e.stopPropagation()}>
+        <h3 className="text-sm font-bold text-white mb-1">관리자 인증</h3>
+        <p className="text-[11px] text-gray-500 mb-4">데이터 업로드에는 PIN이 필요합니다</p>
+        <input
+          type="password"
+          value={pin}
+          onChange={e => setPin(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && onSubmit(pin)}
+          placeholder="PIN 입력"
+          className="w-full px-3 py-2 rounded-lg bg-[#0a0e17] border border-gray-700 text-white text-sm mb-3 outline-none focus:border-amber-500"
+          autoFocus
+        />
+        {error && <p className="text-xs text-red-400 mb-3">{error}</p>}
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 px-3 py-2 rounded-lg border border-gray-700 text-gray-400 text-xs hover:bg-gray-800">취소</button>
+          <button onClick={() => onSubmit(pin)} className="flex-1 px-3 py-2 rounded-lg bg-amber-600 text-white text-xs font-bold hover:bg-amber-500">확인</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FileUploadSlots({ files, onFileChange, isAdmin }) {
   const labels = ["W-3 (가장 오래된)", "W-2", "W-1", "W-0 (최신)"];
-  
+
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       {[0, 1, 2, 3].map((i) => {
         const file = files[i];
-        const date = file?.parsedDate;
+        const date = file?.date || file?.parsedDate;
         return (
           <label
             key={i}
             className={`
               relative flex flex-col items-center justify-center p-4 rounded-xl border-2 border-dashed
-              transition-all duration-200 cursor-pointer min-h-[100px]
+              transition-all duration-200 min-h-[100px]
+              ${!isAdmin ? "cursor-default" : "cursor-pointer"}
               ${file
                 ? "border-emerald-500/30 bg-emerald-500/5"
                 : i === 3
@@ -301,14 +335,16 @@ function FileUploadSlots({ files, onFileChange }) {
               }
             `}
           >
-            <input
-              type="file"
-              accept=".txt"
-              className="hidden"
-              onChange={(e) => {
-                if (e.target.files?.[0]) onFileChange(i, e.target.files[0]);
-              }}
-            />
+            {isAdmin && (
+              <input
+                type="file"
+                accept=".txt"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files?.[0]) onFileChange(i, e.target.files[0]);
+                }}
+              />
+            )}
             <span className="text-[10px] font-bold tracking-wider uppercase text-gray-500 mb-1">
               {labels[i]}
             </span>
@@ -316,14 +352,14 @@ function FileUploadSlots({ files, onFileChange }) {
               <>
                 <span className="text-sm font-bold text-white">{date}</span>
                 <span className="text-[10px] text-gray-500 mt-0.5 max-w-full truncate">
-                  {file.filename}
+                  {file.filename || ""}
                 </span>
               </>
             ) : (
               <>
                 <span className="text-xl opacity-30 mb-1">📄</span>
                 <span className="text-[11px] text-gray-600">
-                  {i === 3 ? "최신 데이터 업로드" : "클릭하여 업로드"}
+                  {isAdmin ? (i === 3 ? "최신 데이터 업로드" : "클릭하여 업로드") : "데이터 없음"}
                 </span>
               </>
             )}
@@ -345,72 +381,39 @@ function RegimeMatrix({ regime, onCellClick, selectedCell }) {
           <tr>
             <th className="p-2 w-24" />
             {SPREAD_LABELS.map((s, i) => (
-              <th key={i} className="p-2 text-center text-[11px] font-mono text-gray-400 font-normal">
-                {s}
-              </th>
+              <th key={i} className="p-2 text-center text-[11px] font-mono text-gray-400 font-normal">{s}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {RATE_LABELS.map((r, ri) => (
             <tr key={ri}>
-              <td className="p-2 text-right text-[11px] font-mono text-gray-400 whitespace-nowrap pr-3">
-                {r}
-              </td>
+              <td className="p-2 text-right text-[11px] font-mono text-gray-400 whitespace-nowrap pr-3">{r}</td>
               {SPREAD_LABELS.map((_, ci) => {
                 const name = REGIME_NAMES[ri][ci];
                 const color = REGIME_COLORS[ri][ci];
                 const isActive = regime && regime.rateDir === ri && regime.spreadDir === ci;
                 const isSelected = selectedCell && selectedCell[0] === ri && selectedCell[1] === ci;
                 const engines = REGIME_ENGINES[ri][ci];
-                
                 return (
-                  <td
-                    key={ci}
-                    className="p-0"
-                    onClick={() => onCellClick([ri, ci])}
-                  >
+                  <td key={ci} className="p-0" onClick={() => onCellClick([ri, ci])}>
                     <div
-                      className={`
-                        m-1 p-3 rounded-lg cursor-pointer transition-all duration-200 text-center
-                        ${isActive
-                          ? "ring-2 ring-offset-1 ring-offset-[#0a0e17]"
-                          : isSelected
-                            ? "ring-1 ring-offset-1 ring-offset-[#0a0e17]"
-                            : "hover:brightness-125"
-                        }
-                      `}
+                      className={`m-1 p-3 rounded-lg cursor-pointer transition-all duration-200 text-center ${isActive ? "ring-2 ring-offset-1 ring-offset-[#0a0e17]" : isSelected ? "ring-1 ring-offset-1 ring-offset-[#0a0e17]" : "hover:brightness-125"}`}
                       style={{
                         backgroundColor: isActive ? `${color}25` : `${color}10`,
                         borderColor: color,
-                        ringColor: color,
                         ...(isActive ? { boxShadow: `0 0 20px ${color}20`, outline: `2px solid ${color}` } : {}),
                         ...(isSelected && !isActive ? { outline: `1px solid ${color}60` } : {}),
                       }}
                     >
-                      <div
-                        className="text-sm font-bold mb-1.5"
-                        style={{ color: isActive ? color : `${color}cc` }}
-                      >
-                        {name}
-                      </div>
+                      <div className="text-sm font-bold mb-1.5" style={{ color: isActive ? color : `${color}cc` }}>{name}</div>
                       {isActive && (
-                        <div className="text-[10px] font-bold tracking-wider uppercase mb-1.5" style={{ color }}>
-                          ● CURRENT
-                        </div>
+                        <div className="text-[10px] font-bold tracking-wider uppercase mb-1.5" style={{ color }}>● CURRENT</div>
                       )}
                       <div className="flex gap-1 justify-center flex-wrap">
                         {engines.map((e) => (
-                          <span
-                            key={e}
-                            className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold"
-                            style={{
-                              backgroundColor: `${ENGINE_COLORS[e]}20`,
-                              color: ENGINE_COLORS[e],
-                            }}
-                          >
-                            {e}
-                          </span>
+                          <span key={e} className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold"
+                            style={{ backgroundColor: `${ENGINE_COLORS[e]}20`, color: ENGINE_COLORS[e] }}>{e}</span>
                         ))}
                       </div>
                     </div>
@@ -431,165 +434,17 @@ function RegimeDetail({ cell }) {
   const color = REGIME_COLORS[cell[0]][cell[1]];
   const info = REGIME_DESCRIPTIONS[name];
   if (!info) return null;
-  
   return (
-    <div
-      className="rounded-xl border p-5 transition-all duration-300"
-      style={{ borderColor: `${color}30`, backgroundColor: `${color}06` }}
-    >
+    <div className="rounded-xl border p-5 transition-all duration-300" style={{ borderColor: `${color}30`, backgroundColor: `${color}06` }}>
       <h3 className="text-lg font-extrabold mb-1" style={{ color }}>{info.title}</h3>
       <p className="text-xs text-gray-400 mb-4">{info.summary}</p>
-      
       <div className="space-y-4">
-        <div>
-          <h4 className="text-[10px] font-bold tracking-widest uppercase text-gray-500 mb-1">시장 환경</h4>
-          <p className="text-xs text-gray-300 leading-relaxed">{info.description}</p>
-        </div>
-        <div>
-          <h4 className="text-[10px] font-bold tracking-widest uppercase text-gray-500 mb-1">운용 전략</h4>
-          <p className="text-xs text-gray-300 leading-relaxed">{info.strategy}</p>
-        </div>
-        <div>
-          <h4 className="text-[10px] font-bold tracking-widest uppercase text-gray-500 mb-1">리스크 & 전환 시그널</h4>
-          <p className="text-xs text-gray-300 leading-relaxed">{info.risk}</p>
-        </div>
-        <div>
-          <h4 className="text-[10px] font-bold tracking-widest uppercase text-gray-500 mb-1">유효 엔진</h4>
-          <p className="text-xs text-gray-300 leading-relaxed whitespace-pre-line">{info.engines}</p>
-        </div>
-        <div>
-          <h4 className="text-[10px] font-bold tracking-widest uppercase text-gray-500 mb-1">과거 사례</h4>
-          <p className="text-xs text-gray-400">{info.historical}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DataSummary({ weeks, regime, trend4w }) {
-  if (!weeks || weeks.length < 2 || !regime) return null;
-  
-  const latest = weeks[weeks.length - 1];
-  const prev = weeks[weeks.length - 2];
-  
-  // Build rate table for key categories
-  const categories = CATEGORIES.filter(c => 
-    latest.rates[c.key] && prev.rates[c.key]
-  );
-  
-  return (
-    <div className="space-y-4">
-      {/* Key metrics */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <MetricCard
-          label="국고 3Y"
-          value={`${regime.rateNow.toFixed(3)}%`}
-          delta={regime.rateDelta}
-          unit="bp"
-          suffix="WoW"
-        />
-        <MetricCard
-          label="AA- 스프레드 3Y"
-          value={`${regime.spreadNow.toFixed(1)}bp`}
-          delta={regime.spreadDelta}
-          unit="bp"
-          suffix="WoW"
-        />
-        {trend4w && (
-          <>
-            <MetricCard
-              label="국고 3Y (4주)"
-              value=""
-              delta={trend4w.rateDelta}
-              unit="bp"
-              suffix="4W"
-              hideValue
-            />
-            <MetricCard
-              label="AA- 스프레드 (4주)"
-              value=""
-              delta={trend4w.spreadDelta}
-              unit="bp"
-              suffix="4W"
-              hideValue
-            />
-          </>
-        )}
-      </div>
-      
-      {/* Rate table */}
-      <div className="rounded-xl border border-gray-800 bg-[#111827] overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-gray-800">
-              <th className="text-left p-2.5 text-gray-500 font-mono font-normal">구분</th>
-              {KEY_TENORS.map(t => (
-                <th key={t} className="text-center p-2.5 text-gray-500 font-mono font-normal">{t}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {categories.map((cat) => {
-              const now = latest.rates[cat.key];
-              const prv = prev.rates[cat.key];
-              return (
-                <tr key={cat.key} className="border-b border-gray-800/50">
-                  <td className="p-2.5 text-gray-300 font-semibold whitespace-nowrap">{cat.label}</td>
-                  {KEY_TENORS.map(t => {
-                    const val = now?.[t];
-                    const pVal = prv?.[t];
-                    const delta = (val != null && pVal != null) ? ((val - pVal) * 100) : null;
-                    return (
-                      <td key={t} className="text-center p-2.5">
-                        {val != null ? (
-                          <div>
-                            <div className="text-gray-200">{val.toFixed(3)}</div>
-                            {delta != null && (
-                              <div className={`text-[10px] ${delta > 0 ? "text-red-400" : delta < 0 ? "text-blue-400" : "text-gray-600"}`}>
-                                {delta > 0 ? "+" : ""}{delta.toFixed(1)}
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-gray-700">-</span>
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
-            {/* Spread row: AA- minus govt */}
-            <tr className="bg-[#0d1117]/60">
-              <td className="p-2.5 text-amber-400 font-bold whitespace-nowrap">AA- 스프레드</td>
-              {KEY_TENORS.map(t => {
-                const govtNow = latest.rates.govt?.[t];
-                const corpNow = latest.rates[SPREAD_KEY]?.[t];
-                const govtPrev = prev.rates.govt?.[t];
-                const corpPrev = prev.rates[SPREAD_KEY]?.[t];
-                const sprNow = (govtNow != null && corpNow != null) ? ((corpNow - govtNow) * 100) : null;
-                const sprPrev = (govtPrev != null && corpPrev != null) ? ((corpPrev - govtPrev) * 100) : null;
-                const delta = (sprNow != null && sprPrev != null) ? (sprNow - sprPrev) : null;
-                return (
-                  <td key={t} className="text-center p-2.5">
-                    {sprNow != null ? (
-                      <div>
-                        <div className="text-amber-300 font-semibold">{sprNow.toFixed(1)}</div>
-                        {delta != null && (
-                          <div className={`text-[10px] ${delta > 0 ? "text-red-400" : delta < 0 ? "text-blue-400" : "text-gray-600"}`}>
-                            {delta > 0 ? "+" : ""}{delta.toFixed(1)}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-gray-700">-</span>
-                    )}
-                  </td>
-                );
-              })}
-            </tr>
-          </tbody>
-        </table>
+        {[["시장 환경", info.description], ["운용 전략", info.strategy], ["리스크 & 전환 시그널", info.risk], ["유효 엔진", info.engines], ["과거 사례", info.historical]].map(([label, text]) => (
+          <div key={label}>
+            <h4 className="text-[10px] font-bold tracking-widest uppercase text-gray-500 mb-1">{label}</h4>
+            <p className="text-xs text-gray-300 leading-relaxed whitespace-pre-line">{text}</p>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -598,7 +453,6 @@ function DataSummary({ weeks, regime, trend4w }) {
 function MetricCard({ label, value, delta, unit, suffix, hideValue }) {
   const isPositive = delta > 0;
   const isNegative = delta < 0;
-  
   return (
     <div className="rounded-xl border border-gray-800 bg-[#111827] p-3.5">
       <div className="text-[10px] text-gray-500 font-mono mb-1">{label}</div>
@@ -612,34 +466,103 @@ function MetricCard({ label, value, delta, unit, suffix, hideValue }) {
   );
 }
 
+function DataSummary({ weeks, regime, trend4w }) {
+  if (!weeks || weeks.length < 2 || !regime) return null;
+  const latest = weeks[weeks.length - 1];
+  const prev = weeks[weeks.length - 2];
+  const categories = CATEGORIES.filter(c => latest.rates[c.key] && prev.rates[c.key]);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <MetricCard label="국고 3Y" value={`${regime.rateNow.toFixed(3)}%`} delta={regime.rateDelta} unit="bp" suffix="WoW" />
+        <MetricCard label="AA- 스프레드 3Y" value={`${regime.spreadNow.toFixed(1)}bp`} delta={regime.spreadDelta} unit="bp" suffix="WoW" />
+        {trend4w && (
+          <>
+            <MetricCard label="국고 3Y (4주)" delta={trend4w.rateDelta} unit="bp" suffix="4W" hideValue />
+            <MetricCard label="AA- 스프레드 (4주)" delta={trend4w.spreadDelta} unit="bp" suffix="4W" hideValue />
+          </>
+        )}
+      </div>
+      <div className="rounded-xl border border-gray-800 bg-[#111827] overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-gray-800">
+              <th className="text-left p-2.5 text-gray-500 font-mono font-normal">구분</th>
+              {KEY_TENORS.map(t => (<th key={t} className="text-center p-2.5 text-gray-500 font-mono font-normal">{t}</th>))}
+            </tr>
+          </thead>
+          <tbody>
+            {categories.map((cat) => {
+              const now = latest.rates[cat.key];
+              const prv = prev.rates[cat.key];
+              return (
+                <tr key={cat.key} className="border-b border-gray-800/50">
+                  <td className="p-2.5 text-gray-300 font-semibold whitespace-nowrap">{cat.label}</td>
+                  {KEY_TENORS.map(t => {
+                    const val = now?.[t]; const pVal = prv?.[t];
+                    const delta = (val != null && pVal != null) ? ((val - pVal) * 100) : null;
+                    return (
+                      <td key={t} className="text-center p-2.5">
+                        {val != null ? (
+                          <div>
+                            <div className="text-gray-200">{val.toFixed(3)}</div>
+                            {delta != null && (
+                              <div className={`text-[10px] ${delta > 0 ? "text-red-400" : delta < 0 ? "text-blue-400" : "text-gray-600"}`}>
+                                {delta > 0 ? "+" : ""}{delta.toFixed(1)}
+                              </div>
+                            )}
+                          </div>
+                        ) : <span className="text-gray-700">-</span>}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+            <tr className="bg-[#0d1117]/60">
+              <td className="p-2.5 text-amber-400 font-bold whitespace-nowrap">AA- 스프레드</td>
+              {KEY_TENORS.map(t => {
+                const gN = latest.rates.govt?.[t]; const cN = latest.rates[SPREAD_KEY]?.[t];
+                const gP = prev.rates.govt?.[t]; const cP = prev.rates[SPREAD_KEY]?.[t];
+                const sN = (gN != null && cN != null) ? ((cN - gN) * 100) : null;
+                const sP = (gP != null && cP != null) ? ((cP - gP) * 100) : null;
+                const d = (sN != null && sP != null) ? (sN - sP) : null;
+                return (
+                  <td key={t} className="text-center p-2.5">
+                    {sN != null ? (
+                      <div>
+                        <div className="text-amber-300 font-semibold">{sN.toFixed(1)}</div>
+                        {d != null && (
+                          <div className={`text-[10px] ${d > 0 ? "text-red-400" : d < 0 ? "text-blue-400" : "text-gray-600"}`}>
+                            {d > 0 ? "+" : ""}{d.toFixed(1)}
+                          </div>
+                        )}
+                      </div>
+                    ) : <span className="text-gray-700">-</span>}
+                  </td>
+                );
+              })}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function WeeklyTimeline({ weeks, regimes }) {
   if (!weeks || weeks.length < 2) return null;
-  
   return (
     <div className="rounded-xl border border-gray-800 bg-[#111827] p-5">
-      <h4 className="text-[10px] font-bold tracking-widest uppercase text-gray-500 mb-4">
-        Weekly Regime Timeline
-      </h4>
-      <div className="flex items-center gap-2">
+      <h4 className="text-[10px] font-bold tracking-widest uppercase text-gray-500 mb-4">Weekly Regime Timeline</h4>
+      <div className="flex items-center gap-2 flex-wrap">
         {regimes.map((r, i) => (
           <div key={i} className="flex items-center gap-2">
             {i > 0 && <span className="text-gray-700">→</span>}
-            <div
-              className="px-3 py-2 rounded-lg text-center"
-              style={{
-                backgroundColor: r ? `${r.regimeColor}15` : "#1118270",
-                border: `1px solid ${r ? `${r.regimeColor}40` : "#333"}`,
-              }}
-            >
-              <div className="text-[10px] text-gray-500 font-mono mb-0.5">
-                {weeks[i + 1]?.date || "?"}
-              </div>
-              <div
-                className="text-xs font-bold"
-                style={{ color: r?.regimeColor || "#666" }}
-              >
-                {r?.regimeName || "-"}
-              </div>
+            <div className="px-3 py-2 rounded-lg text-center" style={{ backgroundColor: r ? `${r.regimeColor}15` : "#111827", border: `1px solid ${r ? `${r.regimeColor}40` : "#333"}` }}>
+              <div className="text-[10px] text-gray-500 font-mono mb-0.5">{weeks[i + 1]?.date || "?"}</div>
+              <div className="text-xs font-bold" style={{ color: r?.regimeColor || "#666" }}>{r?.regimeName || "-"}</div>
               <div className="text-[10px] text-gray-500 mt-0.5">
                 {r ? `${r.rateDelta > 0 ? "+" : ""}${r.rateDelta.toFixed(1)}bp / ${r.spreadDelta > 0 ? "+" : ""}${r.spreadDelta.toFixed(1)}bp` : ""}
               </div>
@@ -659,44 +582,125 @@ export default function MarketRegimeDetector() {
   const [weeks, setWeeks] = useState([null, null, null, null]);
   const [selectedCell, setSelectedCell] = useState(null);
   const [parseError, setParseError] = useState(null);
-  
+
+  // Admin / PIN state
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminPin, setAdminPin] = useState("");
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pinError, setPinError] = useState("");
+  const [saveStatus, setSaveStatus] = useState(null); // { ok, msg } or null
+
+  // Loading state
+  const [loading, setLoading] = useState(true);
+
+  // Check sessionStorage for admin
+  useEffect(() => {
+    const stored = sessionStorage.getItem("wolfpack_regime_pin");
+    if (stored) { setAdminPin(stored); setIsAdmin(true); }
+  }, []);
+
+  // Load saved data from Supabase on mount
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      const saved = await loadSavedWeeks();
+      if (saved.length > 0) {
+        // Map saved weeks into slots (up to 4, oldest first)
+        const slots = [null, null, null, null];
+        const sorted = saved.sort((a, b) => a.week_date.localeCompare(b.week_date));
+        // Fill from the end: most recent = slot 3
+        for (let i = 0; i < Math.min(sorted.length, 4); i++) {
+          const offset = 4 - Math.min(sorted.length, 4) + i;
+          slots[offset] = {
+            date: sorted[i].week_date,
+            filename: sorted[i].filename || "",
+            rates: sorted[i].rates || {},
+          };
+        }
+        setWeeks(slots);
+      }
+      setLoading(false);
+    })();
+  }, []);
+
+  const handlePinSubmit = useCallback((pin) => {
+    // Verify against server by doing a test save? No, just store and let actual save verify.
+    // For UX: accept any non-empty PIN, actual verification happens on save.
+    if (!pin || pin.length < 2) {
+      setPinError("PIN을 입력해주세요");
+      return;
+    }
+    setAdminPin(pin);
+    setIsAdmin(true);
+    setShowPinModal(false);
+    setPinError("");
+    sessionStorage.setItem("wolfpack_regime_pin", pin);
+  }, []);
+
   const handleFileChange = useCallback(async (slotIndex, file) => {
+    if (!isAdmin) {
+      setShowPinModal(true);
+      return;
+    }
     try {
       setParseError(null);
+      setSaveStatus(null);
       const parsed = await parseFile(file);
-      parsed.parsedDate = parsed.date;
-      
+
       setWeeks(prev => {
         const next = [...prev];
-        next[slotIndex] = parsed;
-        
-        // Auto-shift: if only slot 3 (latest) is uploaded and others are filled,
-        // shift them left
+
+        // Auto-shift logic
         if (slotIndex === 3 && next[0] && next[1] && next[2]) {
-          // Check if new file is newer than current slot 3
-          // Shift: slot0 drops, slot1→0, slot2→1, old slot3→2, new→3
           const prevSlot3 = prev[3];
           if (prevSlot3 && parsed.date !== prevSlot3.date) {
             next[0] = prev[1];
             next[1] = prev[2];
             next[2] = prevSlot3;
             next[3] = parsed;
+          } else {
+            next[slotIndex] = parsed;
           }
+        } else {
+          next[slotIndex] = parsed;
         }
-        
+
+        // Save to Supabase (async, fire-and-forget with status)
+        const validNext = next.filter(Boolean);
+        const sortedNext = [...validNext].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+        let newRegime = null;
+        let newTrend = null;
+        if (sortedNext.length >= 2) {
+          newRegime = calcRegime([sortedNext[sortedNext.length - 2], sortedNext[sortedNext.length - 1]]);
+          newTrend = calc4WeekTrend(sortedNext);
+        }
+
+        saveWeek(adminPin, parsed, newRegime, newTrend).then(result => {
+          if (result.ok) {
+            setSaveStatus({ ok: true, msg: result.msg });
+          } else {
+            setSaveStatus({ ok: false, msg: result.error });
+            // PIN이 틀린 경우
+            if (result.error?.includes("PIN")) {
+              setIsAdmin(false);
+              setAdminPin("");
+              sessionStorage.removeItem("wolfpack_regime_pin");
+            }
+          }
+        });
+
         return next;
       });
     } catch (err) {
       setParseError(`파일 파싱 오류: ${err.message}`);
     }
-  }, []);
-  
-  // Compute regimes for each consecutive pair
+  }, [isAdmin, adminPin]);
+
   const validWeeks = weeks.filter(Boolean);
   const sortedWeeks = useMemo(() => {
     return [...validWeeks].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   }, [validWeeks]);
-  
+
   const weeklyRegimes = useMemo(() => {
     if (sortedWeeks.length < 2) return [];
     const regimes = [];
@@ -705,162 +709,169 @@ export default function MarketRegimeDetector() {
     }
     return regimes;
   }, [sortedWeeks]);
-  
+
   const currentRegime = weeklyRegimes.length > 0 ? weeklyRegimes[weeklyRegimes.length - 1] : null;
   const trend4w = useMemo(() => calc4WeekTrend(sortedWeeks), [sortedWeeks]);
-  
+
   return (
     <div className="min-h-screen bg-[#0a0e17] text-gray-200">
+      {/* PIN Modal */}
+      {showPinModal && (
+        <PinModal
+          onSubmit={handlePinSubmit}
+          onClose={() => { setShowPinModal(false); setPinError(""); }}
+          error={pinError}
+        />
+      )}
+
       {/* Header */}
       <header className="border-b border-gray-800 px-6 py-6">
         <div className="max-w-5xl mx-auto">
-          <Link
-            href="/modules/alpha-cockpit"
-            className="inline-flex items-center gap-1.5 text-[11px] text-gray-500 hover:text-gray-300 transition-colors mb-4"
-          >
+          <Link href="/modules/alpha-cockpit" className="inline-flex items-center gap-1.5 text-[11px] text-gray-500 hover:text-gray-300 transition-colors mb-4">
             ← Alpha Cockpit
           </Link>
           <div className="flex items-center gap-3 mb-1">
-            <span className="text-[10px] font-bold tracking-[0.3em] text-amber-500/80 uppercase">
-              Detection Layer
-            </span>
+            <span className="text-[10px] font-bold tracking-[0.3em] text-amber-500/80 uppercase">Detection Layer</span>
           </div>
-          <h1 className="text-2xl font-extrabold text-white tracking-tight">
-            Market Regime Detector
-          </h1>
-          <p className="text-xs text-gray-500 mt-1">
-            9-Regime Matrix · 금리 방향 × 스프레드 방향 · 국고3Y + AA- 스프레드 기준
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-extrabold text-white tracking-tight">Market Regime Detector</h1>
+              <p className="text-xs text-gray-500 mt-1">9-Regime Matrix · 금리 방향 × 스프레드 방향 · 국고3Y + AA- 스프레드 기준</p>
+            </div>
+            {/* Admin toggle */}
+            <button
+              onClick={() => {
+                if (isAdmin) {
+                  setIsAdmin(false);
+                  setAdminPin("");
+                  sessionStorage.removeItem("wolfpack_regime_pin");
+                } else {
+                  setShowPinModal(true);
+                }
+              }}
+              className={`px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-all ${
+                isAdmin
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+                  : "border-gray-700 bg-[#111827] text-gray-500 hover:border-gray-600"
+              }`}
+            >
+              {isAdmin ? "🔓 Admin" : "🔒 로그인"}
+            </button>
+          </div>
         </div>
       </header>
-      
+
       <main className="max-w-5xl mx-auto px-4 py-8 space-y-8">
-        {/* File Upload */}
-        <section>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-xs font-bold tracking-widest uppercase text-gray-500">
-              Data Upload · 4주 데이터
-            </h2>
-            <span className="text-[10px] text-gray-600 font-mono">
-              {validWeeks.length}/4 loaded
-            </span>
+        {/* Loading */}
+        {loading && (
+          <div className="text-center py-12">
+            <div className="text-2xl mb-2 animate-pulse">📡</div>
+            <p className="text-sm text-gray-500">저장된 데이터 불러오는 중...</p>
           </div>
-          <FileUploadSlots files={weeks} onFileChange={handleFileChange} />
-          {parseError && (
-            <p className="text-xs text-red-400 mt-2">{parseError}</p>
-          )}
-          <p className="text-[10px] text-gray-600 mt-2">
-            다음 주부터는 W-0(최신)만 업로드하면 기존 데이터가 자동으로 한 칸씩 밀립니다.
-          </p>
-        </section>
-        
-        {/* Current Regime Banner */}
-        {currentRegime && (
-          <section
-            className="rounded-xl border p-6 text-center"
-            style={{
-              borderColor: `${currentRegime.regimeColor}40`,
-              backgroundColor: `${currentRegime.regimeColor}08`,
-              boxShadow: `0 0 40px ${currentRegime.regimeColor}10`,
-            }}
-          >
-            <div className="text-[10px] font-bold tracking-widest uppercase text-gray-500 mb-2">
-              Current Regime
-            </div>
-            <div
-              className="text-3xl font-black mb-2"
-              style={{ color: currentRegime.regimeColor }}
-            >
-              {currentRegime.regimeName}
-            </div>
-            <div className="flex items-center justify-center gap-6 text-sm">
-              <span className={currentRegime.rateDelta > 0 ? "text-red-400" : currentRegime.rateDelta < 0 ? "text-blue-400" : "text-gray-400"}>
-                금리 {currentRegime.rateDelta > 0 ? "▲" : currentRegime.rateDelta < 0 ? "▼" : "─"} {Math.abs(currentRegime.rateDelta).toFixed(1)}bp
-              </span>
-              <span className="text-gray-700">|</span>
-              <span className={currentRegime.spreadDelta > 0 ? "text-red-400" : currentRegime.spreadDelta < 0 ? "text-blue-400" : "text-gray-400"}>
-                스프레드 {currentRegime.spreadDelta > 0 ? "▲" : currentRegime.spreadDelta < 0 ? "▼" : "─"} {Math.abs(currentRegime.spreadDelta).toFixed(1)}bp
-              </span>
-            </div>
-            <div className="flex gap-1.5 justify-center mt-3">
-              {currentRegime.engines.map((e) => (
-                <span
-                  key={e}
-                  className="inline-block px-2 py-0.5 rounded text-[11px] font-bold"
-                  style={{
-                    backgroundColor: `${ENGINE_COLORS[e]}20`,
-                    color: ENGINE_COLORS[e],
-                  }}
-                >
-                  Engine {e}
-                </span>
-              ))}
-            </div>
-          </section>
         )}
-        
-        {/* 9-Regime Matrix */}
-        <section>
-          <h2 className="text-xs font-bold tracking-widest uppercase text-gray-500 mb-3">
-            9-Regime Matrix
-          </h2>
-          <RegimeMatrix
-            regime={currentRegime}
-            onCellClick={setSelectedCell}
-            selectedCell={selectedCell}
-          />
-          <p className="text-[10px] text-gray-600 mt-2">
-            각 셀을 클릭하면 해당 레짐의 상세 설명을 볼 수 있습니다 · 임계값: 금리 ±{RATE_THRESHOLD}bp, 스프레드 ±{SPREAD_THRESHOLD}bp
-          </p>
-        </section>
-        
-        {/* Regime Detail */}
-        {selectedCell && (
-          <section>
-            <RegimeDetail cell={selectedCell} />
-          </section>
-        )}
-        
-        {/* Weekly Timeline */}
-        {weeklyRegimes.length > 0 && (
-          <section>
-            <h2 className="text-xs font-bold tracking-widest uppercase text-gray-500 mb-3">
-              Regime Timeline
-            </h2>
-            <WeeklyTimeline weeks={sortedWeeks} regimes={weeklyRegimes} />
-          </section>
-        )}
-        
-        {/* Data Summary */}
-        {sortedWeeks.length >= 2 && currentRegime && (
-          <section>
-            <h2 className="text-xs font-bold tracking-widest uppercase text-gray-500 mb-3">
-              Rate & Spread Table
-            </h2>
-            <DataSummary weeks={sortedWeeks} regime={currentRegime} trend4w={trend4w} />
-          </section>
-        )}
-        
-        {/* Empty State */}
-        {validWeeks.length < 2 && (
-          <section className="text-center py-16">
-            <div className="text-4xl mb-4 opacity-30">📊</div>
-            <p className="text-gray-500 text-sm">
-              최소 2주 데이터를 업로드하면 레짐 판단이 시작됩니다
-            </p>
-            <p className="text-gray-600 text-xs mt-1">
-              4주 데이터를 모두 업로드하면 추세 분석도 가능합니다
-            </p>
-          </section>
+
+        {!loading && (
+          <>
+            {/* File Upload */}
+            <section>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-xs font-bold tracking-widest uppercase text-gray-500">
+                  Data Upload · 4주 데이터
+                </h2>
+                <div className="flex items-center gap-3">
+                  {saveStatus && (
+                    <span className={`text-[10px] font-mono ${saveStatus.ok ? "text-emerald-400" : "text-red-400"}`}>
+                      {saveStatus.ok ? `✓ ${saveStatus.msg}` : `✗ ${saveStatus.msg}`}
+                    </span>
+                  )}
+                  <span className="text-[10px] text-gray-600 font-mono">
+                    {validWeeks.length}/4 loaded
+                  </span>
+                </div>
+              </div>
+              <FileUploadSlots files={weeks} onFileChange={handleFileChange} isAdmin={isAdmin} />
+              {parseError && <p className="text-xs text-red-400 mt-2">{parseError}</p>}
+              <p className="text-[10px] text-gray-600 mt-2">
+                {isAdmin
+                  ? "다음 주부터는 W-0(최신)만 업로드하면 기존 데이터가 자동으로 한 칸씩 밀립니다. 저장은 Supabase에 자동으로 됩니다."
+                  : "데이터 업로드는 관리자 로그인 후 가능합니다. 저장된 데이터는 자동으로 표시됩니다."
+                }
+              </p>
+            </section>
+
+            {/* Current Regime Banner */}
+            {currentRegime && (
+              <section className="rounded-xl border p-6 text-center" style={{ borderColor: `${currentRegime.regimeColor}40`, backgroundColor: `${currentRegime.regimeColor}08`, boxShadow: `0 0 40px ${currentRegime.regimeColor}10` }}>
+                <div className="text-[10px] font-bold tracking-widest uppercase text-gray-500 mb-2">Current Regime</div>
+                <div className="text-3xl font-black mb-2" style={{ color: currentRegime.regimeColor }}>{currentRegime.regimeName}</div>
+                <div className="flex items-center justify-center gap-6 text-sm">
+                  <span className={currentRegime.rateDelta > 0 ? "text-red-400" : currentRegime.rateDelta < 0 ? "text-blue-400" : "text-gray-400"}>
+                    금리 {currentRegime.rateDelta > 0 ? "▲" : currentRegime.rateDelta < 0 ? "▼" : "─"} {Math.abs(currentRegime.rateDelta).toFixed(1)}bp
+                  </span>
+                  <span className="text-gray-700">|</span>
+                  <span className={currentRegime.spreadDelta > 0 ? "text-red-400" : currentRegime.spreadDelta < 0 ? "text-blue-400" : "text-gray-400"}>
+                    스프레드 {currentRegime.spreadDelta > 0 ? "▲" : currentRegime.spreadDelta < 0 ? "▼" : "─"} {Math.abs(currentRegime.spreadDelta).toFixed(1)}bp
+                  </span>
+                </div>
+                <div className="flex gap-1.5 justify-center mt-3">
+                  {currentRegime.engines.map((e) => (
+                    <span key={e} className="inline-block px-2 py-0.5 rounded text-[11px] font-bold"
+                      style={{ backgroundColor: `${ENGINE_COLORS[e]}20`, color: ENGINE_COLORS[e] }}>Engine {e}</span>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* 9-Regime Matrix */}
+            <section>
+              <h2 className="text-xs font-bold tracking-widest uppercase text-gray-500 mb-3">9-Regime Matrix</h2>
+              <RegimeMatrix regime={currentRegime} onCellClick={setSelectedCell} selectedCell={selectedCell} />
+              <p className="text-[10px] text-gray-600 mt-2">
+                각 셀을 클릭하면 해당 레짐의 상세 설명을 볼 수 있습니다 · 임계값: 금리 ±{RATE_THRESHOLD}bp, 스프레드 ±{SPREAD_THRESHOLD}bp
+              </p>
+            </section>
+
+            {/* Regime Detail */}
+            {selectedCell && (
+              <section><RegimeDetail cell={selectedCell} /></section>
+            )}
+
+            {/* Weekly Timeline */}
+            {weeklyRegimes.length > 0 && (
+              <section>
+                <h2 className="text-xs font-bold tracking-widest uppercase text-gray-500 mb-3">Regime Timeline</h2>
+                <WeeklyTimeline weeks={sortedWeeks} regimes={weeklyRegimes} />
+              </section>
+            )}
+
+            {/* Data Summary */}
+            {sortedWeeks.length >= 2 && currentRegime && (
+              <section>
+                <h2 className="text-xs font-bold tracking-widest uppercase text-gray-500 mb-3">Rate & Spread Table</h2>
+                <DataSummary weeks={sortedWeeks} regime={currentRegime} trend4w={trend4w} />
+              </section>
+            )}
+
+            {/* Empty State */}
+            {validWeeks.length < 2 && !loading && (
+              <section className="text-center py-16">
+                <div className="text-4xl mb-4 opacity-30">📊</div>
+                <p className="text-gray-500 text-sm">최소 2주 데이터를 업로드하면 레짐 판단이 시작됩니다</p>
+                <p className="text-gray-600 text-xs mt-1">4주 데이터를 모두 업로드하면 추세 분석도 가능합니다</p>
+              </section>
+            )}
+          </>
         )}
       </main>
-      
+
       {/* Footer */}
       <footer className="border-t border-gray-800/50 py-6 text-center">
         <p className="text-xs text-gray-600 font-mono">
-          Market Regime Detector v1.0
+          Market Regime Detector v2.0
           <span className="text-gray-700 mx-1">·</span>
           3×3 Matrix · 국고3Y · AA- 스프레드 · WoW 변화 기준
+          <span className="text-gray-700 mx-1">·</span>
+          Supabase 연동
         </p>
       </footer>
     </div>
