@@ -1,431 +1,153 @@
-"use client";
+'use client';
+import { useState, useEffect } from 'react';
+import { createClient } from '@supabase/supabase-js';
 
-import { useState, useCallback } from "react";
-import Link from "next/link";
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
 
 const MODULES = [
-  // ─── Layer 1: MACRO ───
-  {
-    id: "business-cycle",
-    name: "경기순환 체크리스트",
-    subtitle: "Business Cycle Dashboard",
-    icon: "◈",
-    description: "한국/미국 68개 문항 경기국면 분석",
-    path: "/modules/business-cycle",
-    layer: "macro",
-    status: "live",
-  },
-  {
-    id: "taylor-rule",
-    name: "테일러 룰 모니터",
-    subtitle: "Modified Taylor Rule Monitor",
-    icon: "📐",
-    description: "수정 테일러 룰 기반 적정금리 vs 기준금리 괴리 분석 · 국채3년 GAP 비교",
-    path: "/taylor-rule",
-    layer: "macro",
-    status: "live",
-  },
-  {
-    id: "oil-cpi",
-    name: "Oil → CPI Monitor",
-    subtitle: "유가-물가 패스스루 시뮬레이터",
-    icon: "🛢️",
-    description: "국제유가 시나리오별 한미 CPI 영향 분석 · 실질금리 추적",
-    path: "/modules/oil-cpi",
-    layer: "macro",
-    status: "live",
-  },
-  {
-    id: "employment-narrative",
-    name: "고용 내러티브",
-    subtitle: "Employment Narrative Monitor",
-    icon: "🐺",
-    description: "미국 고용지표 내러티브 추적 · AI 자동 발견",
-    path: "/modules/employment-narrative",
-    layer: "macro",
-    status: "live",
-  },
-  {
-    id: "inflation-monitor",
-    name: "CPI 확산 모니터",
-    subtitle: "CPI Diffusion Monitor",
-    icon: "🌡️",
-    description: "중동발 에너지·물류 쇼크 → 물가 확산 경로 6단계 추적 · AI 자동 업데이트",
-    path: "/modules/inflation-monitor",
-    layer: "macro",
-    status: "live",
-  },
-  {
-    id: "hartnett-monitor",
-    name: "하트넷 2008 모니터",
-    subtitle: "Hartnett 2008 Framework Monitor",
-    icon: "🔴",
-    description: "유가·신용·달러·금리 4대 트리거 추적 · FRED 자동수집 · 정책풋 확률 평가",
-    path: "/modules/hartnett-monitor",
-    layer: "macro",
-    status: "live",
-  },
-  // ─── Layer 2: MARKET ───
-  {
-    id: "narrative-tracker",
-    name: "내러티브 알파 트래커",
-    subtitle: "Narrative Alpha Tracker",
-    icon: "📡",
-    description: "금융시장 내러티브 추적 · 스코어링 · 자산영향도 · 켈리 투자 아이디어",
-    path: "/modules/narrative-tracker",
-    layer: "market",
-    status: "live",
-  },
-  {
-    id: "us-market",
-    name: "US Market Weekly",
-    subtitle: "주간 미국 주식시장 리포트",
-    icon: "🇺🇸",
-    description: "FRED 무료 데이터 + AI 52주 신고가 · 내러티브 분석 · 시계열 추적",
-    path: "/modules/us-market",
-    layer: "market",
-    status: "live",
-  },
-  {
-    id: "consumer-sector",
-    name: "소비주 모니터링",
-    subtitle: "Consumer Sector Tracker",
-    icon: "🛍️",
-    description: "KOSPI vs KODEX 경기소비재 · 소비자심리지수 추적",
-    path: "/modules/market",
-    layer: "market",
-    status: "live",
-  },
-  {
-    id: "gold-monitor",
-    name: "Gold CB Monitor",
-    subtitle: "중앙은행 금 매입 추적",
-    icon: "🥇",
-    description: "글로벌 CB 금 매입 · IB 전망 · 국가별 추적",
-    path: "/modules/gold-monitor",
-    layer: "market",
-    status: "live",
-  },
-  // ─── Layer 3: PORTFOLIO ───
-  {
-    id: "deficit-analysis",
-    name: "적자기업 투자분석",
-    subtitle: "Deficit Company Analysis",
-    icon: "🎯",
-    description: "코스닥 150개 · 손익구간별 10단계 분류(3a/3b/4a/4b/E) · 비대칭매력 Top10 · ETF 매칭",
-    path: "/modules/deficit-analysis",
-    layer: "portfolio",
-    status: "live",
-  },
-  {
-    id: "reit-scoring",
-    name: "K-REIT 스코어링",
-    subtitle: "REIT Screening & Scoring",
-    icon: "◉",
-    description: "채권 투자자 관점 6축 분석 · 연율화 캐리 · 금리 스트레스 테스트",
-    path: "/modules/reit-scoring",
-    layer: "portfolio",
-    status: "live",
-  },
-  {
-    id: "wolf-radar",
-    name: "Wolf Radar",
-    subtitle: "성장주 발굴",
-    icon: "🐺",
-    description: "종목 검색 · AI thesis 생성 · 모니터링 지표 스코어링",
-    path: "/modules/radar",
-    layer: "portfolio",
-    status: "live",
-  },
-  // ─── Layer 4: FUND IDEA ───
-  {
-    id: "fund-ideas",
-    name: "역목표전환형",
-    subtitle: "BCP-Powered Reverse Target Conversion",
-    icon: "💡",
-    description: "베스트크레딧플러스 기반 원금보존형 · 경과수익 한도 내 주식 투자 전략",
-    path: "/modules/fund-ideas",
-    layer: "fund-idea",
-    status: "live",
-  },
-  {
-    id: "becpl-shield",
-    name: "베크플 MDD Shield",
-    subtitle: "BECPL Drawdown Protector",
-    icon: "🛡️",
-    description: "베스트크레딧플러스 + 만기매칭 구조 마이너스 방어 설계",
-    path: "/modules/becpl-shield",
-    layer: "fund-idea",
-    status: "live",
-  },
-  {
-    id: "barbell-mdd",
-    name: "베크플 바벨 MDD방어형",
-    subtitle: "Barbell MDD Defense Designer",
-    icon: "⚖️",
-    description: "만기매칭 + 베크플 + 장기국채 바벨, 6시나리오 MDD 방어 설계",
-    path: "/modules/barbell-mdd",
-    layer: "fund-idea",
-    status: "live",
-  },
-  // ─── Layer 5: BEST CREDIT PLUS (PIN 보호) ───
-  {
-    id: "alpha-cockpit",
-    name: "Alpha Cockpit",
-    subtitle: "BCP Alpha Generation Dashboard",
-    icon: "🎛️",
-    description: "베스트크레딧플러스 알파 생성 전략 · 포트폴리오 최적화",
-    path: "/modules/alpha-cockpit",
-    layer: "bcp",
-    status: "live",
-  },
-  {
-    id: "duration-commander",
-    name: "Duration Commander",
-    subtitle: "Duration & Rate Strategy",
-    icon: "⏱️",
-    description: "듀레이션 전략 시뮬레이션 · 금리 시나리오별 포지션 설계",
-    path: "/modules/rate-scenario",
-    layer: "bcp",
-    status: "live",
-  },
-  {
-    id: "regime-detector",
-    name: "Regime Detector",
-    subtitle: "Market Regime Classification",
-    icon: "🔬",
-    description: "시장 국면 자동 분류 · 레짐 전환 감지 · 전략 스위칭",
-    path: "/modules/regime-detector",
-    layer: "bcp",
-    status: "live",
-  },
-    // ─── Layer 6: RA ───
-  {
-    id: "ra-yield",
-    name: "금리차트",
-    subtitle: "Research Assistant",
-    icon: "📊",
-    description: "PT용 금리·크레딧 스프레드 차트 생성 도구",
-    path: "/modules/ra",
-    layer: "ra",
-    status: "live",
-  },
-  {
-    id: "ra-cpi",
-    name: "CPI 차트",
-    subtitle: "US & Korea CPI Monitor",
-    icon: "🌡️",
-    description: "미국·한국 CPI YoY/MoM 추이 · FRED/ECOS 연동",
-    path: "/modules/ra-cpi",
-    layer: "ra",
-    status: "live",
-  },
+  { id: 'business-cycle', name: '경기순환 추적기', emoji: '🔄', path: '/modules/business-cycle', color: 'from-blue-500 to-purple-500' },
+  { id: 'us-market', name: 'US 마켓 리포트', emoji: '🇺🇸', path: '/modules/us-market', color: 'from-green-500 to-teal-500' },
+  { id: 'oil-cpi', name: 'Oil & CPI 모니터', emoji: '⛽', path: '/modules/oil-cpi', color: 'from-amber-500 to-orange-500' },
+  { id: 'deficit-watch', name: '적자기업 워치', emoji: '📉', path: '/modules/deficit-watch', color: 'from-red-500 to-pink-500' },
+  { id: 'inbound-tourism', name: '인바운드 관광', emoji: '✈️', path: '/modules/inbound-tourism', color: 'from-cyan-500 to-blue-500' },
+  { id: 'valuation-parity', name: '밸류에이션 패리티', emoji: '⚖️', path: '/modules/valuation-parity', color: 'from-indigo-500 to-purple-500' },
+  { id: 'market-consumer', name: '시장/소비심리', emoji: '📊', path: '/modules/market-consumer', color: 'from-emerald-500 to-green-500' },
+  { id: 'taylor-rule', name: '테일러 룰', emoji: '🎯', path: '/modules/taylor-rule', color: 'from-violet-500 to-purple-500' },
+  { id: 'narrative-radar', name: '내러티브 레이더', emoji: '📡', path: '/modules/narrative-radar', color: 'from-rose-500 to-pink-500' },
+  { id: 'inflation-monitor', name: '인플레이션 모니터', emoji: '🔥', path: '/modules/inflation-monitor', color: 'from-orange-500 to-red-500' },
+  { id: 'gold-monitor', name: 'Gold Monitor', emoji: '🥇', path: '/modules/gold-monitor', color: 'from-yellow-500 to-amber-500' },
+  { id: 'growth-radar', name: 'Growth Radar', emoji: '🚀', path: '/modules/growth-radar', color: 'from-teal-500 to-cyan-500' },
 ];
 
-const LAYERS = [
-  { id: "macro", label: "Layer 1 · MACRO", color: "#f59e0b" },
-  { id: "market", label: "Layer 2 · MARKET", color: "#3b82f6" },
-  { id: "portfolio", label: "Layer 3 · PORTFOLIO", color: "#10b981" },
-  { id: "fund-idea", label: "Layer 4 · FUND IDEA", color: "#a855f7" },
-  { id: "bcp", label: "Layer 5 · BEST CREDIT PLUS", color: "#ec4899", locked: true },
-  { id: "ra", label: "Layer 6 · RA", color: "#0046ff" },
-];
+function StatusDot({ status }) {
+  const colors = {
+    active: 'bg-green-400',
+    warning: 'bg-yellow-400',
+    error: 'bg-red-400',
+    unknown: 'bg-gray-400'
+  };
+  return <div className={`w-2 h-2 rounded-full ${colors[status]} animate-pulse`} />;
+}
 
 export default function ControlTower() {
-  const liveCount = MODULES.filter((m) => m.status === "live").length;
-  const totalCount = MODULES.length;
+  const [systemStatus, setSystemStatus] = useState({});
 
-  // BCP PIN state
-  const [bcpUnlocked, setBcpUnlocked] = useState(false);
-  const [showPinModal, setShowPinModal] = useState(false);
-  const [pinInput, setPinInput] = useState("");
-  const [pinError, setPinError] = useState("");
+  useEffect(() => {
+    checkSystemStatus();
+  }, []);
 
-  const handlePinSubmit = useCallback(() => {
-    if (pinInput === "bcplus") {
-      setBcpUnlocked(true);
-      setShowPinModal(false);
-      setPinInput("");
-      setPinError("");
-      sessionStorage.setItem("wolfpack_bcp_unlocked", "true");
-    } else {
-      setPinError("PIN이 일치하지 않습니다");
+  const checkSystemStatus = async () => {
+    const status = {};
+    
+    // Check Supabase connection
+    try {
+      const { data, error } = await supabase.from('cycle_data').select('*').limit(1);
+      status.database = error ? 'error' : 'active';
+    } catch {
+      status.database = 'error';
     }
-  }, [pinInput]);
 
-  // Check session on mount
-  useState(() => {
-    if (typeof window !== "undefined" && sessionStorage.getItem("wolfpack_bcp_unlocked") === "true") {
-      setBcpUnlocked(true);
-    }
-  });
+    // Check environment variables
+    status.env = (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) 
+      ? 'active' : 'warning';
+
+    setSystemStatus(status);
+  };
 
   return (
-    <div className="min-h-screen bg-[#0a0e17] text-gray-200">
-      {/* PIN Modal */}
-      {showPinModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowPinModal(false)}>
-          <div className="bg-[#111827] border border-pink-500/30 rounded-2xl p-6 w-80 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <h3 className="text-base font-bold text-white mb-1">🔐 BCP Layer Access</h3>
-            <p className="text-xs text-gray-500 mb-4">베스트크레딧플러스 레이어는 관리자 전용입니다</p>
-            <input
-              type="password"
-              placeholder="PIN 입력"
-              value={pinInput}
-              onChange={e => setPinInput(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && handlePinSubmit()}
-              className="w-full px-4 py-2.5 bg-black/40 border border-gray-700 rounded-lg text-center text-lg tracking-[0.3em] text-white outline-none focus:border-pink-500/50"
-              autoFocus
-            />
-            {pinError && <p className="text-red-400 text-xs text-center mt-2">{pinError}</p>}
-            <div className="flex gap-2 mt-4">
-              <button onClick={() => setShowPinModal(false)} className="flex-1 py-2 border border-gray-700 rounded-lg text-gray-500 text-xs">취소</button>
-              <button onClick={handlePinSubmit} className="flex-1 py-2 bg-pink-600 rounded-lg text-white text-xs font-bold">인증</button>
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 text-white">
+      {/* Header */}
+      <header className="border-b border-slate-700 bg-slate-900/50 backdrop-blur-sm sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="text-3xl">🐺</div>
+              <div>
+                <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                  Hello Wolfpack
+                </h1>
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                  늑대무리원정단 Control Tower
+                </h1>
+                <p className="text-sm text-slate-400">Macro · Credit · Portfolio 통합 모니터링</p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2">
+                <StatusDot status={systemStatus.database} />
+                <span className="text-sm text-slate-400">DB</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <StatusDot status={systemStatus.env} />
+                <span className="text-sm text-slate-400">ENV</span>
+              </div>
             </div>
           </div>
         </div>
-      )}
-
-      {/* Header */}
-      <header className="border-b border-gray-800 px-6 py-8 text-center">
-        <div className="flex items-center justify-center gap-3 mb-2">
-          <span className="text-sm text-amber-500/60 tracking-widest uppercase font-semibold">
-            늑대무리원정단 — Control Tower
-          </span>
-        </div>
-        <div className="text-5xl mb-4 drop-shadow-[0_0_12px_rgba(245,158,11,0.3)]">
-          🐺
-        </div>
-        <h1 className="text-3xl font-extrabold text-white tracking-tight mb-1">
-          늑대무리원정단
-        </h1>
-        <p className="text-sm text-gray-500 tracking-wide">
-          Wolf Pack Expedition · Control Tower
-        </p>
-        <p className="text-xs text-gray-600 mt-3 font-mono">
-          {liveCount} / {totalCount} modules active
-        </p>
       </header>
 
-      {/* Module Grid by Layer */}
-      <main className="max-w-5xl mx-auto px-4 py-8 space-y-10">
-        {LAYERS.map((layer) => {
-          const layerModules = MODULES.filter((m) => m.layer === layer.id);
-          if (layerModules.length === 0) return null;
-
-          const isLocked = layer.locked && !bcpUnlocked;
-
-          return (
-            <section key={layer.id}>
-              <div className="flex items-center gap-2 mb-4">
-                <h2
-                  className="text-xs font-bold tracking-[0.25em] uppercase pl-1"
-                  style={{ color: layer.color }}
-                >
-                  {layer.label}
-                </h2>
-                {layer.locked && (
-                  <button
-                    onClick={() => {
-                      if (bcpUnlocked) {
-                        setBcpUnlocked(false);
-                        sessionStorage.removeItem("wolfpack_bcp_unlocked");
-                      } else {
-                        setShowPinModal(true);
-                      }
-                    }}
-                    className="text-xs px-2 py-0.5 rounded-full border transition-colors"
-                    style={{
-                      borderColor: bcpUnlocked ? "rgba(236,72,153,0.4)" : "rgba(107,114,128,0.3)",
-                      color: bcpUnlocked ? "#ec4899" : "#6b7280",
-                      background: bcpUnlocked ? "rgba(236,72,153,0.08)" : "transparent",
-                    }}
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-4 py-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {MODULES.map((module) => (
+            <div key={module.id} className="group">
+              <div className="relative overflow-hidden rounded-xl bg-slate-800/50 border border-slate-700 hover:border-blue-500/50 transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/10">
+                <div className={`absolute inset-0 bg-gradient-to-br ${module.color} opacity-0 group-hover:opacity-10 transition-opacity duration-300`} />
+                <div className="relative p-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-2xl">{module.emoji}</div>
+                    <StatusDot status="active" />
+                  </div>
+                  <h3 className="font-semibold text-lg mb-2 group-hover:text-blue-400 transition-colors">
+                    {module.name}
+                  </h3>
+                  <p className="text-sm text-slate-400 mb-4">
+                    실시간 데이터 모니터링 및 분석
+                  </p>
+                  <a
+                    href={module.path}
+                    className="inline-flex items-center text-sm text-blue-400 hover:text-blue-300 transition-colors"
                   >
-                    {bcpUnlocked ? "🔓" : "🔒"}
-                  </button>
-                )}
+                    모듈 열기
+                    <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </a>
+                </div>
               </div>
-              {isLocked ? (
-                <div
-                  onClick={() => setShowPinModal(true)}
-                  className="rounded-xl border border-dashed border-gray-700 bg-[#0d1117] p-8 text-center cursor-pointer hover:border-pink-500/30 transition-colors"
-                >
-                  <div className="text-3xl mb-3">🔒</div>
-                  <div className="text-sm text-gray-500 font-mono">PIN 인증 필요</div>
-                  <div className="text-xs text-gray-600 mt-1">클릭하여 잠금 해제</div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {layerModules.map((mod) => (
-                    <ModuleCard key={mod.id} module={mod} layerColor={layer.color} />
-                  ))}
-                </div>
-              )}
-            </section>
-          );
-        })}
+            </div>
+          ))}
+        </div>
+
+        {/* System Info */}
+        <div className="mt-12 bg-slate-800/30 border border-slate-700 rounded-xl p-6">
+          <h2 className="text-lg font-semibold mb-4 flex items-center">
+            <span className="text-xl mr-2">⚙️</span>
+            System Information
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+            <div>
+              <span className="text-slate-400">Database:</span>
+              <span className={`ml-2 ${systemStatus.database === 'active' ? 'text-green-400' : 'text-red-400'}`}>
+                {systemStatus.database === 'active' ? '연결됨' : '연결 실패'}
+              </span>
+            </div>
+            <div>
+              <span className="text-slate-400">Environment:</span>
+              <span className={`ml-2 ${systemStatus.env === 'active' ? 'text-green-400' : 'text-yellow-400'}`}>
+                {systemStatus.env === 'active' ? '설정 완료' : '일부 누락'}
+              </span>
+            </div>
+            <div>
+              <span className="text-slate-400">Modules:</span>
+              <span className="ml-2 text-blue-400">{MODULES.length}개 활성화</span>
+            </div>
+          </div>
+        </div>
       </main>
-
-      {/* Footer */}
-      <footer className="border-t border-gray-800/50 py-6 text-center">
-        <p className="text-xs text-gray-600 font-mono">
-          늑대무리원정단 v2.2.1
-          <span className="text-gray-700 mx-1">·</span>
-          Macro · Market · Portfolio · Fund Idea · BCP · RA
-        </p>
-      </footer>
     </div>
   );
-}
-
-function ModuleCard({ module, layerColor }) {
-  const isLive = module.status === "live";
-
-  const card = (
-    <div
-      className={`
-        relative group rounded-xl border p-5 transition-all duration-200
-        ${
-          isLive
-            ? "border-gray-800 bg-[#111827] hover:border-gray-700 hover:bg-[#151e2e] cursor-pointer"
-            : "border-gray-800/50 bg-[#0d1117] opacity-50 cursor-default"
-        }
-      `}
-    >
-      {/* Status badge */}
-      <div className="absolute top-4 right-4">
-        {isLive ? (
-          <span className="inline-flex items-center gap-1 text-[10px] font-bold tracking-wider uppercase text-emerald-400">
-            <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
-            LIVE
-          </span>
-        ) : (
-          <span className="text-[10px] font-bold tracking-wider uppercase text-gray-600">
-            PLANNED
-          </span>
-        )}
-      </div>
-
-      {/* Icon */}
-      <div
-        className="text-2xl mb-3 w-10 h-10 flex items-center justify-center rounded-lg"
-        style={{ backgroundColor: `${layerColor}10` }}
-      >
-        {module.icon}
-      </div>
-
-      {/* Title */}
-      <h3 className="text-sm font-bold text-white mb-0.5">{module.name}</h3>
-      <p className="text-[11px] text-gray-500 mb-2 font-mono">{module.subtitle}</p>
-
-      {/* Description */}
-      <p className="text-xs text-gray-400 leading-relaxed">{module.description}</p>
-    </div>
-  );
-
-  if (isLive) {
-    return <Link href={module.path}>{card}</Link>;
-  }
-
-  return card;
 }
